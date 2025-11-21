@@ -1,32 +1,52 @@
-import * as FileSystem from 'expo-file-system';
-import { supabase } from './supabase';
+// lib/upload.ts
+import { supabase } from './supabaseClient';
 
-export async function uploadFile(uri: string, folder: string) {
+/**
+ * Upload local image (from ImagePicker) to Supabase Storage
+ * and return public URL (or null on error).
+ *
+ * folder:
+ *  - 'student-cards'
+ *  - 'profile-pictures'
+ */
+export async function uploadImageToSupabase(
+  uri: string,
+  folder: 'student-cards' | 'profile-pictures',
+): Promise<string | null> {
   try {
-    // Convert file to base64 manually
-    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: "base64" });
+    // 1. מושכים את הקובץ מה-URI המקומי (file://...)
+    const response = await fetch(uri);
 
-    // Create file name
-    const fileName = `${folder}/${Date.now()}.jpg`;
+    // 2. ממירים ל-Blob ואז ל-ArrayBuffer (פורמט שב-Supabase אוהב)
+    const blob = await response.blob();
+    const arrayBuffer = await new Response(blob).arrayBuffer();
 
-    // Upload to Supabase bucket
+    // 3. מייצרים שם קובץ ותיקייה מתאימה
+    const ext = uri.split('.').pop() || 'jpg';
+    const fileName = `${Date.now()}.${ext}`;
+    const filePath = `${folder}/${fileName}`;
+
+    // 4. מעלים ל-bucket בשם studybuddy-files
     const { data, error } = await supabase.storage
       .from('studybuddy-files')
-      .upload(fileName, Buffer.from(base64, 'base64'), {
+      .upload(filePath, arrayBuffer, {
         contentType: 'image/jpeg',
+        upsert: false,
       });
 
-    if (error) throw error;
+    if (error) {
+      console.log('Supabase upload error:', error);
+      return null;
+    }
 
-    // Get public URL
+    // 5. מחזירים URL פומבי
     const { data: publicData } = supabase.storage
       .from('studybuddy-files')
-      .getPublicUrl(fileName);
+      .getPublicUrl(filePath);
 
-    return publicData.publicUrl;
-
+    return publicData.publicUrl ?? null;
   } catch (err) {
-    console.log("Upload error:", err);
+    console.log('Upload exception:', err);
     return null;
   }
 }

@@ -1,5 +1,5 @@
 // firebaseConfig.ts
-import { initializeApp } from "firebase/app";
+import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
@@ -12,7 +12,8 @@ const firebaseConfig = {
   appId: "1:984984472268:web:8847d3fd2ee02beec85069"
 };
 
-const app = initializeApp(firebaseConfig);
+const app = !getApps().length ? initializeApp(firebaseConfig) : getApp();
+
 
 export const auth = getAuth(app);
 export const db = getFirestore(app);
