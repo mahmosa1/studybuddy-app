@@ -1,26 +1,25 @@
 // app/(tabs)/admin.tsx
 import { db } from '@/lib/firebaseConfig';
 import {
-    collection,
-    doc,
-    getDocs,
-    query,
-    updateDoc,
-    where,
+  collection,
+  doc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
 } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import {
-    ActivityIndicator,
-    Alert,
-    FlatList,
-    Image,
-    Linking,
-    Modal,
-    Pressable,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  FlatList,
+  Image,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 type UserItem = {
@@ -107,14 +106,6 @@ export default function AdminScreen() {
     }
   };
 
-  // אם בעתיד יהיו גם PDF/קבצים אחרים – נוכל לפתוח אותם בדפדפן
-  const openInBrowser = (url?: string | null) => {
-    if (!url) return;
-    Linking.openURL(url).catch((err) =>
-      console.log('Failed to open link:', err)
-    );
-  };
-
   const openPreview = (url: string) => {
     setPreviewUrl(url);
   };
@@ -125,12 +116,19 @@ export default function AdminScreen() {
 
   const renderItem = ({ item }: { item: UserItem }) => (
     <View style={styles.card}>
+      {/* שורה עליונה – אימייל + אינפו קצר */}
       <Text style={styles.email}>{item.email}</Text>
       <Text style={styles.smallText}>
         {item.fullName ?? 'No name'} · {item.username ?? 'No username'}
       </Text>
       <Text style={styles.smallText}>Role: {item.role}</Text>
 
+      {/* באדג׳ סטטוס */}
+      <View style={styles.statusPill}>
+        <Text style={styles.statusPillText}>Pending approval</Text>
+      </View>
+
+      {/* טקסטים על קבצים */}
       <Text style={styles.smallText}>
         Student card: {item.studentCardUrl ? 'Uploaded' : 'Not uploaded'}
       </Text>
@@ -138,26 +136,7 @@ export default function AdminScreen() {
         Profile picture: {item.profilePictureUrl ? 'Uploaded' : 'Not uploaded'}
       </Text>
 
-      {/* אפשר גם להראות Thumbnails קטנים */}
-      <View style={styles.thumbnailsRow}>
-        {item.studentCardUrl && (
-          <TouchableOpacity onPress={() => openPreview(item.studentCardUrl!)}>
-            <Image
-              source={{ uri: item.studentCardUrl! }}
-              style={styles.thumbnail}
-            />
-          </TouchableOpacity>
-        )}
-        {item.profilePictureUrl && (
-          <TouchableOpacity onPress={() => openPreview(item.profilePictureUrl!)}>
-            <Image
-              source={{ uri: item.profilePictureUrl! }}
-              style={styles.thumbnail}
-            />
-          </TouchableOpacity>
-        )}
-      </View>
-
+      {/* רק כפתורים לראות תמונות – בלי תצוגה ישירה */}
       <View style={styles.linksRow}>
         {item.studentCardUrl && (
           <TouchableOpacity
@@ -175,19 +154,9 @@ export default function AdminScreen() {
             <Text style={styles.linkButtonText}>View Profile Picture</Text>
           </TouchableOpacity>
         )}
-        {/* אם תרצה גם כפתור לפתיחה חיצונית (למשל אם זה PDF): */}
-        {/* 
-        {item.studentCardUrl && (
-          <TouchableOpacity
-            onPress={() => openInBrowser(item.studentCardUrl!)}
-            style={styles.linkButton}
-          >
-            <Text style={styles.linkButtonText}>Open in Browser</Text>
-          </TouchableOpacity>
-        )}
-        */}
       </View>
 
+      {/* כפתורי אישור/דחייה */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={[styles.actionButton, styles.approveButton]}
@@ -224,7 +193,7 @@ export default function AdminScreen() {
       </Text>
 
       {loading ? (
-        <ActivityIndicator style={{ marginTop: 20 }} color="#a855f7" />
+        <ActivityIndicator style={{ marginTop: 20 }} color="#f97316" />
       ) : pendingUsers.length === 0 ? (
         <Text style={styles.emptyText}>No pending users 🎉</Text>
       ) : (
@@ -253,7 +222,10 @@ export default function AdminScreen() {
                 resizeMode="contain"
               />
             )}
-            <TouchableOpacity style={styles.modalCloseButton} onPress={closePreview}>
+            <TouchableOpacity
+              style={styles.modalCloseButton}
+              onPress={closePreview}
+            >
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
           </View>
@@ -264,58 +236,72 @@ export default function AdminScreen() {
 }
 
 const styles = StyleSheet.create({
+  // רקע כללי בהיר
   container: {
     flex: 1,
-    backgroundColor: '#050816',
+    backgroundColor: '#f9fafb',
     paddingHorizontal: 24,
     paddingTop: 60,
   },
   title: {
     fontSize: 22,
     fontWeight: '700',
-    color: 'white',
-    marginBottom: 6,
+    color: '#111827',
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 13,
-    color: '#9ca3af',
+    color: '#4b5563',
     marginBottom: 16,
   },
   emptyText: {
     marginTop: 24,
-    color: '#9ca3af',
+    color: '#6b7280',
     fontSize: 14,
   },
+
+  // כרטיס משתמש – לבן עם צל קל
   card: {
-    backgroundColor: '#111827',
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 12,
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 14,
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e5e7eb',
+    shadowColor: '#000',
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
   },
   email: {
-    color: 'white',
+    color: '#111827',
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   smallText: {
-    color: '#9ca3af',
+    color: '#6b7280',
     fontSize: 12,
     marginTop: 2,
   },
-  thumbnailsRow: {
-    flexDirection: 'row',
-    columnGap: 8,
+
+  // באדג׳ כתום ל־Pending
+  statusPill: {
+    alignSelf: 'flex-start',
     marginTop: 8,
+    marginBottom: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: '#ffedd5',
   },
-  thumbnail: {
-    width: 56,
-    height: 56,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: '#374151',
+  statusPillText: {
+    color: '#f97316',
+    fontSize: 11,
+    fontWeight: '600',
   },
+
+  // כפתורים לצפייה בתמונות
   linksRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -328,22 +314,25 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#4b5563',
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f3e8ff',
   },
   linkButtonText: {
-    color: '#a855f7',
+    color: '#6d28d9',
     fontSize: 12,
     fontWeight: '600',
   },
+
+  // כפתורי Approve / Reject
   actionsRow: {
     flexDirection: 'row',
-    marginTop: 10,
+    marginTop: 14,
     columnGap: 10,
   },
   actionButton: {
     flex: 1,
-    borderRadius: 10,
-    paddingVertical: 8,
+    borderRadius: 999,
+    paddingVertical: 10,
     alignItems: 'center',
   },
   approveButton: {
@@ -353,10 +342,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#ef4444',
   },
   actionText: {
-    color: 'white',
+    color: '#ffffff',
     fontSize: 13,
     fontWeight: '600',
   },
+
+  // מודאל תמונה
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.85)',
@@ -382,7 +373,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 999,
-    backgroundColor: '#a855f7',
+    backgroundColor: '#f97316',
   },
   modalCloseText: {
     color: '#fff',

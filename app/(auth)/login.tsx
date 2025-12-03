@@ -5,16 +5,21 @@ import { doc, getDoc } from 'firebase/firestore';
 import React, { useState } from 'react';
 import {
     ActivityIndicator,
+    Image,
     KeyboardAvoidingView,
     Platform,
     ScrollView,
     StyleSheet,
     Text,
     TextInput,
-    TouchableOpacity
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 import { auth, db } from '@/lib/firebaseConfig';
+// אם הנתיב הזה לא עובד לך, תוכל להשתמש במקום זה:
+// import Logo from '../../assets/studybuddy-logo.png';
+import Logo from '../../assets/studybuddy-logo.png';
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -37,7 +42,11 @@ export default function LoginScreen() {
       setLoading(true);
 
       // 1) Login with Firebase Auth
-      const cred = await signInWithEmailAndPassword(auth, email.trim(), password);
+      const cred = await signInWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
       const uid = cred.user.uid;
 
       // 2) Load user document from Firestore
@@ -45,7 +54,6 @@ export default function LoginScreen() {
       const snap = await getDoc(userRef);
 
       if (!snap.exists()) {
-        // User exists in Auth but not in DB – treat as error
         await signOut(auth);
         setError('User data not found. Please contact support.');
         return;
@@ -58,7 +66,6 @@ export default function LoginScreen() {
 
       // 3) Check status
       if (userData.status === 'pending') {
-        // Send to pending screen
         router.replace('/(auth)/pending-approval');
         return;
       }
@@ -69,8 +76,7 @@ export default function LoginScreen() {
         return;
       }
 
-      // 4) Route by role (for now all go to (tabs) – later we will
-      // split student / lecturer navigation)
+      // 4) Route by role (בינתיים כולם ל-(tabs))
       if (userData.role === 'student') {
         router.replace('/(tabs)');
       } else if (userData.role === 'lecturer') {
@@ -88,50 +94,65 @@ export default function LoginScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1 }}
+      style={{ flex: 1, backgroundColor: '#f3f4f6' }}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Welcome back</Text>
-        <Text style={styles.subtitle}>Login to your StudyBuddy account</Text>
+        {/* Header with logo */}
+        <View style={styles.header}>
+          <Image source={Logo} style={styles.logo} />
+          <Text style={styles.appName}>StudyBuddy</Text>
+          <Text style={styles.appTagline}>
+            Your smart companion for better studying
+          </Text>
+        </View>
 
-        <Text style={styles.label}>Email</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="example@student.com"
-          placeholderTextColor="#6b7280"
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-        />
+        {/* Card with form */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Welcome back</Text>
+          <Text style={styles.cardSubtitle}>
+            Login to your StudyBuddy account
+          </Text>
 
-        <Text style={styles.label}>Password</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="Your password"
-          placeholderTextColor="#6b7280"
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-        />
+          <Text style={styles.label}>Email</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="example@student.com"
+            placeholderTextColor="#9ca3af"
+            value={email}
+            onChangeText={setEmail}
+            keyboardType="email-address"
+            autoCapitalize="none"
+          />
 
-        {error && <Text style={styles.errorText}>{error}</Text>}
+          <Text style={styles.label}>Password</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Your password"
+            placeholderTextColor="#9ca3af"
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+          />
 
-        <TouchableOpacity
-          style={[styles.button, loading && { opacity: 0.7 }]}
-          onPress={handleLogin}
-          disabled={loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.buttonText}>Login</Text>
-          )}
-        </TouchableOpacity>
+          {error && <Text style={styles.errorText}>{error}</Text>}
+
+          <TouchableOpacity
+            style={[styles.button, loading && { opacity: 0.7 }]}
+            onPress={handleLogin}
+            disabled={loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.buttonText}>Login</Text>
+            )}
+          </TouchableOpacity>
+        </View>
 
         <TouchableOpacity
           onPress={() => router.push('/(auth)/register-role')}
@@ -147,66 +168,101 @@ export default function LoginScreen() {
   );
 }
 
+const ORANGE = '#f97316'; // צבע מרכזי – כמו הלוגו
+
 const styles = StyleSheet.create({
   container: {
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 80,
     paddingBottom: 40,
-    backgroundColor: '#050816',
+    alignItems: 'center',
   },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: 'white',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#9ca3af',
+  header: {
+    alignItems: 'center',
     marginBottom: 32,
   },
-  label: {
+  logo: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    marginBottom: 12,
+  },
+  appName: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  appTagline: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginTop: 4,
+  },
+  card: {
+    width: '100%',
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    // צל עדין
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.08,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  cardTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  cardSubtitle: {
     fontSize: 13,
-    color: '#e5e7eb',
+    color: '#6b7280',
+    marginBottom: 20,
+  },
+  label: {
+    fontSize: 12,
+    color: '#4b5563',
     marginBottom: 4,
     marginTop: 10,
   },
   input: {
-    backgroundColor: '#111827',
+    backgroundColor: '#f9fafb',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: 'white',
+    color: '#111827',
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#e5e7eb',
   },
   button: {
     marginTop: 24,
-    backgroundColor: '#4f46e5',
+    backgroundColor: ORANGE,
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
   },
   buttonText: {
-    color: 'white',
+    color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
   },
   linkWrapper: {
-    marginTop: 24,
-    alignItems: 'center',
+    marginTop: 18,
   },
   linkText: {
-    color: '#9ca3af',
+    color: '#6b7280',
+    fontSize: 13,
   },
   linkTextBold: {
-    color: '#a855f7',
+    color: ORANGE,
     fontWeight: '600',
   },
   errorText: {
     marginTop: 10,
-    color: '#f97373',
+    color: '#dc2626',
     fontSize: 13,
   },
 });

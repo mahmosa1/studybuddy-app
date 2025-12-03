@@ -2,14 +2,25 @@
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
-    KeyboardAvoidingView,
-    Platform,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity
+  ActivityIndicator,
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
+
+import * as ImagePicker from 'expo-image-picker';
+import { createUserWithEmailAndPassword } from 'firebase/auth';
+import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+
+import { auth, db } from '@/lib/firebaseConfig';
+import { uploadImageToSupabase } from '@/lib/upload';
 
 export default function RegisterLecturerScreen() {
   const router = useRouter();
@@ -23,34 +34,127 @@ export default function RegisterLecturerScreen() {
   const [institution, setInstitution] = useState('');
   const [department, setDepartment] = useState('');
 
-  const handleSubmit = () => {
+  const [lecturerIdUrl, setLecturerIdUrl] = useState<string | null>(null);
+  const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
+
+  const [uploadingId, setUploadingId] = useState(false);
+  const [uploadingProfile, setUploadingProfile] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const pickAndUploadImage = async (type: 'id' | 'profile') => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        'Permission required',
+        'We need access to your gallery to upload images.'
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+
+    if (type === 'id') setUploadingId(true);
+    else setUploadingProfile(true);
+
+    try {
+      const folder =
+        type === 'id' ? 'lecturer-ids' : 'lecturer-profile-pictures';
+
+      const url = await uploadImageToSupabase(uri, folder as any);
+      if (!url) {
+        Alert.alert('Upload failed', 'Could not upload image. Please try again.');
+        return;
+      }
+
+      if (type === 'id') setLecturerIdUrl(url);
+      else setProfilePictureUrl(url);
+    } catch (err) {
+      console.log('Lecturer image upload error:', err);
+      Alert.alert('Error', 'Unexpected error while uploading image.');
+    } finally {
+      if (type === 'id') setUploadingId(false);
+      else setUploadingProfile(false);
+    }
+  };
+
+  const handleSubmit = async () => {
     if (!email || !password || !username) {
-      console.log('Missing required fields');
+      Alert.alert(
+        'Missing fields',
+        'Username, email and password are required.'
+      );
       return;
     }
 
     if (password !== confirmPassword) {
-      console.log('Passwords do not match');
+      Alert.alert('Password mismatch', 'Passwords do not match.');
       return;
     }
 
-    const payload = {
-      role: 'lecturer',
-      username,
-      fullName,
-      email,
-      phone,
-      institution,
-      department,
-      // בשלב מאוחר יותר נוסיף כאן: lecturerIdUrl, profileImageUrl
-    };
+    if (!institution) {
+      Alert.alert('Institution required', 'Please fill where you teach.');
+      return;
+    }
 
-    console.log('Lecturer register data:', payload);
+    if (!lecturerIdUrl) {
+      Alert.alert(
+        'Lecturer ID required',
+        'Please upload your lecturer ID before continuing.'
+      );
+      return;
+    }
 
-    // בהמשך:
-    // 1. Firebase Auth – יצירת משתמש
-    // 2. Firestore – users collection (status: "pending")
-    // 3. Supabase Storage – upload lecturer ID + profile picture
+    try {
+      setLoading(true);
+
+      // 1) Firebase Auth
+      const cred = await createUserWithEmailAndPassword(
+        auth,
+        email.trim(),
+        password
+      );
+      const uid = cred.user.uid;
+
+      // 2) Firestore – users collection
+      await setDoc(doc(db, 'users', uid), {
+        uid,
+        role: 'lecturer',
+        status: 'pending', // עד שהאדמין יאשר
+        username,
+        fullName,
+        email,
+        phone,
+        institution,
+        department,
+        lecturerIdUrl,
+        profilePictureUrl,
+        createdAt: serverTimestamp(),
+      });
+
+      Alert.alert(
+        'Registration complete',
+        'Your lecturer account is pending admin approval.',
+        [
+          {
+            text: 'OK',
+            onPress: () => router.replace('/(auth)/pending-approval'),
+          },
+        ]
+      );
+    } catch (err: any) {
+      console.log('Register lecturer error:', err);
+      Alert.alert('Error', err?.message ?? 'Something went wrong');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -71,7 +175,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="Choose a unique username"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={username}
           onChangeText={setUsername}
         />
@@ -80,7 +184,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="Your full name"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={fullName}
           onChangeText={setFullName}
         />
@@ -89,7 +193,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="example@university.com"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={email}
           onChangeText={setEmail}
           keyboardType="email-address"
@@ -100,7 +204,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="Enter a strong password"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={password}
           onChangeText={setPassword}
           secureTextEntry
@@ -110,7 +214,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="Repeat your password"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={confirmPassword}
           onChangeText={setConfirmPassword}
           secureTextEntry
@@ -120,7 +224,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="+972 ..."
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={phone}
           onChangeText={setPhone}
           keyboardType="phone-pad"
@@ -130,7 +234,7 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="Where do you teach?"
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={institution}
           onChangeText={setInstitution}
         />
@@ -139,30 +243,70 @@ export default function RegisterLecturerScreen() {
         <TextInput
           style={styles.input}
           placeholder="Computer Science, Law, etc."
-          placeholderTextColor="#6b7280"
+          placeholderTextColor="#9CA3AF"
           value={department}
           onChangeText={setDepartment}
         />
 
-        {/* כפתורים להעלאת תעודת מרצה ותמונת פרופיל – סופבייס בהמשך */}
+        {/* Lecturer ID */}
         <Text style={styles.label}>Upload Lecturer ID *</Text>
         <TouchableOpacity
           style={styles.uploadButton}
-          onPress={() => console.log('TODO: pick lecturer ID file')}
+          onPress={() => pickAndUploadImage('id')}
+          disabled={uploadingId}
         >
-          <Text style={styles.uploadText}>Upload Lecturer ID</Text>
+          {uploadingId ? (
+            <ActivityIndicator color="#F97316" />
+          ) : (
+            <Text style={styles.uploadText}>
+              {lecturerIdUrl ? 'Lecturer ID Uploaded ✓' : 'Upload Lecturer ID'}
+            </Text>
+          )}
         </TouchableOpacity>
 
+        {lecturerIdUrl && (
+          <View style={{ marginTop: 8 }}>
+            <Image source={{ uri: lecturerIdUrl }} style={styles.preview} />
+          </View>
+        )}
+
+        {/* Profile picture */}
         <Text style={styles.label}>Profile Picture (Optional)</Text>
         <TouchableOpacity
           style={styles.uploadButton}
-          onPress={() => console.log('TODO: pick lecturer profile image')}
+          onPress={() => pickAndUploadImage('profile')}
+          disabled={uploadingProfile}
         >
-          <Text style={styles.uploadText}>Upload Profile Picture</Text>
+          {uploadingProfile ? (
+            <ActivityIndicator color="#F97316" />
+          ) : (
+            <Text style={styles.uploadText}>
+              {profilePictureUrl
+                ? 'Profile Picture Uploaded ✓'
+                : 'Upload Profile Picture'}
+            </Text>
+          )}
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.submitButton} onPress={handleSubmit}>
-          <Text style={styles.submitText}>Continue</Text>
+        {profilePictureUrl && (
+          <View style={{ marginTop: 8 }}>
+            <Image
+              source={{ uri: profilePictureUrl }}
+              style={styles.previewSmall}
+            />
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.submitButton, loading && { opacity: 0.7 }]}
+          onPress={handleSubmit}
+          disabled={loading || uploadingId}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" />
+          ) : (
+            <Text style={styles.submitText}>Continue</Text>
+          )}
         </TouchableOpacity>
 
         <TouchableOpacity
@@ -182,50 +326,62 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 60,
     paddingBottom: 40,
-    backgroundColor: '#050816',
+    backgroundColor: '#F5F5F7',
   },
   title: {
     fontSize: 26,
     fontWeight: '700',
-    color: 'white',
+    color: '#111827',
     marginBottom: 6,
   },
   subtitle: {
     fontSize: 14,
-    color: '#9ca3af',
+    color: '#6B7280',
     marginBottom: 24,
   },
   label: {
     fontSize: 13,
-    color: '#e5e7eb',
+    color: '#374151',
     marginBottom: 4,
     marginTop: 10,
   },
   input: {
-    backgroundColor: '#111827',
+    backgroundColor: '#F3F4F6',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: 'white',
+    color: '#111827',
     borderWidth: 1,
-    borderColor: '#1f2937',
+    borderColor: '#E5E7EB',
   },
   uploadButton: {
-    backgroundColor: '#1f2937',
+    backgroundColor: '#FFF7ED',
     borderRadius: 10,
     paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 6,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    marginTop: 4,
   },
   uploadText: {
-    color: '#a855f7',
+    color: '#F97316',
     fontWeight: '600',
+  },
+  preview: {
+    width: '100%',
+    height: 180,
+    borderRadius: 10,
+  },
+  previewSmall: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
   submitButton: {
     marginTop: 24,
-    backgroundColor: '#7c3aed',
+    backgroundColor: '#F97316',
     paddingVertical: 14,
-    borderRadius: 12,
+    borderRadius: 999,
     alignItems: 'center',
   },
   submitText: {
@@ -237,6 +393,6 @@ const styles = StyleSheet.create({
     marginTop: 18,
   },
   backText: {
-    color: '#a855f7',
+    color: '#ff8a00',
   },
 });
