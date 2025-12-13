@@ -6,6 +6,7 @@ import 'react-native-reanimated';
 import 'react-native-url-polyfill/auto';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import '@/lib/i18n'; // Initialize i18n
 import { UserProvider } from '@/lib/UserContext';
 
 export const unstable_settings = {

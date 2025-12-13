@@ -1,5 +1,6 @@
 // app/(tabs)/admin.tsx
 import { db } from '@/lib/firebaseConfig';
+import { Ionicons } from '@expo/vector-icons';
 import {
   collection,
   doc,
@@ -9,17 +10,19 @@ import {
   where,
 } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Image,
   Modal,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 type UserItem = {
@@ -30,16 +33,23 @@ type UserItem = {
   role: string;
   status: string;
   studentCardUrl?: string | null;
+  lecturerIdUrl?: string | null;
   profilePictureUrl?: string | null;
 };
 
 export default function AdminScreen() {
+  const { t } = useTranslation();
   const [pendingUsers, setPendingUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
 
   // לתצוגת תמונה במודאל
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  
+  // Rejection modal state
+  const [rejectModalVisible, setRejectModalVisible] = useState(false);
+  const [rejectingUid, setRejectingUid] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState('');
 
   const loadPendingUsers = async () => {
     try {
@@ -59,6 +69,7 @@ export default function AdminScreen() {
           role: data.role,
           status: data.status,
           studentCardUrl: data.studentCardUrl,
+          lecturerIdUrl: data.lecturerIdUrl,
           profilePictureUrl: data.profilePictureUrl,
         });
       });
@@ -85,22 +96,40 @@ export default function AdminScreen() {
       setPendingUsers((prev) => prev.filter((u) => u.uid !== uid));
     } catch (err) {
       console.log('Approve error:', err);
-      Alert.alert('Error', 'Failed to approve user');
+      Alert.alert(t('common.error'), t('admin.failedToApprove'));
     } finally {
       setUpdatingUid(null);
     }
   };
 
-  const handleReject = async (uid: string) => {
+  const openRejectModal = (uid: string) => {
+    setRejectingUid(uid);
+    setRejectionReason('');
+    setRejectModalVisible(true);
+  };
+
+  const handleReject = async () => {
+    if (!rejectingUid) return;
+    
+    if (!rejectionReason.trim()) {
+      Alert.alert(t('common.error'), t('admin.enterReason'));
+      return;
+    }
+
     try {
-      setUpdatingUid(uid);
-      await updateDoc(doc(db, 'users', uid), {
+      setUpdatingUid(rejectingUid);
+      await updateDoc(doc(db, 'users', rejectingUid), {
         status: 'rejected',
+        rejectionReason: rejectionReason.trim(),
+        rejectedAt: new Date().toISOString(),
       });
-      setPendingUsers((prev) => prev.filter((u) => u.uid !== uid));
+      setPendingUsers((prev) => prev.filter((u) => u.uid !== rejectingUid));
+      setRejectModalVisible(false);
+      setRejectingUid(null);
+      setRejectionReason('');
     } catch (err) {
       console.log('Reject error:', err);
-      Alert.alert('Error', 'Failed to reject user');
+      Alert.alert(t('common.error'), t('admin.failedToReject'));
     } finally {
       setUpdatingUid(null);
     }
@@ -116,47 +145,100 @@ export default function AdminScreen() {
 
   const renderItem = ({ item }: { item: UserItem }) => (
     <View style={styles.card}>
-      {/* שורה עליונה – אימייל + אינפו קצר */}
-      <Text style={styles.email}>{item.email}</Text>
-      <Text style={styles.smallText}>
-        {item.fullName ?? 'No name'} · {item.username ?? 'No username'}
-      </Text>
-      <Text style={styles.smallText}>Role: {item.role}</Text>
+      {/* Header with profile picture */}
+      <View style={styles.cardHeader}>
+        {item.profilePictureUrl ? (
+          <Image
+            source={{ uri: item.profilePictureUrl }}
+            style={styles.profileImage}
+          />
+        ) : (
+          <View style={styles.profilePlaceholder}>
+            <Ionicons
+              name={item.role === 'lecturer' ? 'person' : 'school'}
+              size={24}
+              color="#6b7280"
+            />
+          </View>
+        )}
+        <View style={styles.userInfo}>
+          <Text style={styles.email}>{item.email}</Text>
+          <Text style={styles.smallText}>
+            {item.fullName ?? t('admin.noName')} · {item.username ?? t('admin.noUsername')}
+          </Text>
+          <View style={styles.roleBadge}>
+            <Ionicons
+              name={item.role === 'lecturer' ? 'person' : 'school'}
+              size={12}
+              color="#ffffff"
+            />
+            <Text style={styles.roleText}>{t(`auth.${item.role}`)}</Text>
+          </View>
+        </View>
+      </View>
 
-      {/* באדג׳ סטטוס */}
+      {/* Status badge */}
       <View style={styles.statusPill}>
-        <Text style={styles.statusPillText}>Pending approval</Text>
+        <Ionicons name="time-outline" size={12} color={ACCENT_GREEN} />
+        <Text style={styles.statusPillText}>{t('admin.pendingApproval')}</Text>
       </View>
 
-      {/* טקסטים על קבצים */}
-      <Text style={styles.smallText}>
-        Student card: {item.studentCardUrl ? 'Uploaded' : 'Not uploaded'}
-      </Text>
-      <Text style={styles.smallText}>
-        Profile picture: {item.profilePictureUrl ? 'Uploaded' : 'Not uploaded'}
-      </Text>
-
-      {/* רק כפתורים לראות תמונות – בלי תצוגה ישירה */}
-      <View style={styles.linksRow}>
-        {item.studentCardUrl && (
-          <TouchableOpacity
-            onPress={() => openPreview(item.studentCardUrl!)}
-            style={styles.linkButton}
-          >
-            <Text style={styles.linkButtonText}>View Student Card</Text>
-          </TouchableOpacity>
-        )}
-        {item.profilePictureUrl && (
-          <TouchableOpacity
-            onPress={() => openPreview(item.profilePictureUrl!)}
-            style={styles.linkButton}
-          >
-            <Text style={styles.linkButtonText}>View Profile Picture</Text>
-          </TouchableOpacity>
-        )}
+      {/* Documents section */}
+      <View style={styles.documentsSection}>
+        <Text style={styles.documentsTitle}>{t('admin.documents')}</Text>
+        <View style={styles.documentsList}>
+          {item.role === 'student' ? (
+            <View style={styles.documentItem}>
+              <Ionicons name="card-outline" size={16} color="#6b7280" />
+              <Text style={styles.documentText}>
+                {t('admin.studentCard')}: {item.studentCardUrl ? t('admin.uploaded') : t('admin.missing')}
+              </Text>
+              {item.studentCardUrl && (
+                <TouchableOpacity
+                  onPress={() => openPreview(item.studentCardUrl!)}
+                  style={styles.viewButton}
+                >
+                  <Ionicons name="eye-outline" size={14} color={ACCENT_GREEN} />
+                  <Text style={styles.viewButtonText}>{t('admin.view')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : item.role === 'lecturer' ? (
+            <View style={styles.documentItem}>
+              <Ionicons name="id-card-outline" size={16} color="#6b7280" />
+              <Text style={styles.documentText}>
+                {t('admin.lecturerID')}: {item.lecturerIdUrl ? t('admin.uploaded') : t('admin.missing')}
+              </Text>
+              {item.lecturerIdUrl && (
+                <TouchableOpacity
+                  onPress={() => openPreview(item.lecturerIdUrl!)}
+                  style={styles.viewButton}
+                >
+                  <Ionicons name="eye-outline" size={14} color={ACCENT_GREEN} />
+                  <Text style={styles.viewButtonText}>{t('admin.view')}</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          ) : null}
+          <View style={styles.documentItem}>
+            <Ionicons name="image-outline" size={16} color="#6b7280" />
+            <Text style={styles.documentText}>
+              {t('admin.profilePicture')}: {item.profilePictureUrl ? t('admin.uploaded') : t('admin.missing')}
+            </Text>
+            {item.profilePictureUrl && (
+              <TouchableOpacity
+                onPress={() => openPreview(item.profilePictureUrl!)}
+                style={styles.viewButton}
+              >
+                <Ionicons name="eye-outline" size={14} color={ACCENT_GREEN} />
+                <Text style={styles.viewButtonText}>{t('admin.view')}</Text>
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
       </View>
 
-      {/* כפתורי אישור/דחייה */}
+      {/* Action buttons */}
       <View style={styles.actionsRow}>
         <TouchableOpacity
           style={[styles.actionButton, styles.approveButton]}
@@ -166,20 +248,20 @@ export default function AdminScreen() {
           {updatingUid === item.uid ? (
             <ActivityIndicator color="#ffffff" />
           ) : (
-            <Text style={styles.actionText}>Approve</Text>
+            <>
+              <Ionicons name="checkmark-circle-outline" size={18} color="#ffffff" />
+              <Text style={styles.actionText}>{t('admin.approve')}</Text>
+            </>
           )}
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, styles.rejectButton]}
-          onPress={() => handleReject(item.uid)}
+          onPress={() => openRejectModal(item.uid)}
           disabled={updatingUid === item.uid}
         >
-          {updatingUid === item.uid ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.actionText}>Reject</Text>
-          )}
+          <Ionicons name="close-circle-outline" size={18} color="#ffffff" />
+          <Text style={styles.actionText}>{t('admin.reject')}</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -187,23 +269,38 @@ export default function AdminScreen() {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Admin Panel</Text>
-      <Text style={styles.subtitle}>
-        Pending users (students / lecturers) waiting for approval.
-      </Text>
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <Ionicons name="shield-checkmark" size={32} color="#ffffff" />
+          <Text style={styles.headerTitle}>{t('admin.title')}</Text>
+          <Text style={styles.headerSubtitle}>
+            {t('admin.reviewPendingRegistrations')}
+          </Text>
+        </View>
 
-      {loading ? (
-        <ActivityIndicator style={{ marginTop: 20 }} color="#f97316" />
-      ) : pendingUsers.length === 0 ? (
-        <Text style={styles.emptyText}>No pending users 🎉</Text>
-      ) : (
-        <FlatList
-          data={pendingUsers}
-          keyExtractor={(item) => item.uid}
-          renderItem={renderItem}
-          contentContainerStyle={{ paddingTop: 16, paddingBottom: 24 }}
-        />
-      )}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={PRIMARY_GREEN} />
+            <Text style={styles.loadingText}>{t('admin.loadingPendingUsers')}</Text>
+          </View>
+        ) : pendingUsers.length === 0 ? (
+          <View style={styles.emptyState}>
+            <Ionicons name="checkmark-circle" size={64} color="#22c55e" />
+            <Text style={styles.emptyTitle}>{t('admin.noPendingUsers')}</Text>
+            <Text style={styles.emptyText}>{t('admin.allUsersReviewed')}</Text>
+          </View>
+        ) : (
+          <View style={styles.usersList}>
+            {pendingUsers.map((item) => (
+              <View key={item.uid}>{renderItem({ item })}</View>
+            ))}
+          </View>
+        )}
+      </ScrollView>
 
       {/* Modal לתצוגת תמונה מלאה */}
       <Modal
@@ -226,8 +323,72 @@ export default function AdminScreen() {
               style={styles.modalCloseButton}
               onPress={closePreview}
             >
+              <Ionicons name="close" size={18} color="#ffffff" style={{ marginRight: 6 }} />
               <Text style={styles.modalCloseText}>Close</Text>
             </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Rejection Reason Modal */}
+      <Modal
+        visible={rejectModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => {
+          setRejectModalVisible(false);
+          setRejectingUid(null);
+          setRejectionReason('');
+        }}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.rejectModalContent}>
+            <View style={styles.rejectModalHeader}>
+              <Ionicons name="close-circle" size={24} color="#ef4444" />
+              <Text style={styles.rejectModalTitle}>{t('admin.rejectUser')}</Text>
+            </View>
+            <Text style={styles.rejectModalSubtitle}>
+              {t('admin.rejectUserSubtitle')}
+            </Text>
+            
+            <Text style={styles.rejectModalLabel}>{t('admin.rejectionReason')} *</Text>
+            <TextInput
+              style={styles.rejectModalInput}
+              placeholder={t('admin.rejectionReasonPlaceholder')}
+              placeholderTextColor="#6b7280"
+              value={rejectionReason}
+              onChangeText={setRejectionReason}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
+
+            <View style={styles.rejectModalButtons}>
+              <TouchableOpacity
+                style={[styles.rejectModalButton, styles.rejectModalCancelButton]}
+                onPress={() => {
+                  setRejectModalVisible(false);
+                  setRejectingUid(null);
+                  setRejectionReason('');
+                }}
+              >
+                <Text style={styles.rejectModalCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.rejectModalButton, styles.rejectModalConfirmButton]}
+                onPress={handleReject}
+                disabled={updatingUid === rejectingUid}
+              >
+                {updatingUid === rejectingUid ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <>
+                    <Ionicons name="close-circle" size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                    <Text style={styles.rejectModalConfirmText}>{t('admin.rejectUser')}</Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
       </Modal>
@@ -235,148 +396,371 @@ export default function AdminScreen() {
   );
 }
 
+const PRIMARY_GREEN = '#047857';
+const ACCENT_GREEN = '#047857';
+const GREY = '#4b5563';
+const GREY_LIGHT = '#374151';
+
 const styles = StyleSheet.create({
-  // רקע כללי בהיר
   container: {
     flex: 1,
     backgroundColor: '#f9fafb',
-    paddingHorizontal: 24,
-    paddingTop: 60,
   },
-  title: {
-    fontSize: 22,
+  scrollContent: {
+    paddingBottom: 40,
+  },
+  header: {
+    backgroundColor: PRIMARY_GREEN,
+    paddingTop: 80,
+    paddingBottom: 40,
+    alignItems: 'center',
+    borderBottomLeftRadius: 40,
+    borderBottomRightRadius: 40,
+    marginBottom: -60,
+    shadowColor: PRIMARY_GREEN,
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 16,
+    overflow: 'hidden',
+  },
+  headerTitle: {
+    fontSize: 36,
+    fontWeight: '900',
+    color: '#ffffff',
+    marginTop: 12,
+    marginBottom: 6,
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0, 0, 0, 0.1)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#ffffff',
+    opacity: 0.95,
+    textAlign: 'center',
+    paddingHorizontal: 20,
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  loadingContainer: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    marginTop: 20,
+  },
+  loadingText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  emptyState: {
+    alignItems: 'center',
+    paddingVertical: 60,
+    marginTop: 20,
+    marginHorizontal: 20,
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  emptyTitle: {
+    fontSize: 20,
     fontWeight: '700',
     color: '#111827',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 13,
-    color: '#4b5563',
-    marginBottom: 16,
+    marginTop: 16,
+    marginBottom: 8,
   },
   emptyText: {
-    marginTop: 24,
-    color: '#6b7280',
     fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+  },
+  usersList: {
+    paddingHorizontal: 20,
+    paddingTop: 20,
   },
 
-  // כרטיס משתמש – לבן עם צל קל
   card: {
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 14,
+    borderRadius: 20,
+    padding: 20,
+    marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#374151',
     shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    elevation: 3,
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  profileImage: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: PRIMARY_GREEN,
+  },
+  profilePlaceholder: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+    borderWidth: 2,
+    borderColor: '#374151',
+  },
+  userInfo: {
+    flex: 1,
   },
   email: {
     color: '#111827',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '700',
+    marginBottom: 4,
   },
   smallText: {
     color: '#6b7280',
-    fontSize: 12,
-    marginTop: 2,
-  },
-
-  // באדג׳ כתום ל־Pending
-  statusPill: {
-    alignSelf: 'flex-start',
-    marginTop: 8,
+    fontSize: 13,
     marginBottom: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    backgroundColor: '#ffedd5',
   },
-  statusPillText: {
-    color: '#f97316',
-    fontSize: 11,
-    fontWeight: '600',
+  roleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    backgroundColor: PRIMARY_GREEN,
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 4,
+  },
+  roleText: {
+    color: '#ffffff',
+    fontSize: 10,
+    fontWeight: '700',
+    marginLeft: 4,
   },
 
-  // כפתורים לצפייה בתמונות
-  linksRow: {
+  statusPill: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 10,
-    columnGap: 8,
-    rowGap: 4,
-  },
-  linkButton: {
-    paddingHorizontal: 10,
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    marginBottom: 16,
+    paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
+    backgroundColor: '#dbeafe',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#f3e8ff',
+    borderColor: PRIMARY_GREEN,
   },
-  linkButtonText: {
-    color: '#6d28d9',
+  statusPillText: {
+    color: PRIMARY_GREEN,
     fontSize: 12,
     fontWeight: '600',
+    marginLeft: 6,
+  },
+  documentsSection: {
+    marginBottom: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#374151',
+  },
+  documentsTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 12,
+  },
+  documentsList: {
+    gap: 10,
+  },
+  documentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 10,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  documentText: {
+    flex: 1,
+    fontSize: 13,
+    color: '#374151',
+    marginLeft: 10,
+  },
+  viewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#dbeafe',
+    borderWidth: 1,
+    borderColor: PRIMARY_GREEN,
+  },
+  viewButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: PRIMARY_GREEN,
+    marginLeft: 4,
   },
 
-  // כפתורי Approve / Reject
   actionsRow: {
     flexDirection: 'row',
-    marginTop: 14,
-    columnGap: 10,
+    marginTop: 8,
+    gap: 12,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: '#374151',
   },
   actionButton: {
     flex: 1,
-    borderRadius: 999,
-    paddingVertical: 10,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingVertical: 14,
+    gap: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   approveButton: {
-    backgroundColor: '#22c55e',
+    backgroundColor: ACCENT_GREEN,
   },
   rejectButton: {
-    backgroundColor: '#ef4444',
+    backgroundColor: GREY,
   },
   actionText: {
     color: '#ffffff',
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
   },
 
-  // מודאל תמונה
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.85)',
+    backgroundColor: 'rgba(0,0,0,0.9)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   modalContent: {
-    width: '90%',
-    maxHeight: '80%',
-    borderRadius: 16,
-    backgroundColor: '#020617',
-    padding: 12,
+    width: '95%',
+    maxHeight: '90%',
+    borderRadius: 20,
+    backgroundColor: '#000000',
+    padding: 16,
     alignItems: 'center',
   },
   modalImage: {
     width: '100%',
-    height: 350,
+    height: 400,
     borderRadius: 12,
-    backgroundColor: '#000',
+    backgroundColor: '#1a1a1a',
   },
   modalCloseButton: {
-    marginTop: 10,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 999,
-    backgroundColor: '#f97316',
+    marginTop: 16,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: PRIMARY_GREEN,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   modalCloseText: {
-    color: '#fff',
+    color: '#ffffff',
     fontWeight: '600',
+    fontSize: 15,
+  },
+  rejectModalContent: {
+    width: '90%',
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    padding: 24,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  rejectModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  rejectModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+    marginLeft: 10,
+  },
+  rejectModalSubtitle: {
+    fontSize: 14,
+    color: '#6b7280',
+    marginBottom: 20,
+    lineHeight: 20,
+  },
+  rejectModalLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  rejectModalInput: {
+    backgroundColor: '#f9fafb',
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#374151',
+    fontSize: 15,
+    color: '#111827',
+    minHeight: 100,
+    textAlignVertical: 'top',
+    marginBottom: 20,
+  },
+  rejectModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  rejectModalButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 12,
+    paddingVertical: 14,
+  },
+  rejectModalCancelButton: {
+    backgroundColor: '#374151',
+    borderWidth: 1,
+    borderColor: '#374151',
+  },
+  rejectModalConfirmButton: {
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  rejectModalCancelText: {
+    color: '#4b5563',
+    fontWeight: '600',
+    fontSize: 15,
+  },
+  rejectModalConfirmText: {
+    color: '#ffffff',
+    fontWeight: '600',
+    fontSize: 15,
   },
 });

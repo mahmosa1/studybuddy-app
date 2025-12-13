@@ -1,6 +1,8 @@
 // app/(auth)/register-student.tsx
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -24,6 +26,7 @@ import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
 
 export default function RegisterStudentScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
 
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
@@ -160,178 +163,250 @@ export default function RegisterStudentScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.screen}
+        contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        <View style={styles.card}>
-          <Text style={styles.title}>Student Registration</Text>
-          <Text style={styles.subtitle}>
-            Fill in your details so we can create your StudyBuddy account.
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButtonHeader}
+            onPress={() => router.back()}
+          >
+            <Ionicons name="arrow-back" size={24} color="#ffffff" />
+          </TouchableOpacity>
+          <View style={styles.logoContainer}>
+            <Ionicons name="school" size={40} color="#ffffff" />
+          </View>
+          <Text style={styles.headerTitle}>{t('auth.studentRegistration')}</Text>
+          <Text style={styles.headerSubtitle}>
+            {t('auth.fillDetails')}
           </Text>
+        </View>
+
+        <View style={styles.card}>
 
           {/* Username */}
-          <Text style={styles.label}>Username *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Choose a unique username"
-            placeholderTextColor="#9ca3af"
-            value={username}
-            onChangeText={setUsername}
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="person-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.username')} *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.usernamePlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={username}
+                onChangeText={setUsername}
+              />
+            </View>
+          </View>
 
           {/* Full name */}
-          <Text style={styles.label}>Full Name</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Your full name"
-            placeholderTextColor="#9ca3af"
-            value={fullName}
-            onChangeText={setFullName}
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="person-circle-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.fullName')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.fullNamePlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={fullName}
+                onChangeText={setFullName}
+              />
+            </View>
+          </View>
 
           {/* Email */}
-          <Text style={styles.label}>Email *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="example@student.com"
-            placeholderTextColor="#9ca3af"
-            value={email}
-            onChangeText={setEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="mail-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.email')} *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.emailPlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+              />
+            </View>
+          </View>
 
           {/* Password */}
-          <Text style={styles.label}>Password *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Enter a strong password"
-            placeholderTextColor="#9ca3af"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="lock-closed-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.password')} *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.passwordPlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+              />
+            </View>
+          </View>
 
           {/* Confirm password */}
-          <Text style={styles.label}>Confirm Password *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Repeat your password"
-            placeholderTextColor="#9ca3af"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            secureTextEntry
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="lock-closed-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.confirmPassword')} *</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.confirmPasswordPlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={confirmPassword}
+                onChangeText={setConfirmPassword}
+                secureTextEntry
+              />
+            </View>
+          </View>
 
           {/* Phone */}
-          <Text style={styles.label}>Phone Number</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="+972 ..."
-            placeholderTextColor="#9ca3af"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="call-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.phoneNumber')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.phonePlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+              />
+            </View>
+          </View>
 
           {/* Institution */}
-          <Text style={styles.label}>University / College</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Where do you study?"
-            placeholderTextColor="#9ca3af"
-            value={institution}
-            onChangeText={setInstitution}
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="business-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.university')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.universityPlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={institution}
+                onChangeText={setInstitution}
+              />
+            </View>
+          </View>
 
           {/* Field of study */}
-          <Text style={styles.label}>Field of Study</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Software Engineering, Law, etc."
-            placeholderTextColor="#9ca3af"
-            value={fieldOfStudy}
-            onChangeText={setFieldOfStudy}
-          />
+          <View style={styles.inputGroup}>
+            <Ionicons name="book-outline" size={18} color="#6b7280" style={styles.inputIcon} />
+            <View style={styles.inputWrapper}>
+              <Text style={styles.label}>{t('auth.fieldOfStudy')}</Text>
+              <TextInput
+                style={styles.input}
+                placeholder={t('auth.fieldOfStudyPlaceholder')}
+                placeholderTextColor="#6b7280"
+                value={fieldOfStudy}
+                onChangeText={setFieldOfStudy}
+              />
+            </View>
+          </View>
 
           {/* Student card */}
-          <Text style={styles.label}>Upload Student Card *</Text>
-          <TouchableOpacity
-            style={[
-              styles.uploadButton,
-              studentCardUrl && styles.uploadButtonFilled,
-            ]}
-            onPress={() => pickAndUploadImage('card')}
-            disabled={uploadingCard}
-          >
-            {uploadingCard ? (
-              <ActivityIndicator color="#ff8a00" />
-            ) : (
-              <Text
-                style={[
-                  styles.uploadText,
-                  studentCardUrl && styles.uploadTextFilled,
-                ]}
-              >
-                {studentCardUrl ? 'Student Card Uploaded ✓' : 'Upload Student Card'}
-              </Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.uploadSection}>
+            <Text style={styles.label}>{t('auth.uploadStudentCard')} *</Text>
+            <TouchableOpacity
+              style={[
+                styles.uploadButton,
+                studentCardUrl && styles.uploadButtonFilled,
+              ]}
+              onPress={() => pickAndUploadImage('card')}
+              disabled={uploadingCard}
+            >
+              {uploadingCard ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={studentCardUrl ? 'checkmark-circle' : 'cloud-upload-outline'}
+                    size={20}
+                    color={studentCardUrl ? '#ffffff' : ACCENT_GREEN}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.uploadText,
+                      studentCardUrl && styles.uploadTextFilled,
+                    ]}
+                  >
+                    {studentCardUrl ? t('auth.studentCardUploaded') : t('auth.uploadStudentCard')}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          {studentCardUrl && (
-            <View style={{ marginTop: 8 }}>
-              <Image source={{ uri: studentCardUrl }} style={styles.preview} />
-            </View>
-          )}
+            {studentCardUrl && (
+              <View style={styles.previewContainer}>
+                <Image source={{ uri: studentCardUrl }} style={styles.preview} />
+              </View>
+            )}
+          </View>
 
           {/* Profile picture */}
-          <Text style={styles.label}>Profile Picture (Optional)</Text>
-          <TouchableOpacity
-            style={[
-              styles.uploadButton,
-              profilePictureUrl && styles.uploadButtonFilled,
-            ]}
-            onPress={() => pickAndUploadImage('profile')}
-            disabled={uploadingProfile}
-          >
-            {uploadingProfile ? (
-              <ActivityIndicator color="#ff8a00" />
-            ) : (
-              <Text
-                style={[
-                  styles.uploadText,
-                  profilePictureUrl && styles.uploadTextFilled,
-                ]}
-              >
-                {profilePictureUrl
-                  ? 'Profile Picture Uploaded ✓'
-                  : 'Upload Profile Picture'}
-              </Text>
-            )}
-          </TouchableOpacity>
+          <View style={styles.uploadSection}>
+            <Text style={styles.label}>{t('auth.profilePicture')} ({t('common.optional')})</Text>
+            <TouchableOpacity
+              style={[
+                styles.uploadButton,
+                profilePictureUrl && styles.uploadButtonFilled,
+              ]}
+              onPress={() => pickAndUploadImage('profile')}
+              disabled={uploadingProfile}
+            >
+              {uploadingProfile ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Ionicons
+                    name={profilePictureUrl ? 'checkmark-circle' : 'image-outline'}
+                    size={20}
+                    color={profilePictureUrl ? '#ffffff' : ACCENT_GREEN}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text
+                    style={[
+                      styles.uploadText,
+                      profilePictureUrl && styles.uploadTextFilled,
+                    ]}
+                  >
+                    {profilePictureUrl
+                      ? t('auth.profilePictureUploaded')
+                      : t('auth.uploadProfilePicture')}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
 
-          {profilePictureUrl && (
-            <View style={{ marginTop: 8, alignItems: 'flex-start' }}>
-              <Image source={{ uri: profilePictureUrl }} style={styles.previewSmall} />
-            </View>
-          )}
+            {profilePictureUrl && (
+              <View style={styles.previewContainer}>
+                <Image source={{ uri: profilePictureUrl }} style={styles.previewSmall} />
+              </View>
+            )}
+          </View>
 
           {/* Submit */}
           <TouchableOpacity
-            style={[styles.submitButton, loading && { opacity: 0.7 }]}
+            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
             onPress={handleSubmit}
             disabled={loading || uploadingCard}
           >
             {loading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.submitText}>Continue</Text>
+              <>
+                <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.submitText}>{t('auth.createAccount')}</Text>
+              </>
             )}
-          </TouchableOpacity>
-
-          {/* Back */}
-          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backText}>← Back to role selection</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -339,71 +414,138 @@ export default function RegisterStudentScreen() {
   );
 }
 
+const PRIMARY_GREEN = '#047857';
+const ACCENT_GREEN = '#047857';
+
 const styles = StyleSheet.create({
-  screen: {
+  scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingVertical: 40,
-    backgroundColor: '#f5f7fb',
+    paddingBottom: 40,
+  },
+  header: {
+    backgroundColor: PRIMARY_GREEN,
+    paddingTop: 60,
+    paddingBottom: 30,
+    alignItems: 'center',
+    borderBottomLeftRadius: 30,
+    borderBottomRightRadius: 30,
+    marginBottom: -30,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
+  },
+  backButtonHeader: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  logoContainer: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: ACCENT_GREEN,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 3,
+    borderColor: '#ffffff',
+    shadowColor: ACCENT_GREEN,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+    marginBottom: 12,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#ffffff',
+    marginBottom: 6,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#ffffff',
+    opacity: 0.9,
+    textAlign: 'center',
+    paddingHorizontal: 20,
   },
   card: {
     backgroundColor: '#ffffff',
+    marginHorizontal: 20,
     borderRadius: 24,
-    paddingHorizontal: 20,
-    paddingVertical: 24,
+    padding: 24,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.1,
     shadowRadius: 16,
-    elevation: 4,
+    elevation: 5,
+    marginTop: 20,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 6,
+  inputGroup: {
+    flexDirection: 'row',
+    marginBottom: 16,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 18,
+  inputIcon: {
+    marginTop: 28,
+    marginRight: 12,
+  },
+  inputWrapper: {
+    flex: 1,
   },
   label: {
     fontSize: 13,
+    fontWeight: '600',
     color: '#374151',
-    marginBottom: 4,
-    marginTop: 10,
+    marginBottom: 6,
   },
   input: {
     backgroundColor: '#f9fafb',
-    borderRadius: 10,
+    borderRadius: 12,
     paddingHorizontal: 14,
-    paddingVertical: 10,
+    paddingVertical: 12,
     color: '#111827',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: '#374151',
+    fontSize: 15,
+  },
+  uploadSection: {
+    marginBottom: 20,
   },
   uploadButton: {
-    marginTop: 4,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#ff8a00',
-    paddingVertical: 10,
+    flexDirection: 'row',
+    marginTop: 8,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: ACCENT_GREEN,
+    paddingVertical: 12,
     paddingHorizontal: 16,
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: '#fff7ec',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
   },
   uploadButtonFilled: {
-    backgroundColor: '#ff8a00',
+    backgroundColor: ACCENT_GREEN,
+    borderColor: ACCENT_GREEN,
   },
   uploadText: {
-    color: '#ff8a00',
+    color: ACCENT_GREEN,
     fontWeight: '600',
-    fontSize: 13,
+    fontSize: 14,
   },
   uploadTextFilled: {
     color: '#ffffff',
+  },
+  previewContainer: {
+    marginTop: 12,
+    borderRadius: 12,
+    overflow: 'hidden',
   },
   preview: {
     width: '100%',
@@ -411,28 +553,32 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   previewSmall: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    borderWidth: 3,
+    borderColor: PRIMARY_GREEN,
   },
   submitButton: {
+    flexDirection: 'row',
     marginTop: 24,
-    backgroundColor: '#ff8a00',
-    paddingVertical: 14,
-    borderRadius: 999,
+    backgroundColor: PRIMARY_GREEN,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: PRIMARY_GREEN,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  submitButtonDisabled: {
+    opacity: 0.7,
   },
   submitText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
-  },
-  backButton: {
-    marginTop: 16,
-  },
-  backText: {
-    color: '#ff8a00',
-    fontSize: 13,
-    fontWeight: '500',
   },
 });
