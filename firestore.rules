@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Users collection - CRITICAL for login flow
+    match /users/{userId} {
+      // Allow authenticated users to read ANY user document (needed for login check)
+      allow read: if isAuthenticated();
+      
+      // Users can create their own document during registration
+      allow create: if isAuthenticated() && 
+        (request.resource.data.uid == request.auth.uid || 
+         request.resource.data.uid == userId);
+      
+      // Users can update their own document
+      allow update: if isAuthenticated() && request.auth.uid == userId;
+      
+      // Allow delete for authenticated users (admin checks in app)
+      allow delete: if isAuthenticated();
+    }
+    
+    // Courses collection
+    match /courses/{courseId} {
+      // Anyone authenticated can read courses
+      allow read: if isAuthenticated();
+      
+      // Users can create courses
+      allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
+      
+      // Only course owner can update/delete
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.ownerUid == request.auth.uid || 
+         request.resource.data.ownerUid == request.auth.uid);
+    }
+    
+    // Course files collection
+    match /courseFiles/{fileId} {
+      // Anyone authenticated can read course files
+      allow read: if isAuthenticated();
+      
+      // Users can create files
+      allow create: if isAuthenticated() && request.resource.data.uploadedBy == request.auth.uid;
+      
+      // Only file owner can update/delete
+      allow update, delete: if isAuthenticated() && 
+        (resource.data.uploadedBy == request.auth.uid ||
+         request.resource.data.uploadedBy == request.auth.uid);
+    }
+    
+    // Appeals collection
+    match /appeals/{appealId} {
+      // Users can read their own appeals, or if they're the user in the appeal
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || !resource.exists);
+      
+      // Users can create appeals for themselves
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Allow update/delete for authenticated users
+      allow update, delete: if isAuthenticated();
+    }
+    
+    // Study buddy preferences collection
+    match /studyBuddyPreferences/{prefId} {
+      // Users can read their own preferences
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || !resource.exists);
+      
+      // Users can create/update their own preferences
+      allow create, update: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Allow delete
+      allow delete: if isAuthenticated();
+    }
+    
+    // Practice sessions collection
+    match /practiceSessions/{sessionId} {
+      // Users can read their own sessions
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || !resource.exists);
+      
+      // Users can create their own sessions
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own sessions
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Allow delete
+      allow delete: if isAuthenticated();
+    }
+    
+    // Practice results collection
+    match /practiceResults/{resultId} {
+      // Users can read their own results
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || !resource.exists);
+      
+      // Users can create their own results
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own results
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Allow delete
+      allow delete: if isAuthenticated();
+    }
+    
+    // Allow all other collections for authenticated users (for future features)
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}
+

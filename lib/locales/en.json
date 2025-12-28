@@ -175,6 +175,13 @@
     "studentSubtitle": "Organize your study materials and track your learning progress."
   },
   "courseDetails": {
+    "noPractice": "Never",
+    "noPracticeData": "No practice data yet. Start practicing to see insights!",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "daysAgo": "{{count}} days ago",
+    "weeksAgo": "{{count}} weeks ago",
+    "monthsAgo": "{{count}} months ago",
     "title": "Course",
     "subtitle": "Manage your study materials and files",
     "manageMaterials": "Manage your study materials and files",

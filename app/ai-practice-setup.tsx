@@ -67,19 +67,90 @@ export default function AIPracticeSetupScreen() {
     loadCourses();
   }, []);
 
-  const handleGenerate = () => {
+  const [generating, setGenerating] = useState(false);
+
+  const handleGenerate = async () => {
     if (!selectedCourseId) {
-      Alert.alert('Error', 'Please select a course');
+      Alert.alert(t('common.error'), t('practice.setup.selectCourseError'));
       return;
     }
 
-    // UI/UX only - backend integration coming soon
     const selectedCourse = courses.find((c) => c.id === selectedCourseId);
-    Alert.alert(
-      'Coming Soon',
-      `AI Practice generation for "${selectedCourse?.name || 'Course'}" will be available soon. This feature is currently in development.`,
-      [{ text: 'OK' }]
-    );
+    if (!selectedCourse) {
+      Alert.alert(t('common.error'), 'Course not found');
+      return;
+    }
+
+    try {
+      setGenerating(true);
+      
+      // Import the AI service
+      const { generatePracticeQuestions } = await import('@/lib/aiService');
+      const { savePracticeSession } = await import('@/lib/practiceService');
+      
+      // Generate questions using AI
+      const questions = await generatePracticeQuestions(
+        selectedCourseId,
+        selectedCourse.name,
+        practiceType,
+        numQuestions
+      );
+
+      if (!questions || questions.length === 0) {
+        Alert.alert(
+          t('common.error'),
+          'Failed to generate questions. Please make sure the course has files uploaded and try again.'
+        );
+        return;
+      }
+
+      // Save the practice session
+      let sessionId: string;
+      try {
+        sessionId = await savePracticeSession(
+          selectedCourseId,
+          selectedCourse.name,
+          practiceType,
+          numQuestions,
+          questions
+        );
+      } catch (saveError: any) {
+        console.error('Error saving session:', saveError);
+        Alert.alert(
+          t('common.error'),
+          'Failed to save practice session. Please try again.'
+        );
+        return;
+      }
+
+      if (!sessionId) {
+        Alert.alert(
+          t('common.error'),
+          'Failed to create practice session. Please try again.'
+        );
+        return;
+      }
+
+      // Navigate to practice test screen with questions
+      router.push({
+        pathname: '/ai-practice-test' as any,
+        params: {
+          sessionId: sessionId,
+          courseId: selectedCourseId,
+          courseName: selectedCourse.name,
+          practiceType: practiceType,
+          numQuestions: numQuestions.toString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('Error generating practice:', error);
+      Alert.alert(
+        t('common.error'),
+        error.message || 'Failed to generate practice questions. Please try again.'
+      );
+    } finally {
+      setGenerating(false);
+    }
   };
 
   if (loading) {
@@ -205,10 +276,18 @@ export default function AIPracticeSetupScreen() {
         </View>
 
         <TouchableOpacity
-          style={[styles.button, styles.primaryButton]}
+          style={[styles.button, styles.primaryButton, generating && styles.buttonDisabled]}
           onPress={handleGenerate}
+          disabled={generating}
         >
-          <Text style={styles.buttonText}>{t('practice.setup.generatePractice')}</Text>
+          {generating ? (
+            <>
+              <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+              <Text style={styles.buttonText}>{t('common.loading')}...</Text>
+            </>
+          ) : (
+            <Text style={styles.buttonText}>{t('practice.setup.generatePractice')}</Text>
+          )}
         </TouchableOpacity>
       </View>
       </ScrollView>
@@ -343,6 +422,9 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     marginBottom: 20,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
 

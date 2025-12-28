@@ -1,41 +1,24 @@
 // app/practice-results.tsx
+import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React from 'react';
+import { collection, getDocs, query, where } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
 import {
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 const PRIMARY_GREEN = '#047857';
 const ACCENT_GREEN = '#10b981';
 
-// Mock weak topics based on score
-const getWeakTopics = (score: number, courseName: string): string[] => {
-  if (score >= 80) {
-    return ['All topics mastered! Keep practicing to maintain your knowledge.'];
-  } else if (score >= 60) {
-    return [
-      'Integration by Parts',
-      'Time Complexity Analysis',
-    ];
-  } else {
-    return [
-      'Integration by Parts',
-      'Eigenvalues and Eigenvectors',
-      'Time Complexity',
-      'Binary Tree Traversal',
-      'Dynamic Programming',
-    ];
-  }
-};
-
 export default function PracticeResultsScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    sessionId?: string;
     courseId?: string;
     courseName?: string;
     score?: string;
@@ -48,7 +31,70 @@ export default function PracticeResultsScreen() {
   const totalQuestions = parseInt(params.totalQuestions || '10', 10);
   const correctAnswers = parseInt(params.correctAnswers || '0', 10);
   const incorrectAnswers = totalQuestions - correctAnswers;
-  const weakTopics = getWeakTopics(score, courseName);
+  
+  const [weakTopics, setWeakTopics] = useState<string[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load weak topics from practice results
+  useEffect(() => {
+    const loadWeakTopics = async () => {
+      if (!params.sessionId) {
+        // Fallback to mock topics if no session
+        if (score >= 80) {
+          setWeakTopics(['All topics mastered! Keep practicing to maintain your knowledge.']);
+        } else if (score >= 60) {
+          setWeakTopics(['Integration by Parts', 'Time Complexity Analysis']);
+        } else {
+          setWeakTopics([
+            'Integration by Parts',
+            'Eigenvalues and Eigenvectors',
+            'Time Complexity',
+            'Binary Tree Traversal',
+            'Dynamic Programming',
+          ]);
+        }
+        setLoading(false);
+        return;
+      }
+
+      try {
+        // Get practice results from Firestore
+        const resultsRef = collection(db, 'practiceResults');
+        const q = query(
+          resultsRef,
+          where('sessionId', '==', params.sessionId)
+        );
+        const snapshot = await getDocs(q);
+        
+        if (!snapshot.empty) {
+          const resultData = snapshot.docs[0].data();
+          const topics = resultData.weakTopics || [];
+          
+          if (topics.length === 0) {
+            // Fallback if no weak topics
+            if (score >= 80) {
+              setWeakTopics(['All topics mastered! Keep practicing to maintain your knowledge.']);
+            } else {
+              setWeakTopics(['Review the incorrect answers to identify weak areas.']);
+            }
+          } else {
+            setWeakTopics(topics);
+          }
+        } else {
+          // Fallback
+          setWeakTopics(['Review the incorrect answers to identify weak areas.']);
+        }
+      } catch (error) {
+        console.error('Error loading weak topics:', error);
+        // Fallback
+        setWeakTopics(['Review the incorrect answers to identify weak areas.']);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadWeakTopics();
+  }, [params.sessionId, score]);
 
   const getScoreColor = () => {
     if (score >= 80) return ACCENT_GREEN;

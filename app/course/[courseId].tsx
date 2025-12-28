@@ -4,7 +4,7 @@ import { supabase } from '@/lib/supabaseClient';
 import { uploadCourseFileToSupabase } from '@/lib/upload';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import {
   addDoc,
   collection,
@@ -16,7 +16,7 @@ import {
   serverTimestamp,
   where,
 } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -58,6 +58,15 @@ export default function CourseDetailsScreen() {
   const [aiQuestion, setAiQuestion] = useState('');
   const [aiResponse, setAiResponse] = useState<string | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  
+  // Practice statistics
+  const [practiceStats, setPracticeStats] = useState<{
+    totalPractices: number;
+    averageScore: number;
+    lastPracticeDate: Date | null;
+    weakTopics: string[];
+  } | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
 
   // --- טעינת קבצים לקורס הזה ---
   useEffect(() => {
@@ -99,6 +108,45 @@ export default function CourseDetailsScreen() {
 
     return unsub;
   }, [courseId]);
+
+  // Load practice statistics - reload when screen comes into focus (after practice)
+  const loadPracticeStats = useCallback(async () => {
+    if (!courseId) {
+      setLoadingStats(false);
+      return;
+    }
+
+    try {
+      setLoadingStats(true);
+      const { getPracticeStats } = await import('@/lib/practiceService');
+      const stats = await getPracticeStats(courseId);
+      console.log('📊 Loaded practice stats:', stats);
+      setPracticeStats(stats);
+    } catch (error) {
+      console.log('Error loading practice stats:', error);
+      // Set default stats on error
+      setPracticeStats({
+        totalPractices: 0,
+        averageScore: 0,
+        lastPracticeDate: null,
+        weakTopics: [],
+      });
+    } finally {
+      setLoadingStats(false);
+    }
+  }, [courseId]);
+
+  // Load stats on mount and when screen comes into focus
+  useEffect(() => {
+    loadPracticeStats();
+  }, [loadPracticeStats]);
+
+  // Reload stats when screen comes into focus (after returning from practice)
+  useFocusEffect(
+    useCallback(() => {
+      loadPracticeStats();
+    }, [loadPracticeStats])
+  );
 
   // --- העלאת קובץ חדש ---
   const handleUploadFile = async () => {
@@ -167,6 +215,23 @@ export default function CourseDetailsScreen() {
       console.log('Failed to open file url:', err);
       Alert.alert('Error', 'Could not open file.');
     });
+  };
+
+  // Format practice date
+  const formatPracticeDate = (date: Date): string => {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return t('courseDetails.today');
+    if (diffDays === 1) return t('courseDetails.yesterday');
+    if (diffDays < 7) return t('courseDetails.daysAgo', { count: diffDays });
+    if (diffDays < 30) {
+      const weeks = Math.floor(diffDays / 7);
+      return t('courseDetails.weeksAgo', { count: weeks });
+    }
+    const months = Math.floor(diffDays / 30);
+    return t('courseDetails.monthsAgo', { count: months });
   };
 
   // helper קטן לשליפת ה-path מתוך ה־public URL
@@ -345,45 +410,55 @@ export default function CourseDetailsScreen() {
             <Text style={styles.sectionTitle}>{t('courseDetails.studyInsights')}</Text>
           </View>
 
-          {/* Mock data for insights */}
-          <View style={styles.insightsContent}>
-            <View style={styles.insightRow}>
-              <View style={styles.insightItem}>
-                <Ionicons name="alert-circle" size={20} color="#f59e0b" />
-                <Text style={styles.insightLabel}>{t('courseDetails.weakTopics')}</Text>
-                <Text style={styles.insightValue}>3</Text>
-              </View>
-              <View style={styles.insightItem}>
-                <Ionicons name="flask" size={20} color={ACCENT_GREEN} />
-                <Text style={styles.insightLabel}>{t('courseDetails.practices')}</Text>
-                <Text style={styles.insightValue}>12</Text>
-              </View>
-              <View style={styles.insightItem}>
-                <Ionicons name="calendar" size={20} color={PRIMARY_GREEN} />
-                <Text style={styles.insightLabel}>{t('courseDetails.lastPractice')}</Text>
-                <Text style={styles.insightValue}>2 days ago</Text>
-              </View>
+          {/* Real practice statistics */}
+          {loadingStats ? (
+            <View style={styles.insightsContent}>
+              <ActivityIndicator size="small" color={ACCENT_GREEN} />
             </View>
+          ) : practiceStats ? (
+            <View style={styles.insightsContent}>
+              <View style={styles.insightRow}>
+                <View style={styles.insightItem}>
+                  <Ionicons name="alert-circle" size={20} color="#f59e0b" />
+                  <Text style={styles.insightLabel}>{t('courseDetails.weakTopics')}</Text>
+                  <Text style={styles.insightValue}>{practiceStats.weakTopics.length}</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Ionicons name="flask" size={20} color={ACCENT_GREEN} />
+                  <Text style={styles.insightLabel}>{t('courseDetails.practices')}</Text>
+                  <Text style={styles.insightValue}>{practiceStats.totalPractices}</Text>
+                </View>
+                <View style={styles.insightItem}>
+                  <Ionicons name="calendar" size={20} color={PRIMARY_GREEN} />
+                  <Text style={styles.insightLabel}>{t('courseDetails.lastPractice')}</Text>
+                  <Text style={styles.insightValue}>
+                    {practiceStats.lastPracticeDate
+                      ? formatPracticeDate(practiceStats.lastPracticeDate)
+                      : t('courseDetails.noPractice')}
+                  </Text>
+                </View>
+              </View>
 
-            {/* Top Weak Topics */}
-            <View style={styles.weakTopicsSection}>
-              <Text style={styles.weakTopicsTitle}>{t('courseDetails.topWeakTopics')}</Text>
-              <View style={styles.weakTopicsList}>
-                <View style={styles.weakTopicItem}>
-                  <Ionicons name="bookmark-outline" size={16} color="#f59e0b" />
-                  <Text style={styles.weakTopicText}>Integration by Parts</Text>
+              {/* Top Weak Topics */}
+              {practiceStats.weakTopics.length > 0 && (
+                <View style={styles.weakTopicsSection}>
+                  <Text style={styles.weakTopicsTitle}>{t('courseDetails.topWeakTopics')}</Text>
+                  <View style={styles.weakTopicsList}>
+                    {practiceStats.weakTopics.slice(0, 3).map((topic, index) => (
+                      <View key={index} style={styles.weakTopicItem}>
+                        <Ionicons name="bookmark-outline" size={16} color="#f59e0b" />
+                        <Text style={styles.weakTopicText}>{topic}</Text>
+                      </View>
+                    ))}
+                  </View>
                 </View>
-                <View style={styles.weakTopicItem}>
-                  <Ionicons name="bookmark-outline" size={16} color="#f59e0b" />
-                  <Text style={styles.weakTopicText}>Eigenvalues</Text>
-                </View>
-                <View style={styles.weakTopicItem}>
-                  <Ionicons name="bookmark-outline" size={16} color="#f59e0b" />
-                  <Text style={styles.weakTopicText}>Time Complexity</Text>
-                </View>
-              </View>
+              )}
             </View>
-          </View>
+          ) : (
+            <View style={styles.insightsContent}>
+              <Text style={styles.noDataText}>{t('courseDetails.noPracticeData')}</Text>
+            </View>
+          )}
         </View>
 
         {/* Files Section */}
@@ -668,6 +743,12 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderLeftWidth: 3,
     borderLeftColor: '#f59e0b',
+  },
+  noDataText: {
+    fontSize: 14,
+    color: '#6b7280',
+    textAlign: 'center',
+    padding: 20,
   },
   weakTopicText: {
     flex: 1,

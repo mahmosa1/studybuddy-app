@@ -1,7 +1,12 @@
 // app/ai-practice-test.tsx
+import { evaluateOpenAnswer, PracticeQuestion } from '@/lib/aiService';
+import { db } from '@/lib/firebaseConfig';
+import { PracticeAnswer, savePracticeResults } from '@/lib/practiceService';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
@@ -11,63 +16,14 @@ import {
   View,
 } from 'react-native';
 
-type Question = {
-  id: string;
-  question: string;
-  type: 'true-false' | 'open' | 'multiple-choice';
-  options?: string[];
-  correctAnswer?: string;
+type Question = PracticeQuestion & {
   userAnswer?: string;
-};
-
-// Mock AI-generated questions - replace with real AI integration later
-const generateMockQuestions = (
-  courseName: string,
-  practiceType: string,
-  numQuestions: number
-): Question[] => {
-  const questions: Question[] = [];
-  const types = practiceType === 'mixed' 
-    ? ['true-false', 'open', 'multiple-choice']
-    : practiceType === 'true-false'
-    ? ['true-false']
-    : ['open'];
-
-  for (let i = 0; i < numQuestions; i++) {
-    const type = types[i % types.length] as Question['type'];
-    const qNum = i + 1;
-
-    if (type === 'true-false') {
-      questions.push({
-        id: `q${qNum}`,
-        question: `${courseName} - Question ${qNum}: This is a true/false question about ${courseName}. The answer is ${i % 2 === 0 ? 'True' : 'False'}.`,
-        type: 'true-false',
-        correctAnswer: i % 2 === 0 ? 'True' : 'False',
-      });
-    } else if (type === 'open') {
-      questions.push({
-        id: `q${qNum}`,
-        question: `${courseName} - Question ${qNum}: Explain a key concept from ${courseName} in your own words.`,
-        type: 'open',
-        correctAnswer: 'Sample answer (AI will evaluate this later)',
-      });
-    } else {
-      questions.push({
-        id: `q${qNum}`,
-        question: `${courseName} - Question ${qNum}: What is the main topic of ${courseName}?`,
-        type: 'multiple-choice',
-        options: ['Option A', 'Option B', 'Option C', 'Option D'],
-        correctAnswer: 'Option A',
-      });
-    }
-  }
-
-  return questions;
 };
 
 export default function AIPracticeTestScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
+    sessionId?: string;
     courseId?: string;
     courseName?: string;
     practiceType?: string;
@@ -75,14 +31,45 @@ export default function AIPracticeTestScreen() {
   }>();
 
   const courseName = params.courseName || 'Course';
-  const practiceType = params.practiceType || 'mixed';
-  const numQuestions = parseInt(params.numQuestions || '10', 10);
-
-  const [questions, setQuestions] = useState<Question[]>(() =>
-    generateMockQuestions(courseName, practiceType, numQuestions)
-  );
+  const sessionId = params.sessionId;
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [loading, setLoading] = useState(true);
   const [submitted, setSubmitted] = useState(false);
   const [score, setScore] = useState<number | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  // Load questions from session
+  useEffect(() => {
+    const loadQuestions = async () => {
+      if (!sessionId) {
+        // Fallback: use mock questions if no session
+        Alert.alert('Error', 'Session ID missing');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const sessionDoc = await getDoc(doc(db, 'practiceSessions', sessionId));
+        if (!sessionDoc.exists()) {
+          Alert.alert('Error', 'Practice session not found');
+          setLoading(false);
+          return;
+        }
+
+        const sessionData = sessionDoc.data();
+        const loadedQuestions = (sessionData.questions || []) as PracticeQuestion[];
+        
+        setQuestions(loadedQuestions.map(q => ({ ...q, userAnswer: undefined })));
+      } catch (error) {
+        console.error('Error loading questions:', error);
+        Alert.alert('Error', 'Failed to load practice questions');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadQuestions();
+  }, [sessionId]);
 
   const handleAnswerChange = (questionId: string, answer: string) => {
     setQuestions((prev) =>
@@ -92,39 +79,117 @@ export default function AIPracticeTestScreen() {
     );
   };
 
-  const handleSubmit = () => {
-    // Mock scoring - replace with real AI evaluation later
-    let correct = 0;
-    questions.forEach((q) => {
-      if (q.type === 'true-false' || q.type === 'multiple-choice') {
-        if (q.userAnswer === q.correctAnswer) {
-          correct++;
-        }
-      } else {
-        // For open questions, just mark as answered (AI will evaluate later)
-        if (q.userAnswer && q.userAnswer.trim().length > 0) {
-          correct++;
-        }
-      }
-    });
+  const handleSubmit = async () => {
+    if (!sessionId) {
+      Alert.alert('Error', 'Session ID missing. Please start a new practice session.');
+      return;
+    }
 
-    const percentage = Math.round((correct / questions.length) * 100);
-    setScore(percentage);
-    setSubmitted(true);
-    
-    // Navigate to results screen after a brief delay
-    setTimeout(() => {
-      router.push({
-        pathname: '/practice-results' as any,
-        params: {
-          courseId: params.courseId || '',
-          courseName: courseName,
-          score: percentage.toString(),
-          totalQuestions: questions.length.toString(),
-          correctAnswers: correct.toString(),
-        },
-      });
-    }, 1500);
+    if (questions.length === 0) {
+      Alert.alert('Error', 'No questions found. Please start a new practice session.');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+      setSubmitted(true);
+
+      // Evaluate answers
+      const answers: PracticeAnswer[] = [];
+      let correctCount = 0;
+
+      for (const question of questions) {
+        let isCorrect = false;
+        let answerScore: number | undefined = undefined;
+
+        if (question.type === 'true-false' || question.type === 'multiple-choice') {
+          // Direct comparison for true/false and multiple choice
+          const userAns = question.userAnswer?.trim().toLowerCase() || '';
+          const correctAns = question.correctAnswer?.trim().toLowerCase() || '';
+          isCorrect = userAns === correctAns;
+          if (isCorrect) correctCount++;
+        } else if (question.type === 'open') {
+          // Evaluate open-ended questions
+          if (question.userAnswer && question.userAnswer.trim().length > 0) {
+            try {
+              const evaluation = await evaluateOpenAnswer(
+                question.question,
+                question.userAnswer,
+                question.correctAnswer || ''
+              );
+              answerScore = evaluation.score;
+              isCorrect = answerScore >= 70; // Consider 70%+ as correct
+              if (isCorrect) correctCount++;
+            } catch (evalError) {
+              // If evaluation fails, mark as answered but not correct
+              console.log('Error evaluating open answer:', evalError);
+              isCorrect = false;
+              answerScore = 0; // Set to 0 instead of undefined
+            }
+          }
+        }
+
+        // Create answer object - ensure no undefined values
+        const answer: PracticeAnswer = {
+          questionId: question.id || '',
+          userAnswer: question.userAnswer || '',
+          isCorrect: isCorrect,
+        };
+        
+        // Only add score if it's a number (for open questions)
+        if (answerScore !== undefined && answerScore !== null && typeof answerScore === 'number') {
+          answer.score = answerScore;
+        }
+        
+        answers.push(answer);
+      }
+
+      // Calculate score
+      const percentage = Math.round((correctCount / questions.length) * 100);
+      setScore(percentage);
+
+      // Save results to Firestore
+      try {
+        console.log('💾 Attempting to save practice results...');
+        await savePracticeResults(sessionId, answers, percentage);
+        console.log('✅ Practice results saved successfully');
+      } catch (saveError: any) {
+        console.error('❌ Error saving results:', saveError);
+        console.error('Error code:', saveError.code);
+        console.error('Error message:', saveError.message);
+        
+        // Show more detailed error message
+        const errorMessage = saveError.message || saveError.toString();
+        Alert.alert(
+          'Warning',
+          `Results could not be saved: ${errorMessage}\n\nYou can still view your score, but it won't be saved to your practice history.`,
+          [{ text: 'OK' }]
+        );
+      }
+
+      // Navigate to results screen
+      setTimeout(() => {
+        router.push({
+          pathname: '/practice-results' as any,
+          params: {
+            sessionId: sessionId,
+            courseId: params.courseId || '',
+            courseName: courseName,
+            score: percentage.toString(),
+            totalQuestions: questions.length.toString(),
+            correctAnswers: correctCount.toString(),
+          },
+        });
+      }, 1500);
+    } catch (error: any) {
+      console.error('Error submitting practice:', error);
+      Alert.alert(
+        'Error',
+        error.message || 'Failed to submit practice. Please try again.'
+      );
+      setSubmitting(false);
+      setSubmitted(false);
+    }
   };
 
   const renderQuestion = (question: Question, index: number) => {
@@ -309,6 +374,29 @@ export default function AIPracticeTestScreen() {
     );
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <ActivityIndicator size="large" color={ACCENT_GREEN} />
+        <Text style={styles.loadingText}>Loading practice questions...</Text>
+      </View>
+    );
+  }
+
+  if (questions.length === 0) {
+    return (
+      <View style={[styles.container, styles.center]}>
+        <Text style={styles.emptyText}>No questions found</Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+        >
+          <Text style={styles.backButtonText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -336,10 +424,18 @@ export default function AIPracticeTestScreen() {
 
         {!submitted && (
           <TouchableOpacity
-            style={styles.submitButton}
+            style={[styles.submitButton, submitting && styles.buttonDisabled]}
             onPress={handleSubmit}
+            disabled={submitting}
           >
-            <Text style={styles.submitButtonText}>Submit</Text>
+            {submitting ? (
+              <>
+                <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+                <Text style={styles.submitButtonText}>Submitting...</Text>
+              </>
+            ) : (
+              <Text style={styles.submitButtonText}>Submit</Text>
+            )}
           </TouchableOpacity>
         )}
 
@@ -512,6 +608,23 @@ const styles = StyleSheet.create({
     color: '#4b5563',
     fontSize: 16,
     fontWeight: '600',
+  },
+  center: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#6b7280',
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#6b7280',
+    marginBottom: 20,
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
 });
 

@@ -175,6 +175,13 @@
     "studentSubtitle": "ארגן את חומרי הלימוד שלך ועקוב אחר התקדמות הלמידה שלך."
   },
   "courseDetails": {
+    "noPractice": "מעולם לא",
+    "noPracticeData": "אין עדיין נתוני תרגול. התחל לתרגל כדי לראות תובנות!",
+    "today": "היום",
+    "yesterday": "אתמול",
+    "daysAgo": "לפני {{count}} ימים",
+    "weeksAgo": "לפני {{count}} שבועות",
+    "monthsAgo": "לפני {{count}} חודשים",
     "title": "קורס",
     "subtitle": "נהל את חומרי הלימוד והקבצים שלך",
     "manageMaterials": "נהל את חומרי הלימוד והקבצים שלך",
