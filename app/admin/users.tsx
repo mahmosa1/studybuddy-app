@@ -3,24 +3,24 @@ import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import {
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  updateDoc
+    collection,
+    deleteDoc,
+    doc,
+    getDocs,
+    updateDoc
 } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Image,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 type UserItem = {

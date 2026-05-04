@@ -46,7 +46,9 @@ export default function Index() {
         // active
         setTarget('/(tabs)');
       } catch (e) {
-        setTarget('/(auth)/login');
+        // Don't bounce to login on transient Firestore/network failures.
+        // The auth session is still valid (we have `user`), so prefer keeping the user in the app.
+        setTarget('/(tabs)');
       }
     });
 

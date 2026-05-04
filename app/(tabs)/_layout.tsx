@@ -5,6 +5,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { View } from 'react-native';
 
 import { auth, db } from '@/lib/firebaseConfig';
 
@@ -53,9 +54,8 @@ export default function TabLayout() {
         // active -> allow tabs
       } catch (err) {
         console.log('Failed to load user role/status:', err);
-        setRole(null);
-        setStatus(null);
-        router.replace('/(auth)/login');
+        // Don't kick the user back to login on transient failures (network / Firestore hiccups).
+        // Only `!user` should force a login redirect. Keep the current role/status until next retry.
       } finally {
         setLoadingRole(false);
       }
@@ -73,13 +73,21 @@ export default function TabLayout() {
     <Tabs
       screenOptions={{
         headerShown: false,
+        sceneStyle: {
+          backgroundColor: '#f9fafb',
+          paddingBottom: 95,
+        },
         tabBarActiveTintColor: '#047857',
         tabBarInactiveTintColor: '#9ca3af',
         tabBarStyle: {
+          position: 'absolute',
+          left: 8,
+          right: 8,
+          bottom: 0,
           backgroundColor: '#ffffff',
           borderTopWidth: 0,
           borderBottomWidth: 0,
-          height: 70,
+          height: 95,
           paddingBottom: 10,
           paddingTop: 8,
           shadowColor: 'transparent',
@@ -97,6 +105,7 @@ export default function TabLayout() {
           fontWeight: '600',
           marginTop: 2,
         },
+        tabBarBackground: () => <View style={{ flex: 1, backgroundColor: '#ffffff' }} />,
       }}
     >
       {/* Home */}

@@ -1,8 +1,9 @@
 // app/user-profile/[userId].tsx
 import { auth, db } from '@/lib/firebaseConfig';
+import { createActivityNotification } from '@/lib/notificationService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -25,11 +26,32 @@ type UserProfile = {
   department?: string;
   role?: string;
   profilePictureUrl?: string | null;
+  studyBuddyPhone?: string | null;
 };
 
 type CourseHighlight = {
   id: string;
   name: string;
+};
+
+type FeedPostPreview = {
+  id: string;
+  title: string;
+  createdAtLabel: string;
+  likesCount: number;
+  commentsCount: number;
+};
+
+const relativeTime = (date: Date) => {
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
 };
 
 export default function UserProfileScreen() {
@@ -45,6 +67,8 @@ export default function UserProfileScreen() {
   const [followingCount, setFollowingCount] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
+  const [feedPosts, setFeedPosts] = useState<FeedPostPreview[]>([]);
+  const [loadingFeedPosts, setLoadingFeedPosts] = useState(false);
 
   useEffect(() => {
     const loadProfile = async () => {
@@ -59,6 +83,8 @@ export default function UserProfileScreen() {
       }
 
       try {
+        const followsRef = collection(db, 'follows');
+
         // Load user profile
         const userDoc = await getDoc(doc(db, 'users', userId));
         if (userDoc.exists()) {
@@ -72,6 +98,7 @@ export default function UserProfileScreen() {
             department: data.department,
             role: data.role,
             profilePictureUrl: data.profilePictureUrl,
+            studyBuddyPhone: data.studyBuddyPhone || null,
           });
         }
 
@@ -91,15 +118,19 @@ export default function UserProfileScreen() {
         });
         setCourses(coursesList);
 
-        // Load followers/following counts (stub - replace with real queries later)
-        // Mock: In real app, query 'follows' collection
-        setFollowersCount(0); // TODO: Replace with real query
-        setFollowingCount(0); // TODO: Replace with real query
+        // Load followers/following counts
+        const [followersSnap, followingSnap] = await Promise.all([
+          getDocs(query(followsRef, where('followingId', '==', userId))),
+          getDocs(query(followsRef, where('followerId', '==', userId))),
+        ]);
+        setFollowersCount(followersSnap.size);
+        setFollowingCount(followingSnap.size);
 
-        // Check if current user is following this user (stub)
+        // Check if current user is following this user
         if (currentUser && currentUser.uid !== userId) {
-          // TODO: Check if currentUser.uid follows userId in 'follows' collection
-          setIsFollowing(false); // Mock: replace with real check
+          const followDocId = `${currentUser.uid}_${userId}`;
+          const followDoc = await getDoc(doc(db, 'follows', followDocId));
+          setIsFollowing(followDoc.exists());
         }
       } catch (err) {
         console.log('Error loading user profile:', err);
@@ -110,6 +141,40 @@ export default function UserProfileScreen() {
 
     loadProfile();
   }, [userId]);
+
+  useEffect(() => {
+    if (!userId) return;
+    if (!isOwnProfile && !isFollowing) {
+      setFeedPosts([]);
+      return;
+    }
+    setLoadingFeedPosts(true);
+    const q = query(
+      collection(db, 'feedPosts'),
+      where('authorUid', '==', userId),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const posts: FeedPostPreview[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          posts.push({
+            id: d.id,
+            title: data.title || 'Post',
+            createdAtLabel: data.createdAt?.toDate ? relativeTime(data.createdAt.toDate()) : 'Just now',
+            likesCount: Array.isArray(data.likedBy) ? data.likedBy.length : 0,
+            commentsCount: Number(data.commentsCount || 0),
+          });
+        });
+        setFeedPosts(posts);
+        setLoadingFeedPosts(false);
+      },
+      () => setLoadingFeedPosts(false)
+    );
+    return unsub;
+  }, [userId, isFollowing, isOwnProfile]);
 
   const getInitials = () => {
     if (!profile) return '?';
@@ -129,20 +194,41 @@ export default function UserProfileScreen() {
     }
 
     try {
-      // TODO: Implement follow/unfollow logic
-      // For now, just toggle the state
-      setIsFollowing(!isFollowing);
+      const followDocId = `${currentUser.uid}_${userId}`;
+      const followRef = doc(db, 'follows', followDocId);
+
       if (!isFollowing) {
+        let actorName = 'User';
+        let actorAvatarUrl = '';
+        try {
+          const actorSnap = await getDoc(doc(db, 'users', currentUser.uid));
+          if (actorSnap.exists()) {
+            const actorData = actorSnap.data() as any;
+            actorName = actorData.fullName || actorData.username || actorName;
+            actorAvatarUrl = actorData.profilePictureUrl || '';
+          }
+        } catch {
+          // Keep graceful fallback for notification actor info.
+        }
+
+        await setDoc(followRef, {
+          followerId: currentUser.uid,
+          followingId: userId,
+          createdAt: serverTimestamp(),
+        });
+        await createActivityNotification({
+          recipientUid: userId,
+          actorUid: currentUser.uid,
+          actorName,
+          actorAvatarUrl,
+          type: 'follow',
+        });
+        setIsFollowing(true);
         setFollowersCount((prev) => prev + 1);
-        // TODO: Add document to 'follows' collection
-        // await addDoc(collection(db, 'follows'), {
-        //   followerId: currentUser.uid,
-        //   followingId: userId,
-        //   createdAt: serverTimestamp(),
-        // });
       } else {
+        await deleteDoc(followRef);
+        setIsFollowing(false);
         setFollowersCount((prev) => Math.max(0, prev - 1));
-        // TODO: Remove document from 'follows' collection
       }
     } catch (err) {
       console.log('Follow/unfollow error:', err);
@@ -350,6 +436,45 @@ export default function UserProfileScreen() {
             </View>
           )}
         </View>
+
+        {(isOwnProfile || isFollowing) && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <Ionicons name="newspaper-outline" size={20} color={ACCENT_GREEN} />
+              <Text style={styles.sectionTitle}>Feed posts</Text>
+            </View>
+            {loadingFeedPosts ? (
+              <ActivityIndicator color="#047857" />
+            ) : feedPosts.length ? (
+              <View style={styles.feedPostsList}>
+                {feedPosts.map((p) => (
+                  <TouchableOpacity
+                    key={p.id}
+                    style={styles.feedPostItem}
+                    onPress={() => router.push(`/feed/post/${p.id}` as any)}
+                  >
+                    <Text style={styles.feedPostTitle} numberOfLines={2}>
+                      {p.title}
+                    </Text>
+                    <View style={styles.feedPostStats}>
+                      <View style={styles.feedPostStatItem}>
+                        <Ionicons name="heart-outline" size={14} color="#6b7280" />
+                        <Text style={styles.feedPostStatText}>{p.likesCount}</Text>
+                      </View>
+                      <View style={styles.feedPostStatItem}>
+                        <Ionicons name="chatbubble-outline" size={14} color="#6b7280" />
+                        <Text style={styles.feedPostStatText}>{p.commentsCount}</Text>
+                      </View>
+                    </View>
+                    <Text style={styles.feedPostTime}>{p.createdAtLabel}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.emptyText}>No feed posts yet</Text>
+            )}
+          </View>
+        )}
       </ScrollView>
     </View>
   );
@@ -612,6 +737,49 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
     paddingVertical: 20,
+  },
+  feedPostsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: 10,
+  },
+  feedPostItem: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 14,
+    width: '48.5%',
+    minHeight: 132,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    justifyContent: 'space-between',
+  },
+  feedPostTitle: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  feedPostStats: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  feedPostStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  feedPostStatText: {
+    color: '#4b5563',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  feedPostTime: {
+    marginTop: 8,
+    color: '#6b7280',
+    fontSize: 12,
   },
   errorText: {
     color: '#ef4444',

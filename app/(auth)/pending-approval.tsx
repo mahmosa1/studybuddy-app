@@ -9,7 +9,10 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -116,6 +119,9 @@ export default function PendingApprovalScreen() {
   };
 
   const handleSubmitAppeal = async () => {
+    // Dismiss keyboard when submitting
+    Keyboard.dismiss();
+    
     if (!appealMessage.trim()) {
       Alert.alert(t('common.required'), t('auth.appealMessageRequired'));
       return;
@@ -283,101 +289,124 @@ export default function PendingApprovalScreen() {
         transparent
         animationType="fade"
         onRequestClose={() => {
+          Keyboard.dismiss();
           setAppealModalVisible(false);
           setAppealMessage('');
         }}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.appealModalContent}>
-            <View style={styles.appealModalHeader}>
-              <Ionicons name="chatbubble-ellipses" size={24} color={ACCENT_GREEN} />
-              <Text style={styles.appealModalTitle}>Submit Appeal</Text>
-            </View>
-            <Text style={styles.appealModalSubtitle}>
-              Please explain why you believe your registration should be approved. An admin will review your appeal.
-            </Text>
-
-            <Text style={styles.appealModalLabel}>Your Message *</Text>
-            <TextInput
-              style={styles.appealModalInput}
-              placeholder={t('auth.appealMessagePlaceholder')}
-              placeholderTextColor="#6b7280"
-              value={appealMessage}
-              onChangeText={setAppealMessage}
-              multiline
-              numberOfLines={6}
-              textAlignVertical="top"
-            />
-
-            <Text style={styles.appealModalLabel}>
-              {t('auth.supportingImageOptional')}
-            </Text>
-            <Text style={styles.appealModalHelperText}>
-              {t('auth.supportingImageHelper')}
-            </Text>
-
-            {appealImageUri ? (
-              <View style={styles.imagePreviewContainer}>
-                <Image source={{ uri: appealImageUri }} style={styles.imagePreview} />
-                {uploadingImage ? (
-                  <View style={styles.imageOverlay}>
-                    <ActivityIndicator size="large" color="#ffffff" />
-                    <Text style={styles.uploadingText}>{t('common.uploading')}</Text>
-                  </View>
-                ) : null}
-                <TouchableOpacity
-                  style={styles.removeImageButton}
-                  onPress={handleRemoveImage}
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        >
+          <TouchableOpacity
+            activeOpacity={1}
+            onPress={() => {
+              Keyboard.dismiss();
+              setAppealModalVisible(false);
+              setAppealMessage('');
+            }}
+            style={styles.modalBackdrop}
+          >
+            <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
+              <View style={styles.appealModalContent}>
+                <ScrollView
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
                 >
-                  <Ionicons name="close-circle" size={24} color="#ef4444" />
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <TouchableOpacity
-                style={styles.uploadImageButton}
-                onPress={handlePickImage}
-                disabled={uploadingImage}
-              >
-                {uploadingImage ? (
-                  <ActivityIndicator color={PRIMARY_GREEN} />
-                ) : (
-                  <>
-                    <Ionicons name="image-outline" size={24} color={PRIMARY_GREEN} />
-                    <Text style={styles.uploadImageButtonText}>{t('common.uploadImage')}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            )}
+                  <View style={styles.appealModalHeader}>
+                    <Ionicons name="chatbubble-ellipses" size={24} color={ACCENT_GREEN} />
+                    <Text style={styles.appealModalTitle}>Submit Appeal</Text>
+                  </View>
+                  <Text style={styles.appealModalSubtitle}>
+                    Please explain why you believe your registration should be approved. An admin will review your appeal.
+                  </Text>
 
-            <View style={styles.appealModalButtons}>
-              <TouchableOpacity
-                style={[styles.appealModalButton, styles.appealModalCancelButton]}
-                onPress={() => {
-                  setAppealModalVisible(false);
-                  setAppealMessage('');
-                  setAppealImageUri(null);
-                  setAppealImageUrl(null);
-                }}
-              >
-                <Text style={styles.appealModalCancelText}>{t('common.cancel')}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.appealModalButton, styles.appealModalConfirmButton]}
-                onPress={handleSubmitAppeal}
-                disabled={submittingAppeal}
-              >
-                {submittingAppeal ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <>
-                    <Ionicons name="send-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                    <Text style={styles.appealModalConfirmText}>{t('auth.submitAppeal')}</Text>
-                  </>
-                )}
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
+                  <Text style={styles.appealModalLabel}>Your Message *</Text>
+                  <TextInput
+                    style={styles.appealModalInput}
+                    placeholder={t('auth.appealMessagePlaceholder')}
+                    placeholderTextColor="#6b7280"
+                    value={appealMessage}
+                    onChangeText={setAppealMessage}
+                    multiline
+                    numberOfLines={6}
+                    textAlignVertical="top"
+                  />
+
+                  <Text style={styles.appealModalLabel}>
+                    {t('auth.supportingImageOptional')}
+                  </Text>
+                  <Text style={styles.appealModalHelperText}>
+                    {t('auth.supportingImageHelper')}
+                  </Text>
+
+                  {appealImageUri ? (
+                    <View style={styles.imagePreviewContainer}>
+                      <Image source={{ uri: appealImageUri }} style={styles.imagePreview} />
+                      {uploadingImage ? (
+                        <View style={styles.imageOverlay}>
+                          <ActivityIndicator size="large" color="#ffffff" />
+                          <Text style={styles.uploadingText}>{t('common.uploading')}</Text>
+                        </View>
+                      ) : null}
+                      <TouchableOpacity
+                        style={styles.removeImageButton}
+                        onPress={handleRemoveImage}
+                      >
+                        <Ionicons name="close-circle" size={24} color="#ef4444" />
+                      </TouchableOpacity>
+                    </View>
+                  ) : (
+                    <TouchableOpacity
+                      style={styles.uploadImageButton}
+                      onPress={handlePickImage}
+                      disabled={uploadingImage}
+                    >
+                      {uploadingImage ? (
+                        <ActivityIndicator color={PRIMARY_GREEN} />
+                      ) : (
+                        <>
+                          <Ionicons name="image-outline" size={24} color={PRIMARY_GREEN} />
+                          <Text style={styles.uploadImageButtonText}>{t('common.uploadImage')}</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  )}
+                </ScrollView>
+
+                <View style={styles.appealModalButtons}>
+                  <TouchableOpacity
+                    style={[styles.appealModalButton, styles.appealModalCancelButton]}
+                    onPress={() => {
+                      Keyboard.dismiss();
+                      setAppealModalVisible(false);
+                      setAppealMessage('');
+                      setAppealImageUri(null);
+                      setAppealImageUrl(null);
+                    }}
+                  >
+                    <Text style={styles.appealModalCancelText}>{t('common.cancel')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.appealModalButton, styles.appealModalConfirmButton]}
+                    onPress={handleSubmitAppeal}
+                    disabled={submittingAppeal}
+                  >
+                    {submittingAppeal ? (
+                      <ActivityIndicator color="#ffffff" />
+                    ) : (
+                      <>
+                        <Ionicons name="send-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
+                        <Text style={styles.appealModalConfirmText}>{t('auth.submitAppeal')}</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );

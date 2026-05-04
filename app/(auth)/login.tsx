@@ -173,7 +173,10 @@ export default function LoginScreen() {
             style={styles.languageButton}
             onPress={() => setShowLanguageModal(true)}
           >
-            <Ionicons name="language" size={18} color={PRIMARY_GREEN} />
+            <Ionicons name="globe-outline" size={16} color={PRIMARY_GREEN} />
+            <Text style={styles.languageButtonText}>
+              {currentLanguage === 'he' ? 'HE' : 'EN'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -237,6 +240,16 @@ export default function LoginScreen() {
               <Text style={styles.errorText}>{error}</Text>
             </View>
           )}
+
+          {/* Forgot Password Link */}
+          <TouchableOpacity
+            style={styles.forgotPasswordContainer}
+            onPress={() => router.push('/(auth)/forgot-password' as any)}
+          >
+            <Text style={styles.forgotPasswordText}>
+              {t('auth.forgotPassword')}
+            </Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -553,13 +566,20 @@ const styles = StyleSheet.create({
     right: 16,
     zIndex: 10,
   },
+  languageButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: PRIMARY_GREEN,
+  },
   languageButton: {
-    width: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    width: 50,
     height: 40,
     borderRadius: 20,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    justifyContent: 'center',
-    alignItems: 'center',
     borderWidth: 1.5,
     borderColor: PRIMARY_GREEN,
     shadowColor: '#000',
@@ -637,6 +657,16 @@ const styles = StyleSheet.create({
     marginLeft: 12,
   },
   languageOptionTextSelected: {
+    color: PRIMARY_GREEN,
+    fontWeight: '600',
+  },
+  forgotPasswordContainer: {
+    alignItems: 'flex-end',
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
     color: PRIMARY_GREEN,
     fontWeight: '600',
   },

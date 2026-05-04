@@ -4,6 +4,8 @@ import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Ionicons } from '@expo/vector-icons';
 import {
   ActivityIndicator,
   Alert,
@@ -17,10 +19,17 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadImageToSupabase } from '@/lib/upload';
+
+const ACCENT_GREEN = '#047857';
 
 export default function EditProfileScreen() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
+  const insets = useSafeAreaInsets();
+  const isHebrewUi = i18n.language === 'he';
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -57,22 +66,19 @@ export default function EditProfileScreen() {
         }
       } catch (err) {
         console.log('Error loading profile:', err);
-        Alert.alert('Error', 'Failed to load profile');
+        Alert.alert(t('common.error'), t('editProfileScreen.loadFailed'));
       } finally {
         setLoading(false);
       }
     };
 
     loadProfile();
-  }, [router]);
+  }, [router, t]);
 
   const handlePickImage = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert(
-        'Permission required',
-        'We need access to your gallery to upload images.'
-      );
+      Alert.alert(t('editProfileScreen.permissionTitle'), t('editProfileScreen.permissionMessage'));
       return;
     }
 
@@ -88,27 +94,35 @@ export default function EditProfileScreen() {
     setUploading(true);
 
     try {
-      const folder = role === 'lecturer' 
-        ? 'lecturer-profile-pictures' 
-        : 'profile-pictures';
-      const url = await uploadImageToSupabase(uri, folder);
+      const url = await uploadImageToSupabase(uri, 'profile-pictures');
       if (url) {
         setProfilePictureUrl(url);
       } else {
-        Alert.alert('Upload failed', 'Could not upload image. Please try again.');
+        Alert.alert(t('editProfileScreen.uploadFailedTitle'), t('editProfileScreen.uploadFailedMessage'));
       }
     } catch (err) {
       console.log('Image upload error:', err);
-      Alert.alert('Error', 'Unexpected error while uploading image.');
+      Alert.alert(t('common.error'), t('editProfileScreen.uploadError'));
     } finally {
       setUploading(false);
     }
   };
 
+  const handleDeletePicture = () => {
+    Alert.alert(t('editProfileScreen.deletePictureTitle'), t('editProfileScreen.deletePictureMessage'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () => setProfilePictureUrl(null),
+      },
+    ]);
+  };
+
   const handleSave = async () => {
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert('Error', 'You must be logged in');
+      Alert.alert(t('common.error'), t('editProfileScreen.mustBeLoggedIn'));
       return;
     }
 
@@ -124,12 +138,12 @@ export default function EditProfileScreen() {
         profilePictureUrl: profilePictureUrl || null,
       });
 
-      Alert.alert('Success', 'Profile updated successfully', [
-        { text: 'OK', onPress: () => router.back() },
+      Alert.alert(t('common.success'), t('editProfileScreen.profileUpdated'), [
+        { text: t('common.ok'), onPress: () => router.back() },
       ]);
     } catch (err) {
       console.log('Error updating profile:', err);
-      Alert.alert('Error', 'Failed to update profile');
+      Alert.alert(t('common.error'), t('editProfileScreen.updateFailed'));
     } finally {
       setSaving(false);
     }
@@ -138,10 +152,13 @@ export default function EditProfileScreen() {
   if (loading) {
     return (
       <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color="#047857" size="large" />
+        <ActivityIndicator color={ACCENT_GREEN} size="large" />
       </View>
     );
   }
+
+  const rtlText = isHebrewUi ? styles.rtlText : undefined;
+  const inputStyle = [styles.input, isHebrewUi && styles.inputRtl];
 
   return (
     <KeyboardAvoidingView
@@ -149,23 +166,29 @@ export default function EditProfileScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <ScrollView
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[
+          styles.scrollContent,
+          { paddingTop: Math.max(insets.top + 12, 20) },
+        ]}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Edit Profile</Text>
-        <Text style={styles.subtitle}>
-          Update your profile information
-        </Text>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => router.back()}
+          accessibilityRole="button"
+          accessibilityLabel={t('common.back')}
+        >
+          <Ionicons name="arrow-back" size={22} color="#111827" />
+        </TouchableOpacity>
+
+        <Text style={styles.title}>{t('editProfileScreen.title')}</Text>
+        <Text style={styles.subtitle}>{t('editProfileScreen.subtitle')}</Text>
 
         <View style={styles.card}>
-          {/* Profile Picture */}
-          <Text style={styles.label}>Profile Picture</Text>
+          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.profilePicture')}</Text>
           <View style={styles.avatarSection}>
             {profilePictureUrl ? (
-              <Image
-                source={{ uri: profilePictureUrl }}
-                style={styles.avatar}
-              />
+              <Image source={{ uri: profilePictureUrl }} style={styles.avatar} />
             ) : (
               <View style={styles.avatarPlaceholder}>
                 <Text style={styles.avatarText}>
@@ -173,94 +196,105 @@ export default function EditProfileScreen() {
                 </Text>
               </View>
             )}
-            <TouchableOpacity
-              style={styles.uploadButton}
-              onPress={handlePickImage}
-              disabled={uploading}
-            >
-              {uploading ? (
-                <ActivityIndicator color="#047857" />
-              ) : (
-                <Text style={styles.uploadButtonText}>
-                  {profilePictureUrl ? 'Change Picture' : 'Upload Picture'}
-                </Text>
+            <View style={[styles.avatarButtons, isHebrewUi && styles.avatarButtonsRtl]}>
+              <TouchableOpacity
+                style={styles.uploadButton}
+                onPress={handlePickImage}
+                disabled={uploading}
+              >
+                {uploading ? (
+                  <ActivityIndicator color={ACCENT_GREEN} />
+                ) : (
+                  <Text style={[styles.uploadButtonText, rtlText]}>
+                    {profilePictureUrl ? t('editProfileScreen.changePicture') : t('editProfileScreen.uploadPicture')}
+                  </Text>
+                )}
+              </TouchableOpacity>
+              {profilePictureUrl && (
+                <TouchableOpacity
+                  style={[styles.deleteButton, isHebrewUi && styles.deleteButtonRtl]}
+                  onPress={handleDeletePicture}
+                >
+                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
+                  <Text style={[styles.deleteButtonText, rtlText]}>{t('editProfileScreen.deletePicture')}</Text>
+                </TouchableOpacity>
               )}
-            </TouchableOpacity>
+            </View>
           </View>
 
-          {/* Username */}
-          <Text style={styles.label}>Username *</Text>
+          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.usernameLabel')}</Text>
           <TextInput
-            style={styles.input}
-            placeholder="Username"
+            style={inputStyle}
+            placeholder={t('editProfileScreen.usernamePlaceholder')}
             placeholderTextColor="#6b7280"
             value={username}
             onChangeText={setUsername}
+            textAlign={isHebrewUi ? 'right' : 'left'}
           />
 
-          {/* Full Name */}
-          <Text style={styles.label}>Full Name</Text>
+          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.fullNameLabel')}</Text>
           <TextInput
-            style={styles.input}
-            placeholder="Your full name"
+            style={inputStyle}
+            placeholder={t('editProfileScreen.fullNamePlaceholder')}
             placeholderTextColor="#6b7280"
             value={fullName}
             onChangeText={setFullName}
+            textAlign={isHebrewUi ? 'right' : 'left'}
           />
 
-          {/* Phone */}
-          <Text style={styles.label}>Phone Number</Text>
+          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.phoneLabel')}</Text>
           <TextInput
-            style={styles.input}
-            placeholder="+972 ..."
+            style={inputStyle}
+            placeholder={t('editProfileScreen.phonePlaceholder')}
             placeholderTextColor="#6b7280"
             value={phone}
             onChangeText={setPhone}
             keyboardType="phone-pad"
+            textAlign={isHebrewUi ? 'right' : 'left'}
           />
 
-          {/* Institution */}
-          <Text style={styles.label}>
-            {role === 'lecturer' ? 'Institution' : 'University / College'}
+          <Text style={[styles.label, rtlText]}>
+            {role === 'lecturer' ? t('editProfileScreen.institutionLecturerLabel') : t('editProfileScreen.universityLabel')}
           </Text>
           <TextInput
-            style={styles.input}
+            style={inputStyle}
             placeholder={
               role === 'lecturer'
-                ? 'Where do you teach?'
-                : 'Where do you study?'
+                ? t('editProfileScreen.institutionPlaceholderLecturer')
+                : t('editProfileScreen.institutionPlaceholderStudent')
             }
             placeholderTextColor="#6b7280"
             value={institution}
             onChangeText={setInstitution}
+            textAlign={isHebrewUi ? 'right' : 'left'}
           />
 
-          {/* Field of Study / Department */}
           {role === 'student' ? (
             <>
-              <Text style={styles.label}>Field of Study</Text>
+              <Text style={[styles.label, rtlText]}>{t('editProfileScreen.fieldOfStudyLabel')}</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Software Engineering, Law, etc."
+                style={inputStyle}
+                placeholder={t('editProfileScreen.fieldOfStudyPlaceholder')}
                 placeholderTextColor="#6b7280"
                 value={fieldOfStudy}
                 onChangeText={setFieldOfStudy}
+                textAlign={isHebrewUi ? 'right' : 'left'}
               />
             </>
           ) : (
             <>
-              <Text style={styles.label}>Department / Faculty</Text>
+              <Text style={[styles.label, rtlText]}>{t('editProfileScreen.departmentLabel')}</Text>
               <TextInput
-                style={styles.input}
-                placeholder="Computer Science, Law, etc."
+                style={inputStyle}
+                placeholder={t('editProfileScreen.departmentPlaceholder')}
                 placeholderTextColor="#6b7280"
                 value={department}
                 onChangeText={setDepartment}
+                textAlign={isHebrewUi ? 'right' : 'left'}
               />
             </>
           )}
 
-          {/* Save Button */}
           <TouchableOpacity
             style={[styles.saveButton, saving && styles.saveButtonDisabled]}
             onPress={handleSave}
@@ -269,7 +303,7 @@ export default function EditProfileScreen() {
             {saving ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.saveButtonText}>Save Changes</Text>
+              <Text style={styles.saveButtonText}>{t('editProfileScreen.saveChanges')}</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -278,8 +312,6 @@ export default function EditProfileScreen() {
   );
 }
 
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
@@ -287,12 +319,27 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 24,
-    paddingTop: 60,
     paddingBottom: 40,
   },
   center: {
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#ffffff',
+    marginBottom: 12,
+    alignSelf: 'flex-start',
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   title: {
     fontSize: 24,
@@ -352,6 +399,16 @@ const styles = StyleSheet.create({
     fontSize: 36,
     fontWeight: '700',
   },
+  avatarButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexWrap: 'wrap',
+  },
+  avatarButtonsRtl: {
+    flexDirection: 'row-reverse',
+  },
   uploadButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -365,6 +422,25 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
   },
+  deleteButtonRtl: {
+    flexDirection: 'row-reverse',
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    backgroundColor: '#fef2f2',
+    gap: 6,
+  },
+  deleteButtonText: {
+    color: '#ef4444',
+    fontSize: 13,
+    fontWeight: '600',
+  },
   input: {
     backgroundColor: '#f9fafb',
     borderRadius: 10,
@@ -374,6 +450,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#374151',
     fontSize: 14,
+  },
+  inputRtl: {
+    writingDirection: 'rtl',
   },
   saveButton: {
     marginTop: 24,
@@ -391,4 +470,3 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 });
-

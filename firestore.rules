@@ -110,6 +110,62 @@ service cloud.firestore {
       allow delete: if isAuthenticated();
     }
     
+    // Study Journal - Tasks collection
+    match /studyTasks/{taskId} {
+      // Users can read their own tasks
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || !resource.exists);
+      
+      // Users can create their own tasks
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own tasks
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own tasks
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
+    // Tutor applications (student applies; admin reviews)
+    match /tutorApplications/{applicationId} {
+      function isAdminUser() {
+        return isAuthenticated() &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      }
+
+      allow read: if isAuthenticated() && (
+        resource.data.applicantUid == request.auth.uid ||
+        isAdminUser()
+      );
+
+      allow create: if isAuthenticated() &&
+        request.resource.data.applicantUid == request.auth.uid &&
+        request.resource.data.status == 'pending' &&
+        request.resource.data.declarationAccepted == true &&
+        request.resource.data.gradeSheetUrl is string &&
+        request.resource.data.courseId is string &&
+        request.resource.data.courseName is string;
+
+      allow update: if isAdminUser();
+      allow delete: if isAdminUser();
+    }
+
+    // Study Journal - Sessions collection
+    match /studySessions/{sessionId} {
+      // Users can read their own sessions
+      allow read: if isAuthenticated() && 
+        (resource.data.userId == request.auth.uid || !resource.exists);
+      
+      // Users can create their own sessions
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own sessions
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      
+      // Users can delete their own sessions
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+    
     // Allow all other collections for authenticated users (for future features)
     match /{document=**} {
       allow read, write: if isAuthenticated();

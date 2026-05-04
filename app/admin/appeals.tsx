@@ -1,7 +1,7 @@
 // app/admin/appeals.tsx
 import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import {
   collection,
   deleteDoc,
@@ -12,7 +12,7 @@ import {
   updateDoc,
   where
 } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -107,6 +107,7 @@ export default function AdminAppealsScreen() {
       });
 
       setAppeals(list);
+      setFilteredAppeals(list);
     } catch (err) {
       console.log('Error loading appeals:', err);
       Alert.alert(t('common.error'), t('admin.failedToLoadAppeals'));
@@ -137,10 +138,20 @@ export default function AdminAppealsScreen() {
               // Delete the appeal after processing
               await deleteDoc(doc(db, 'appeals', appeal.id));
 
-              // Optimistically update state instead of reloading to avoid BloomFilter warning
-              setAppeals((prev) => prev.filter((a) => a.id !== appeal.id));
+              // Optimistically update the list immediately
+              setAppeals(prev => prev.filter(a => a.id !== appeal.id));
+              setFilteredAppeals(prev => prev.filter(a => a.id !== appeal.id));
+              
+              // Close detail modal if open
+              if (selectedAppeal?.id === appeal.id) {
+                setDetailModalVisible(false);
+                setSelectedAppeal(null);
+              }
               
               Alert.alert(t('common.success'), t('admin.appealApprovedSuccess'));
+              
+              // Reload appeals list to ensure consistency
+              await loadAppeals();
             } catch (err) {
               console.log('Approve appeal error:', err);
               Alert.alert(t('common.error'), t('admin.failedToApproveAppeal'));
@@ -174,10 +185,20 @@ export default function AdminAppealsScreen() {
               // Delete the appeal after processing
               await deleteDoc(doc(db, 'appeals', appeal.id));
               
-              // Optimistically update state instead of reloading to avoid BloomFilter warning
-              setAppeals((prev) => prev.filter((a) => a.id !== appeal.id));
+              // Optimistically update the list immediately
+              setAppeals(prev => prev.filter(a => a.id !== appeal.id));
+              setFilteredAppeals(prev => prev.filter(a => a.id !== appeal.id));
+              
+              // Close detail modal if open
+              if (selectedAppeal?.id === appeal.id) {
+                setDetailModalVisible(false);
+                setSelectedAppeal(null);
+              }
               
               Alert.alert(t('common.success'), t('admin.appealRejectedSuccess'));
+              
+              // Reload appeals list to ensure consistency
+              await loadAppeals();
             } catch (err) {
               console.log('Reject appeal error:', err);
               Alert.alert(t('common.error'), t('admin.failedToRejectAppeal'));
@@ -486,13 +507,24 @@ export default function AdminAppealsScreen() {
             onPress={() => setImagePreviewUrl(null)}
           />
           <View style={styles.imagePreviewContainer}>
-            {imagePreviewUrl && (
+            {imagePreviewUrl ? (
               <Image
                 source={{ uri: imagePreviewUrl }}
                 style={styles.fullScreenImage}
                 resizeMode="contain"
+                onError={(error) => {
+                  console.log('Image load error:', error);
+                  Alert.alert(t('common.error'), 'Failed to load image');
+                  setImagePreviewUrl(null);
+                }}
+                onLoadStart={() => {
+                  // Image is starting to load
+                }}
+                onLoadEnd={() => {
+                  // Image finished loading
+                }}
               />
-            )}
+            ) : null}
             <TouchableOpacity
               style={styles.imagePreviewCloseButton}
               onPress={() => setImagePreviewUrl(null)}

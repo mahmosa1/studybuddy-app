@@ -1,5 +1,8 @@
 // app/course/[courseId].tsx
 import { auth, db } from '@/lib/firebaseConfig';
+import { useUser } from '@/lib/UserContext';
+import { askCourseAssistant } from '@/lib/aiService';
+import { startCourseFileIntelligenceJob } from '@/lib/learningIntelligence/api';
 import { supabase } from '@/lib/supabaseClient';
 import { uploadCourseFileToSupabase } from '@/lib/upload';
 import { Ionicons } from '@expo/vector-icons';
@@ -22,8 +25,10 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Linking,
   Modal,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -43,6 +48,7 @@ type CourseFile = {
 export default function CourseDetailsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { role } = useUser();
   const params = useLocalSearchParams<{
     courseId?: string | string[];
     name?: string;
@@ -56,8 +62,23 @@ export default function CourseDetailsScreen() {
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [showAIModal, setShowAIModal] = useState(false);
   const [aiQuestion, setAiQuestion] = useState('');
-  const [aiResponse, setAiResponse] = useState<string | null>(null);
+  const [aiResponse, setAiResponse] = useState<{
+    answer: string;
+    sourceFiles: string[];
+    sourceChunksCount: number;
+    question: string;
+    qualityStatus?: 'grounded' | 'weak_grounding' | 'no_sources' | 'fallback' | 'error';
+    traceId?: string;
+  } | null>(null);
+  const [aiRatingLoading, setAiRatingLoading] = useState(false);
+  const [aiMarkedRating, setAiMarkedRating] = useState<'good' | 'bad' | null>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryPack, setSummaryPack] = useState<{
+    summary: string;
+    keyPoints: string[];
+    flashcards: Array<{ question: string; answer: string }>;
+  } | null>(null);
   
   // Practice statistics
   const [practiceStats, setPracticeStats] = useState<{
@@ -187,7 +208,7 @@ export default function CourseDetailsScreen() {
       }
 
       // 2. שמירת מטא-דאטה ב-Firestore
-      await addDoc(collection(db, 'courseFiles'), {
+      const createdRef = await addDoc(collection(db, 'courseFiles'), {
         courseId,
         ownerUid: user.uid,
         name: asset.name ?? 'Untitled file',
@@ -195,6 +216,16 @@ export default function CourseDetailsScreen() {
         mimeType: asset.mimeType ?? null,
         url: fileUrl,
         createdAt: serverTimestamp(),
+      });
+
+      // Trigger unified file-intelligence indexing/insights pipeline in background.
+      startCourseFileIntelligenceJob({
+        userId: user.uid,
+        courseId,
+        courseName: name ?? 'Course',
+        fileId: createdRef.id,
+      }).catch((engineErr) => {
+        console.log('File intelligence job trigger failed:', engineErr);
       });
 
       Alert.alert('Success', 'File uploaded successfully.');
@@ -252,28 +283,76 @@ export default function CourseDetailsScreen() {
 
     setAiLoading(true);
     setAiResponse(null);
-
-    // Mock AI response - in real implementation, this would call an AI service
-    // that analyzes the course files and generates a response
-    setTimeout(() => {
-      const question = aiQuestion.toLowerCase();
-      let response = '';
-      
-      if (question.includes('topic') || question.includes('cover') || question.includes('about')) {
-        response = `Based on the course materials in "${name ?? 'this course'}", the main topics covered include algorithms, data structures, and computational complexity. The course focuses on understanding fundamental computer science concepts and their practical applications. The ${files.length} file${files.length !== 1 ? 's' : ''} uploaded contain detailed information about these topics.`;
-      } else if (question.includes('exam') || question.includes('test') || question.includes('quiz')) {
-        response = `Based on the course files, I recommend focusing on the key concepts from the uploaded materials. Review the main algorithms and data structures covered in the ${files.length} file${files.length !== 1 ? 's' : ''}, and practice solving problems similar to those in the course materials.`;
-      } else if (question.includes('difficult') || question.includes('hard') || question.includes('challeng')) {
-        response = `Based on the course files, some challenging areas include advanced algorithm analysis and complex data structure implementations. I recommend reviewing the uploaded materials and practicing with similar problems. The course materials contain ${files.length} file${files.length !== 1 ? 's' : ''} that can help you understand these concepts better.`;
-      } else if (question.includes('help') || question.includes('understand')) {
-        response = `I can help you understand concepts from this course based on the ${files.length} file${files.length !== 1 ? 's' : ''} uploaded. The course materials cover various topics related to "${name ?? 'this course'}". Feel free to ask more specific questions about any topic you'd like to explore further.`;
-      } else {
-        response = `Based on the ${files.length} file${files.length !== 1 ? 's' : ''} in "${name ?? 'this course'}", ${aiQuestion.includes('?') ? aiQuestion.slice(0, -1) : aiQuestion} relates to the content covered in the course materials. The files contain relevant information that addresses this topic. For more specific details, I recommend reviewing the uploaded course files directly.`;
-      }
-      
-      setAiResponse(response);
+    setAiMarkedRating(null);
+    try {
+      const askedQuestion = aiQuestion.trim();
+      const language = /[\u0590-\u05FF]/.test(aiQuestion) ? 'hebrew' : 'english';
+      const response = await askCourseAssistant(
+        courseId || '',
+        name ?? 'Course',
+        askedQuestion,
+        language
+      );
+      setAiResponse({
+        answer: response.answer,
+        sourceFiles: Array.isArray(response.sourceFiles) ? response.sourceFiles : [],
+        sourceChunksCount: Array.isArray(response.sourceChunks) ? response.sourceChunks.length : 0,
+        question: askedQuestion,
+        qualityStatus: response.qualityStatus,
+        traceId: response.traceId,
+      });
+    } catch (error) {
+      console.log('Course assistant failed:', error);
+      Alert.alert('Error', 'AI assistant is temporarily unavailable. Please try again.');
+    } finally {
       setAiLoading(false);
-    }, 2000);
+    }
+  };
+
+  const handleQuickAIAction = (question: string) => {
+    setAiQuestion(question);
+    setAiResponse(null);
+    setShowAIModal(true);
+  };
+
+  const handleMarkAIResponse = async (rating: 'good' | 'bad') => {
+    if (!aiResponse || aiRatingLoading || aiMarkedRating !== null || role !== 'admin' || !__DEV__) return;
+    const user = auth.currentUser;
+    if (!user || !courseId) return;
+    try {
+      setAiRatingLoading(true);
+      await addDoc(collection(db, 'aiEvaluations'), {
+        userId: user.uid,
+        courseId,
+        question: aiResponse.question,
+        answer: aiResponse.answer,
+        qualityStatus: aiResponse.qualityStatus || 'unknown',
+        rating,
+        traceId: aiResponse.traceId || null,
+        createdAt: serverTimestamp(),
+      });
+      setAiMarkedRating(rating);
+    } catch (err) {
+      console.log('Failed to save AI evaluation:', err);
+      Alert.alert('Error', 'Failed to save AI evaluation mark.');
+    } finally {
+      setAiRatingLoading(false);
+    }
+  };
+
+  const handleGenerateSummaryPack = async () => {
+    if (!courseId || summaryLoading) return;
+    try {
+      setSummaryLoading(true);
+      const { generateSummaryAndFlashcards } = await import('@/lib/aiService');
+      const pack = await generateSummaryAndFlashcards(courseId, name ?? 'Course');
+      setSummaryPack(pack);
+    } catch (error) {
+      console.log('Summary generation failed:', error);
+      Alert.alert('Error', 'Failed to generate AI summary pack');
+    } finally {
+      setSummaryLoading(false);
+    }
   };
 
   // Get file icon based on mime type
@@ -389,7 +468,11 @@ export default function CourseDetailsScreen() {
           <View style={styles.headerTop}>
             <TouchableOpacity
               style={styles.backButtonHeader}
-              onPress={() => router.back()}
+              onPress={() => {
+                // Use router.back() to maintain RTL/LTR state
+                // This prevents layout direction from changing
+                router.back();
+              }}
             >
               <Ionicons name="arrow-back" size={24} color="#ffffff" />
             </TouchableOpacity>
@@ -476,6 +559,29 @@ export default function CourseDetailsScreen() {
               <Text style={styles.aiButtonInlineText}>{t('courseDetails.askAI')}</Text>
             </TouchableOpacity>
           </View>
+          <View style={styles.aiQuickActionsRow}>
+            <TouchableOpacity
+              style={styles.aiQuickAction}
+              onPress={() => handleQuickAIAction(t('courseDetails.quickAiSummaryQuestion', { courseName: name ?? t('courseDetails.thisCourse') }))}
+            >
+              <Ionicons name="document-text-outline" size={14} color="#065f46" />
+              <Text style={styles.aiQuickActionText}>{t('courseDetails.quickAiSummary')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.aiQuickAction}
+              onPress={() => handleQuickAIAction(t('courseDetails.quickAiExamQuestion', { courseName: name ?? t('courseDetails.thisCourse') }))}
+            >
+              <Ionicons name="school-outline" size={14} color="#065f46" />
+              <Text style={styles.aiQuickActionText}>{t('courseDetails.quickAiExamPrep')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.aiQuickAction}
+              onPress={() => handleQuickAIAction(t('courseDetails.quickAiWeakQuestion', { courseName: name ?? t('courseDetails.thisCourse') }))}
+            >
+              <Ionicons name="analytics-outline" size={14} color="#065f46" />
+              <Text style={styles.aiQuickActionText}>{t('courseDetails.quickAiWeakTopics')}</Text>
+            </TouchableOpacity>
+          </View>
 
           {loadingFiles ? (
             <View style={styles.loadingContainer}>
@@ -509,6 +615,46 @@ export default function CourseDetailsScreen() {
             <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
             <Text style={styles.uploadButtonText}>{t('courseDetails.uploadFile')}</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.uploadButton, { marginTop: 10, backgroundColor: '#0f766e' }]}
+            onPress={handleGenerateSummaryPack}
+          >
+            {summaryLoading ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <>
+                <Ionicons name="bulb-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
+                <Text style={styles.uploadButtonText}>AI Summary + Flashcards</Text>
+              </>
+            )}
+          </TouchableOpacity>
+
+          {summaryPack && (
+            <View style={styles.summaryPackBox}>
+              <Text style={styles.summaryPackTitle}>AI Summary</Text>
+              <Text style={styles.summaryPackText}>{summaryPack.summary}</Text>
+              {summaryPack.keyPoints.length > 0 && (
+                <>
+                  <Text style={styles.summaryPackSubtitle}>Key Points</Text>
+                  {summaryPack.keyPoints.map((point, idx) => (
+                    <Text key={`${point}-${idx}`} style={styles.summaryBullet}>• {point}</Text>
+                  ))}
+                </>
+              )}
+              {summaryPack.flashcards.length > 0 && (
+                <>
+                  <Text style={styles.summaryPackSubtitle}>Flashcards</Text>
+                  {summaryPack.flashcards.slice(0, 4).map((card, idx) => (
+                    <View key={`${card.question}-${idx}`} style={styles.flashcardItem}>
+                      <Text style={styles.flashcardQ}>Q: {card.question}</Text>
+                      <Text style={styles.flashcardA}>A: {card.answer}</Text>
+                    </View>
+                  ))}
+                </>
+              )}
+            </View>
+          )}
         </View>
       </ScrollView>
 
@@ -523,90 +669,183 @@ export default function CourseDetailsScreen() {
           setAiResponse(null);
         }}
       >
-        <View style={styles.aiModalBackdrop}>
-          <View style={styles.aiModalContent}>
-            <View style={styles.aiModalHeader}>
-              <View style={styles.aiModalHeaderLeft}>
-                <View style={styles.aiIconContainer}>
-                  <Ionicons name="sparkles" size={24} color={PRIMARY_GREEN} />
-                </View>
-                <View>
-                  <Text style={styles.aiModalTitle}>{t('courseDetails.aiAssistant')}</Text>
-                  <Text style={styles.aiModalSubtitle}>
-                    {t('courseDetails.askQuestionsAbout', { courseName: name ?? t('courseDetails.thisCourse') })}
-                  </Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                onPress={() => {
-                  setShowAIModal(false);
-                  setAiQuestion('');
-                  setAiResponse(null);
-                }}
-              >
-                <Ionicons name="close" size={24} color="#111827" />
-              </TouchableOpacity>
-            </View>
-
-            <ScrollView style={styles.aiModalBody} showsVerticalScrollIndicator={false}>
-              {aiResponse ? (
-                <View style={styles.aiResponseContainer}>
-                  <View style={styles.aiResponseHeader}>
-                    <Ionicons name="sparkles" size={20} color={PRIMARY_GREEN} />
-                    <Text style={styles.aiResponseTitle}>{t('courseDetails.aiResponse')}</Text>
+        <KeyboardAvoidingView
+          style={styles.aiModalKeyboardWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        >
+          <View style={styles.aiModalBackdrop}>
+            <View style={styles.aiModalContent}>
+              <View style={styles.aiModalHeader}>
+                <View style={styles.aiModalHeaderLeft}>
+                  <View style={styles.aiIconContainer}>
+                    <Ionicons name="sparkles" size={24} color={PRIMARY_GREEN} />
                   </View>
-                  <Text style={styles.aiResponseText}>{aiResponse}</Text>
-                  <TouchableOpacity
-                    style={styles.askAnotherButton}
-                    onPress={() => {
-                      setAiQuestion('');
-                      setAiResponse(null);
-                    }}
-                  >
-                    <Ionicons name="add-circle-outline" size={18} color={PRIMARY_GREEN} />
-                    <Text style={styles.askAnotherText}>{t('courseDetails.askAnother')}</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View style={styles.aiQuestionContainer}>
-                  <View style={styles.aiInfoCard}>
-                    <Ionicons name="information-circle" size={24} color={PRIMARY_GREEN} />
-                    <Text style={styles.aiInfoText}>
-                      {files.length === 1 
-                        ? t('courseDetails.aiInfoSingle', { count: files.length })
-                        : t('courseDetails.aiInfoPlural', { count: files.length })}
+                  <View>
+                    <Text style={styles.aiModalTitle}>{t('courseDetails.aiAssistant')}</Text>
+                    <Text style={styles.aiModalSubtitle}>
+                      {t('courseDetails.askQuestionsAbout', { courseName: name ?? t('courseDetails.thisCourse') })}
                     </Text>
                   </View>
-                  <Text style={styles.inputLabel}>{t('courseDetails.yourQuestion')}</Text>
-                  <TextInput
-                    style={styles.aiInput}
-                    placeholder={t('courseDetails.questionPlaceholder')}
-                    placeholderTextColor="#9ca3af"
-                    value={aiQuestion}
-                    onChangeText={setAiQuestion}
-                    multiline
-                    numberOfLines={4}
-                    textAlignVertical="top"
-                  />
-                  <TouchableOpacity
-                    style={[styles.submitQuestionButton, !aiQuestion.trim() && styles.submitQuestionButtonDisabled]}
-                    onPress={handleAskAI}
-                    disabled={!aiQuestion.trim() || aiLoading}
-                  >
-                    {aiLoading ? (
-                      <ActivityIndicator color="#ffffff" size="small" />
-                    ) : (
-                      <>
-                        <Ionicons name="send" size={18} color="#ffffff" />
-                        <Text style={styles.submitQuestionText}>{t('courseDetails.askQuestion')}</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
                 </View>
-              )}
-            </ScrollView>
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowAIModal(false);
+                    setAiQuestion('');
+                    setAiResponse(null);
+                  }}
+                >
+                  <Ionicons name="close" size={24} color="#111827" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.aiModalBody}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={styles.aiModalBodyContent}
+              >
+                {aiResponse ? (
+                  <View style={styles.aiResponseContainer}>
+                    <View style={styles.aiResponseHeader}>
+                      <Ionicons name="sparkles" size={20} color={PRIMARY_GREEN} />
+                      <Text style={styles.aiResponseTitle}>{t('courseDetails.aiResponse')}</Text>
+                    </View>
+                    <Text style={styles.aiResponseText}>{aiResponse.answer}</Text>
+                    <View style={styles.sourcesCard}>
+                      <View style={styles.sourcesHeader}>
+                        <Text style={styles.sourcesTitle}>{t('courseDetails.sourcesUsedTitle')}</Text>
+                        <View
+                          style={[
+                            styles.sourceConfidenceBadge,
+                            aiResponse.sourceFiles.length > 0
+                              ? styles.sourceConfidenceBadgeStrong
+                              : styles.sourceConfidenceBadgeWeak,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.sourceConfidenceText,
+                              aiResponse.sourceFiles.length > 0
+                                ? styles.sourceConfidenceTextStrong
+                                : styles.sourceConfidenceTextWeak,
+                            ]}
+                          >
+                            {aiResponse.sourceFiles.length > 0
+                              ? t('courseDetails.sourceIndicatorGrounded')
+                              : t('courseDetails.sourceIndicatorNoGrounding')}
+                          </Text>
+                        </View>
+                      </View>
+                      {aiResponse.sourceFiles.length > 0 ? (
+                        <View style={styles.sourcesList}>
+                          {aiResponse.sourceFiles.map((fileName, index) => (
+                            <View key={`${fileName}-${index}`} style={styles.sourceFileRow}>
+                              <Ionicons name="document-text-outline" size={14} color="#065f46" />
+                              <Text style={styles.sourceFileName} numberOfLines={1}>
+                                {fileName}
+                              </Text>
+                            </View>
+                          ))}
+                          <Text style={styles.sourcesHelperText}>
+                            {t('courseDetails.sourceChunksUsed', {
+                              count: aiResponse.sourceChunksCount || aiResponse.sourceFiles.length,
+                            })}
+                          </Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.noSourcesText}>
+                          {t('courseDetails.noCourseSourcesFound')}
+                        </Text>
+                      )}
+                    </View>
+                    {role === 'admin' && __DEV__ ? (
+                      <View style={styles.evaluationRow}>
+                        <Text style={styles.evaluationLabel}>Mark response (QA)</Text>
+                        <View style={styles.evaluationButtons}>
+                          <TouchableOpacity
+                            style={[
+                              styles.markButton,
+                              styles.markGoodButton,
+                              aiMarkedRating === 'good' && styles.markButtonActive,
+                            ]}
+                            onPress={() => handleMarkAIResponse('good')}
+                            disabled={aiRatingLoading || aiMarkedRating !== null}
+                          >
+                            <Text style={styles.markButtonText}>👍 good</Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[
+                              styles.markButton,
+                              styles.markBadButton,
+                              aiMarkedRating === 'bad' && styles.markButtonActive,
+                            ]}
+                            onPress={() => handleMarkAIResponse('bad')}
+                            disabled={aiRatingLoading || aiMarkedRating !== null}
+                          >
+                            <Text style={styles.markButtonText}>👎 bad</Text>
+                          </TouchableOpacity>
+                        </View>
+                        {aiMarkedRating ? (
+                          <Text style={styles.evaluationConfirmationText}>
+                            {aiMarkedRating === 'good' ? 'Marked as good' : 'Marked as bad'}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.askAnotherButton}
+                      onPress={() => {
+                        setAiQuestion('');
+                        setAiResponse(null);
+                        setAiMarkedRating(null);
+                      }}
+                    >
+                      <Ionicons name="add-circle-outline" size={18} color={PRIMARY_GREEN} />
+                      <Text style={styles.askAnotherText}>{t('courseDetails.askAnother')}</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.aiQuestionContainer}>
+                    <View style={styles.aiInfoCard}>
+                      <Ionicons name="information-circle" size={24} color={PRIMARY_GREEN} />
+                      <Text style={styles.aiInfoText}>
+                        {files.length === 1 
+                          ? t('courseDetails.aiInfoSingle', { count: files.length })
+                          : t('courseDetails.aiInfoPlural', { count: files.length })}
+                      </Text>
+                    </View>
+                    <Text style={styles.inputLabel}>{t('courseDetails.yourQuestion')}</Text>
+                    <TextInput
+                      style={styles.aiInput}
+                      placeholder={t('courseDetails.questionPlaceholder')}
+                      placeholderTextColor="#9ca3af"
+                      value={aiQuestion}
+                      onChangeText={setAiQuestion}
+                      multiline
+                      numberOfLines={4}
+                      textAlignVertical="top"
+                    />
+                    <TouchableOpacity
+                      style={[styles.submitQuestionButton, !aiQuestion.trim() && styles.submitQuestionButtonDisabled]}
+                      onPress={handleAskAI}
+                      disabled={!aiQuestion.trim() || aiLoading}
+                    >
+                      {aiLoading ? (
+                        <ActivityIndicator color="#ffffff" size="small" />
+                      ) : (
+                        <>
+                          <Ionicons name="send" size={18} color="#ffffff" />
+                          <Text style={styles.submitQuestionText}>{t('courseDetails.askQuestion')}</Text>
+                        </>
+                      )}
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </ScrollView>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </View>
   );
@@ -683,6 +922,30 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: PRIMARY_GREEN,
+  },
+  aiQuickActionsRow: {
+    marginTop: 12,
+    marginBottom: 4,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  aiQuickAction: {
+    flex: 1,
+    minHeight: 36,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    backgroundColor: '#ecfdf5',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    paddingHorizontal: 8,
+  },
+  aiQuickActionText: {
+    color: '#065f46',
+    fontSize: 11,
+    fontWeight: '700',
   },
   insightsCard: {
     backgroundColor: '#ffffff',
@@ -908,11 +1171,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
+  aiModalKeyboardWrapper: {
+    flex: 1,
+  },
   aiModalContent: {
     backgroundColor: '#ffffff',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    maxHeight: '90%',
+    maxHeight: '92%',
     paddingTop: 20,
   },
   aiModalHeader: {
@@ -951,6 +1217,9 @@ const styles = StyleSheet.create({
   aiModalBody: {
     padding: 20,
     maxHeight: 600,
+  },
+  aiModalBodyContent: {
+    paddingBottom: 24,
   },
   aiQuestionContainer: {
     gap: 16,
@@ -1031,6 +1300,118 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
+  sourcesCard: {
+    backgroundColor: '#f8fafc',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
+    padding: 12,
+    gap: 8,
+  },
+  sourcesHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  sourcesTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  sourceConfidenceBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+  },
+  sourceConfidenceBadgeStrong: {
+    backgroundColor: '#ecfdf5',
+    borderColor: '#86efac',
+  },
+  sourceConfidenceBadgeWeak: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fcd34d',
+  },
+  sourceConfidenceText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  sourceConfidenceTextStrong: {
+    color: '#166534',
+  },
+  sourceConfidenceTextWeak: {
+    color: '#92400e',
+  },
+  sourcesList: {
+    gap: 6,
+  },
+  sourceFileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 4,
+  },
+  sourceFileName: {
+    flex: 1,
+    fontSize: 13,
+    color: '#334155',
+  },
+  sourcesHelperText: {
+    marginTop: 2,
+    fontSize: 12,
+    color: '#64748b',
+  },
+  noSourcesText: {
+    fontSize: 13,
+    color: '#92400e',
+    backgroundColor: '#fef3c7',
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  evaluationRow: {
+    marginTop: 2,
+    gap: 8,
+  },
+  evaluationLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748b',
+  },
+  evaluationButtons: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  markButton: {
+    flex: 1,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  markGoodButton: {
+    borderColor: '#86efac',
+    backgroundColor: '#ecfdf5',
+  },
+  markBadButton: {
+    borderColor: '#fca5a5',
+    backgroundColor: '#fef2f2',
+  },
+  markButtonActive: {
+    opacity: 0.65,
+  },
+  markButtonText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1f2937',
+  },
+  evaluationConfirmationText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#047857',
+  },
   askAnotherButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1047,5 +1428,52 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: PRIMARY_GREEN,
+  },
+  summaryPackBox: {
+    marginTop: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#99f6e4',
+    backgroundColor: '#f0fdfa',
+    padding: 12,
+    gap: 6,
+  },
+  summaryPackTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#134e4a',
+  },
+  summaryPackSubtitle: {
+    marginTop: 8,
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#115e59',
+  },
+  summaryPackText: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: '#0f172a',
+  },
+  summaryBullet: {
+    fontSize: 13,
+    color: '#0f172a',
+  },
+  flashcardItem: {
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#ccfbf1',
+    backgroundColor: '#ffffff',
+    padding: 8,
+    marginTop: 6,
+  },
+  flashcardQ: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f172a',
+  },
+  flashcardA: {
+    fontSize: 12,
+    color: '#334155',
+    marginTop: 2,
   },
 });

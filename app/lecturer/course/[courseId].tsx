@@ -1,5 +1,6 @@
 // app/lecturer/course/[courseId].tsx
 import { auth, db } from '@/lib/firebaseConfig';
+import { startCourseFileIntelligenceJob } from '@/lib/learningIntelligence/api';
 import { supabase } from '@/lib/supabaseClient';
 import { uploadCourseFileToSupabase } from '@/lib/upload';
 import * as DocumentPicker from 'expo-document-picker';
@@ -134,7 +135,7 @@ export default function LecturerCourseDetailsScreen() {
         return;
       }
 
-      await addDoc(collection(db, 'courseFiles'), {
+      const createdRef = await addDoc(collection(db, 'courseFiles'), {
         courseId,
         ownerUid: user.uid,
         name: asset.name ?? 'Untitled file',
@@ -142,6 +143,15 @@ export default function LecturerCourseDetailsScreen() {
         mimeType: asset.mimeType ?? null,
         url: fileUrl,
         createdAt: serverTimestamp(),
+      });
+
+      startCourseFileIntelligenceJob({
+        userId: user.uid,
+        courseId,
+        courseName: name ?? 'Course',
+        fileId: createdRef.id,
+      }).catch((engineErr) => {
+        console.log('Lecturer file intelligence job trigger failed:', engineErr);
       });
 
       Alert.alert('Success', 'File uploaded successfully.');

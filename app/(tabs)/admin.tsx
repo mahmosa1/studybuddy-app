@@ -2,27 +2,28 @@
 import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import {
-  collection,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
+    collection,
+    doc,
+    getDocs,
+    query,
+    updateDoc,
+    where,
 } from 'firebase/firestore';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
-  Alert,
-  Image,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    Image,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 type UserItem = {
@@ -39,6 +40,7 @@ type UserItem = {
 
 export default function AdminScreen() {
   const { t } = useTranslation();
+  const router = useRouter();
   const [pendingUsers, setPendingUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
@@ -180,7 +182,7 @@ export default function AdminScreen() {
       {/* Status badge */}
       <View style={styles.statusPill}>
         <Ionicons name="time-outline" size={12} color={ACCENT_GREEN} />
-        <Text style={styles.statusPillText}>{t('admin.pendingApproval')}</Text>
+        <Text style={styles.statusPillText}>Pending Approval</Text>
       </View>
 
       {/* Documents section */}
@@ -249,8 +251,8 @@ export default function AdminScreen() {
             <ActivityIndicator color="#ffffff" />
           ) : (
             <>
-              <Ionicons name="checkmark-circle-outline" size={18} color="#ffffff" />
-              <Text style={styles.actionText}>{t('admin.approve')}</Text>
+              <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
+              <Text style={styles.actionText}>Accept Account</Text>
             </>
           )}
         </TouchableOpacity>
@@ -260,8 +262,8 @@ export default function AdminScreen() {
           onPress={() => openRejectModal(item.uid)}
           disabled={updatingUid === item.uid}
         >
-          <Ionicons name="close-circle-outline" size={18} color="#ffffff" />
-          <Text style={styles.actionText}>{t('admin.reject')}</Text>
+          <Ionicons name="close-circle" size={20} color="#ffffff" />
+          <Text style={styles.actionText}>Reject Account</Text>
         </TouchableOpacity>
       </View>
     </View>
@@ -276,25 +278,44 @@ export default function AdminScreen() {
         {/* Header */}
         <View style={styles.header}>
           <Ionicons name="shield-checkmark" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{t('admin.title')}</Text>
+          <Text style={styles.headerTitle}>Admin Panel</Text>
           <Text style={styles.headerSubtitle}>
-            {t('admin.reviewPendingRegistrations')}
+            Review and manage pending account registrations
           </Text>
+          <View style={styles.adminHeaderActions}>
+            <TouchableOpacity
+              style={styles.diagnosticsButton}
+              onPress={() => router.push('/admin/ai-diagnostics')}
+            >
+              <Ionicons name="analytics-outline" size={16} color="#047857" />
+              <Text style={styles.diagnosticsButtonText}>AI Diagnostics</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.diagnosticsButton}
+              onPress={() => router.push('/admin/tutor-applications')}
+            >
+              <Ionicons name="school-outline" size={16} color="#047857" />
+              <Text style={styles.diagnosticsButtonText}>{t('admin.tutorApplications.shortTitle')}</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {loading ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={PRIMARY_GREEN} />
-            <Text style={styles.loadingText}>{t('admin.loadingPendingUsers')}</Text>
+            <Text style={styles.loadingText}>Loading pending users...</Text>
           </View>
         ) : pendingUsers.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="checkmark-circle" size={64} color="#22c55e" />
-            <Text style={styles.emptyTitle}>{t('admin.noPendingUsers')}</Text>
-            <Text style={styles.emptyText}>{t('admin.allUsersReviewed')}</Text>
+            <Text style={styles.emptyTitle}>No Pending Users</Text>
+            <Text style={styles.emptyText}>All user registrations have been reviewed</Text>
           </View>
         ) : (
           <View style={styles.usersList}>
+            <Text style={styles.sectionTitle}>
+              {pendingUsers.length} {pendingUsers.length === 1 ? 'User' : 'Users'} Pending Review
+            </Text>
             {pendingUsers.map((item) => (
               <View key={item.uid}>{renderItem({ item })}</View>
             ))}
@@ -324,7 +345,7 @@ export default function AdminScreen() {
               onPress={closePreview}
             >
               <Ionicons name="close" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-              <Text style={styles.modalCloseText}>Close</Text>
+              <Text style={styles.modalCloseText}>Close Preview</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -345,16 +366,16 @@ export default function AdminScreen() {
           <View style={styles.rejectModalContent}>
             <View style={styles.rejectModalHeader}>
               <Ionicons name="close-circle" size={24} color="#ef4444" />
-              <Text style={styles.rejectModalTitle}>{t('admin.rejectUser')}</Text>
+              <Text style={styles.rejectModalTitle}>Reject Account</Text>
             </View>
             <Text style={styles.rejectModalSubtitle}>
-              {t('admin.rejectUserSubtitle')}
+              Please provide a reason for rejecting this account registration. This reason will be sent to the user.
             </Text>
             
-            <Text style={styles.rejectModalLabel}>{t('admin.rejectionReason')} *</Text>
+            <Text style={styles.rejectModalLabel}>Rejection Reason *</Text>
             <TextInput
               style={styles.rejectModalInput}
-              placeholder={t('admin.rejectionReasonPlaceholder')}
+              placeholder="Enter the reason for rejection..."
               placeholderTextColor="#6b7280"
               value={rejectionReason}
               onChangeText={setRejectionReason}
@@ -372,7 +393,7 @@ export default function AdminScreen() {
                   setRejectionReason('');
                 }}
               >
-                <Text style={styles.rejectModalCancelText}>{t('common.cancel')}</Text>
+                <Text style={styles.rejectModalCancelText}>Cancel</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={[styles.rejectModalButton, styles.rejectModalConfirmButton]}
@@ -384,7 +405,7 @@ export default function AdminScreen() {
                 ) : (
                   <>
                     <Ionicons name="close-circle" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                    <Text style={styles.rejectModalConfirmText}>{t('admin.rejectUser')}</Text>
+                    <Text style={styles.rejectModalConfirmText}>Reject Account</Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -416,7 +437,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderBottomLeftRadius: 40,
     borderBottomRightRadius: 40,
-    marginBottom: -60,
+    marginBottom: 20,
     shadowColor: PRIMARY_GREEN,
     shadowOffset: { width: 0, height: 12 },
     shadowOpacity: 0.4,
@@ -444,10 +465,37 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     letterSpacing: 0.2,
   },
+  adminHeaderActions: {
+    marginTop: 14,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 10,
+    width: '100%',
+    paddingHorizontal: 8,
+  },
+  diagnosticsButton: {
+    marginTop: 0,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1fae5',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  diagnosticsButtonText: {
+    color: '#047857',
+    fontSize: 13,
+    fontWeight: '700',
+  },
   loadingContainer: {
     alignItems: 'center',
     paddingVertical: 40,
-    marginTop: 20,
+    marginTop: 40,
+    paddingHorizontal: 20,
   },
   loadingText: {
     marginTop: 10,
@@ -457,7 +505,7 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     paddingVertical: 60,
-    marginTop: 20,
+    marginTop: 40,
     marginHorizontal: 20,
     backgroundColor: '#ffffff',
     borderRadius: 20,
@@ -478,7 +526,14 @@ const styles = StyleSheet.create({
   },
   usersList: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 40,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 16,
+    paddingHorizontal: 4,
   },
 
   card: {

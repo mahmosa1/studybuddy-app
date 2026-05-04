@@ -105,13 +105,56 @@ function extractTextFromPDFBytes(bytes: Uint8Array): string {
     }
     
     // Combine all extracted strings
-    text = extractedStrings
+    let combinedText = extractedStrings
       .filter(s => s.trim().length > 0)
-      .join(' ')
-      .replace(/\s+/g, ' ') // Multiple spaces to single space
-      .replace(/[^\w\s.,;:!?()\-'"]/g, ' ') // Remove special chars but keep punctuation
-      .replace(/\s+/g, ' ') // Clean up again
-      .trim();
+      .join(' ');
+    
+    // Limit text length before processing to avoid memory issues
+    // Process in chunks to avoid "Out of memory for regexp results" error
+    const MAX_TEXT_LENGTH = 100000; // Limit to 100k chars before processing
+    if (combinedText.length > MAX_TEXT_LENGTH) {
+      combinedText = combinedText.substring(0, MAX_TEXT_LENGTH);
+      console.log(`⚠️ Text too long (${combinedText.length} chars), truncating to ${MAX_TEXT_LENGTH}`);
+    }
+    
+    // Process text in chunks to avoid memory issues with large regex operations
+    const CHUNK_SIZE = 10000; // Process 10k chars at a time
+    const chunks: string[] = [];
+    
+    for (let i = 0; i < combinedText.length; i += CHUNK_SIZE) {
+      let chunk = combinedText.substring(i, i + CHUNK_SIZE);
+      
+      try {
+        // Multiple spaces to single space
+        chunk = chunk.replace(/\s+/g, ' ');
+        
+        // Remove special chars but keep punctuation - process in smaller batches
+        // Split into even smaller pieces for the complex regex
+        const subChunks: string[] = [];
+        const SUB_CHUNK_SIZE = 2000; // Process 2k at a time for complex regex
+        for (let j = 0; j < chunk.length; j += SUB_CHUNK_SIZE) {
+          let subChunk = chunk.substring(j, j + SUB_CHUNK_SIZE);
+          try {
+            subChunk = subChunk.replace(/[^\w\s.,;:!?()\-'"]/g, ' ');
+          } catch (regexError) {
+            // If regex fails, just keep the subChunk as is
+            console.warn('⚠️ Regex processing failed for chunk, keeping original text');
+          }
+          subChunks.push(subChunk);
+        }
+        chunk = subChunks.join('');
+        
+        // Clean up again
+        chunk = chunk.replace(/\s+/g, ' ');
+        chunks.push(chunk);
+      } catch (chunkError) {
+        // If processing fails for a chunk, keep original
+        console.warn('⚠️ Error processing chunk, keeping original text');
+        chunks.push(chunk);
+      }
+    }
+    
+    text = chunks.join(' ').trim();
     
     // Only return if we got substantial text
     if (text.length < 100) {
@@ -266,13 +309,28 @@ export async function getFileContentFromSupabase(
  * Returns combined text content from all files
  */
 export async function extractTextFromCourseFiles(
-  files: Array<{ url: string; name: string; mimeType?: string | null }>
+  files: Array<{ url: string; name: string; mimeType?: string | null }>,
+  options?: { maxTotalChars?: number; maxFiles?: number }
 ): Promise<string> {
   const extractedTexts: string[] = [];
+  const maxTotalChars = options?.maxTotalChars ?? 15000;
+  const maxFiles = options?.maxFiles ?? 2;
+  const prioritizedFiles = [...files].sort((a, b) => {
+    const rank = (f: { name: string; mimeType?: string | null }) => {
+      const mime = (f.mimeType || '').toLowerCase();
+      const name = (f.name || '').toLowerCase();
+      if (mime.includes('pdf') || name.endsWith('.pdf')) return 0;
+      if (mime.includes('text') || name.endsWith('.txt') || name.endsWith('.md')) return 1;
+      if (mime.includes('word') || mime.includes('document') || name.endsWith('.doc') || name.endsWith('.docx')) return 2;
+      return 3;
+    };
+    return rank(a) - rank(b);
+  });
+  const selectedFiles = prioritizedFiles.slice(0, maxFiles);
   
-  console.log(`📚 Extracting text from ${files.length} file(s)...`);
+  console.log(`📚 Extracting text from ${selectedFiles.length}/${files.length} file(s)...`);
   
-  for (const file of files) {
+  for (const file of selectedFiles) {
     if (!file.url) {
       console.log(`⚠️ Skipping ${file.name} - no URL`);
       continue;
@@ -284,11 +342,16 @@ export async function extractTextFromCourseFiles(
       
       if (text && text.trim().length > 0) {
         // Only add if we got actual content (not just file name)
-        if (!text.startsWith('File:') && 
+        if (!text.startsWith('File:') &&
             !text.startsWith('PDF file:') && 
             !text.startsWith('Word document:') &&
             text.trim().length > 50) { // At least 50 characters
-          extractedTexts.push(`\n\n--- Content from ${file.name} ---\n${text}`);
+          const remainingChars = Math.max(0, maxTotalChars - extractedTexts.join('\n').length);
+          if (remainingChars <= 0) {
+            console.log('⏱️ Reached extraction character budget, stopping early');
+            break;
+          }
+          extractedTexts.push(`\n\n--- Content from ${file.name} ---\n${text.substring(0, remainingChars)}`);
           console.log(`✅ Extracted ${text.length} characters from ${file.name}`);
         } else {
           console.log(`⚠️ Skipping ${file.name} - insufficient content (${text.length} chars)`);
@@ -304,7 +367,7 @@ export async function extractTextFromCourseFiles(
   
   // Combine all text, limit total length
   const combinedText = extractedTexts.join('\n');
-  const finalText = combinedText.substring(0, 50000); // Limit to 50,000 characters total
+  const finalText = combinedText.substring(0, maxTotalChars);
   
   console.log(`📊 Total extracted: ${finalText.length} characters from ${extractedTexts.length} file(s)`);
   

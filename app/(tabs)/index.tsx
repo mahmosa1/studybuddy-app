@@ -1,5 +1,18 @@
 // app/(tabs)/index.tsx
 import { db } from '@/lib/firebaseConfig';
+import {
+    createTask,
+    deleteTask as deleteStudyTask,
+    getSmartNotifications,
+    getStudyStats,
+    getTasks,
+    saveStudySession,
+    SmartNotification,
+    StudyStats,
+    StudyTask,
+    updateDailyGoal,
+    updateTaskStatus,
+} from '@/lib/studyJournalService';
 import { useUser } from '@/lib/UserContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -7,12 +20,18 @@ import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firesto
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  FlatList,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
 } from 'react-native';
 
 type RecentCourse = {
@@ -22,7 +41,7 @@ type RecentCourse = {
 
 export default function HomeScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { role, firebaseUser } = useUser();
   const [username, setUsername] = useState<string>('');
   const [recentCourses, setRecentCourses] = useState<RecentCourse[]>([]);
@@ -77,87 +96,491 @@ export default function HomeScreen() {
   }
 
   // Default: Student Home
+  return <StudentHomeWithJournal username={username} loading={loading} recentCourses={recentCourses} />;
+}
+
+function StudentHomeWithJournal({
+  username,
+  loading,
+  recentCourses,
+}: {
+  username: string;
+  loading: boolean;
+  recentCourses: RecentCourse[];
+}) {
+  const router = useRouter();
+  const { t, i18n } = useTranslation();
+  const [stats, setStats] = useState<StudyStats | null>(null);
+  const [tasks, setTasks] = useState<StudyTask[]>([]);
+  const [loadingData, setLoadingData] = useState(true);
+  const [seconds, setSeconds] = useState(0);
+  const [running, setRunning] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskTitle, setTaskTitle] = useState('');
+  const [isTaskEditMode, setIsTaskEditMode] = useState(false);
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [goalHoursInput, setGoalHoursInput] = useState('2');
+  const [goalMinutesInput, setGoalMinutesInput] = useState('0');
+  const [smartNotifications, setSmartNotifications] = useState<SmartNotification[]>([]);
+  const isHebrewUi = i18n.language === 'he';
+  const mirroredTextAlignStyle = isHebrewUi ? styles.textAlignRight : styles.textAlignLeft;
+
+  useEffect(() => {
+    const load = async () => {
+      setLoadingData(true);
+      const [s, ts, notifications] = await Promise.all([getStudyStats(), getTasks(), getSmartNotifications()]);
+      setStats(s);
+      setTasks(ts);
+      setSmartNotifications(notifications);
+      setLoadingData(false);
+    };
+    load();
+  }, []);
+
+  useEffect(() => {
+    if (!running || paused) return;
+    const timer = setInterval(() => setSeconds((v) => v + 1), 1000);
+    return () => clearInterval(timer);
+  }, [running, paused]);
+
+  const formatTimer = (value: number) => {
+    const mins = Math.floor(value / 60);
+    const secs = value % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleStop = async () => {
+    setRunning(false);
+    setPaused(false);
+    if (seconds > 0) {
+      await saveStudySession(seconds);
+      Alert.alert('Saved', `Study session saved (${Math.floor(seconds / 60)} min)`);
+      setSeconds(0);
+      const newStats = await getStudyStats();
+      setStats(newStats);
+    }
+  };
+
+  const handlePauseResume = () => {
+    if (!running) return;
+    setPaused((prev) => !prev);
+  };
+
+  const handleAddTask = async () => {
+    if (!taskTitle.trim()) return;
+    await createTask(taskTitle.trim());
+    setTaskTitle('');
+    setShowTaskModal(false);
+    setTasks(await getTasks());
+  };
+
+  const openGoalEditor = () => {
+    const currentGoal = stats?.dailyGoal || 7200;
+    const hours = Math.floor(currentGoal / 3600);
+    const minutes = Math.floor((currentGoal % 3600) / 60);
+    setGoalHoursInput(String(hours));
+    setGoalMinutesInput(String(minutes));
+    setShowGoalModal(true);
+  };
+
+  const handleSaveDailyGoal = async () => {
+    const parsedHours = Number(goalHoursInput || '0');
+    const parsedMinutes = Number(goalMinutesInput || '0');
+
+    if (
+      Number.isNaN(parsedHours) ||
+      Number.isNaN(parsedMinutes) ||
+      parsedHours < 0 ||
+      parsedMinutes < 0 ||
+      parsedMinutes > 59
+    ) {
+      Alert.alert(t('common.error'), t('home.invalidGoalInput'));
+      return;
+    }
+
+    const totalSeconds = parsedHours * 3600 + parsedMinutes * 60;
+    if (totalSeconds < 900) {
+      Alert.alert(t('common.error'), t('home.minimumGoalMinutes'));
+      return;
+    }
+
+    await updateDailyGoal(totalSeconds);
+    setShowGoalModal(false);
+    const newStats = await getStudyStats();
+    setStats(newStats);
+  };
+
+  const visibleTasks = tasks.slice(0, 6);
+  const dailyGoalSeconds = stats?.dailyGoal || 7200;
+  const todayStudySecondsLive = (stats?.todayStudyTime || 0) + seconds;
+  const liveGoalProgress =
+    dailyGoalSeconds > 0 ? Math.min(100, Math.round((todayStudySecondsLive / dailyGoalSeconds) * 100)) : 0;
+  const studiedMinutes = Math.floor(todayStudySecondsLive / 60);
+  const goalMinutes = Math.max(1, Math.floor(dailyGoalSeconds / 60));
+  const remainingMinutes = Math.max(0, goalMinutes - studiedMinutes);
+
+  const formatGoalTarget = (totalMinutes: number) => {
+    const hours = totalMinutes / 60;
+    const roundedHours = Number.isInteger(hours) ? `${hours}` : hours.toFixed(1);
+    return isHebrewUi ? `${roundedHours} שעות` : `${roundedHours} hours`;
+  };
+
   return (
     <View style={styles.container}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* App name in center */}
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         <View style={styles.logoContainer}>
           <Text style={styles.appTitle}>{t('home.title')}</Text>
-          <Text style={styles.appTagline}>{t('home.tagline')}</Text>
-        </View>
-
-        {/* Welcome message with username */}
-        <View style={styles.welcomeCard}>
-          <Text style={styles.welcomeEmoji}>👋</Text>
-          <Text style={styles.title}>
+          <Text style={styles.welcomeInlineText}>
             {t('home.welcome', { name: loading ? '...' : username || 'Student' })}
           </Text>
-          <Text style={styles.subtitle}>
-            {t('home.readyToAce')}
-          </Text>
+          <Text style={[styles.appTagline, mirroredTextAlignStyle]}>{t('home.tagline')}</Text>
         </View>
 
-        <View style={styles.cardsWrapper}>
-          {/* Quick action: Start Practice */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('home.startPractice')}</Text>
-            <Text style={styles.cardText}>
-              {t('home.startPracticeDescription')}
-            </Text>
-            <TouchableOpacity
-              style={[styles.buttonBase, styles.buttonPrimary]}
-              onPress={() => router.push('/ai-practice-setup' as any)}
-            >
-              <Text style={styles.buttonPrimaryText}>{t('home.startPractice')}</Text>
+        <View style={styles.journalCard}>
+          <View style={[styles.journalHeaderBetween, isHebrewUi && styles.rtlRow]}>
+            <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="stats-chart" size={20} color={PRIMARY_GREEN} />
+              <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.studyStats')}</Text>
+            </View>
+            <TouchableOpacity style={styles.goalEditButton} onPress={openGoalEditor}>
+              <Ionicons name="create-outline" size={16} color={PRIMARY_GREEN} />
+              <Text style={styles.goalEditButtonText}>{t('home.editGoalButton')}</Text>
             </TouchableOpacity>
           </View>
+          {loadingData ? (
+            <ActivityIndicator color={PRIMARY_GREEN} />
+          ) : (
+            <>
+              <Text style={[styles.goalLabel, mirroredTextAlignStyle]}>{t('home.dailyGoal')}</Text>
+              <View style={[styles.goalInfoRow, isHebrewUi ? styles.goalInfoRowRtl : styles.goalInfoRowLtr]}>
+                <Text style={[styles.goalValue, mirroredTextAlignStyle]}>
+                  {isHebrewUi
+                    ? `${studiedMinutes} דקות מתוך ${formatGoalTarget(goalMinutes)}`
+                    : `${studiedMinutes} minutes out of ${formatGoalTarget(goalMinutes)}`}
+                </Text>
+              </View>
+              <Text style={[styles.goalSubtext, mirroredTextAlignStyle]}>
+                {remainingMinutes > 0
+                  ? t('home.remainingToGoal', { minutes: remainingMinutes })
+                  : t('home.goalCompletedMessage')}
+              </Text>
+              <View style={styles.progressRow}>
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${liveGoalProgress}%` }]} />
+                </View>
+                <Text style={styles.goalPercent}>{liveGoalProgress}%</Text>
+              </View>
+              <View style={styles.statsRow}>
+                <View style={styles.statTiny}>
+                  <Ionicons name="time-outline" size={16} color={PRIMARY_GREEN} />
+                  <Text style={styles.statTinyValue}>{Math.floor(todayStudySecondsLive / 60)}</Text>
+                  <Text style={[styles.statTinyLabel, mirroredTextAlignStyle]}>{t('home.minutes')}</Text>
+                </View>
+                <View style={styles.statTiny}>
+                  <Ionicons name="flame-outline" size={16} color="#f59e0b" />
+                  <Text style={styles.statTinyValue}>{stats?.currentStreak || 0}</Text>
+                  <Text style={[styles.statTinyLabel, mirroredTextAlignStyle]}>{t('home.streak')}</Text>
+                </View>
+                <View style={styles.statTiny}>
+                  <Ionicons name="calendar-outline" size={16} color={PRIMARY_GREEN} />
+                  <Text style={styles.statTinyValue}>{stats?.totalSessions || 0}</Text>
+                  <Text style={[styles.statTinyLabel, mirroredTextAlignStyle]}>{t('home.sessions')}</Text>
+                </View>
+              </View>
+            </>
+          )}
+        </View>
 
-          {/* Recently practiced courses */}
-          {recentCourses.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{t('home.recentlyPracticed')}</Text>
-              <FlatList
-                data={recentCourses}
-                keyExtractor={(item) => item.id}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={styles.courseItem}
-                    onPress={() => router.push(`/course/${item.id}`)}
+        {smartNotifications.length > 0 && (
+          <View style={styles.journalCard}>
+            <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="notifications-outline" size={20} color={PRIMARY_GREEN} />
+              <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>Smart Alerts</Text>
+            </View>
+            {smartNotifications.map((item) => (
+              <View
+                key={item.id}
+                style={[
+                  styles.smartAlertItem,
+                  item.severity === 'critical'
+                    ? styles.smartAlertCritical
+                    : item.severity === 'warning'
+                      ? styles.smartAlertWarning
+                      : styles.smartAlertInfo,
+                ]}
+              >
+                <Text style={[styles.smartAlertText, mirroredTextAlignStyle]}>{item.message}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        <View style={styles.journalCard}>
+          <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
+            <Ionicons name="timer-outline" size={20} color={PRIMARY_GREEN} />
+            <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.studyTimer')}</Text>
+          </View>
+          <View style={styles.timerDisplayBox}>
+            <Text style={styles.timerText}>{formatTimer(seconds)}</Text>
+          </View>
+          <View style={styles.timerActions}>
+            {!running ? (
+              <TouchableOpacity
+                style={styles.timerPrimaryButton}
+                onPress={() => {
+                  setRunning(true);
+                  setPaused(false);
+                }}
+              >
+                <Ionicons name="play" size={16} color="#fff" />
+                <Text style={styles.timerPrimaryButtonText}>{t('home.startTimer')}</Text>
+              </TouchableOpacity>
+            ) : !paused ? (
+              <TouchableOpacity style={styles.timerResetButton} onPress={handlePauseResume}>
+                <Ionicons name="pause" size={16} color="#fff" />
+                <Text style={styles.timerPrimaryButtonText}>{t('home.pauseTimer')}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={styles.timerRunningButtonsRow}>
+                <TouchableOpacity style={styles.timerStopButton} onPress={handleStop}>
+                  <Ionicons name="stop" size={16} color="#fff" />
+                  <Text style={styles.timerPrimaryButtonText}>{t('home.finishTimer')}</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.timerContinueButton} onPress={handlePauseResume}>
+                  <Ionicons name="play" size={16} color="#fff" />
+                  <Text style={styles.timerPrimaryButtonText}>{t('home.resumeTimer')}</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+
+        <View style={styles.journalCard}>
+          <View style={[styles.tasksHeader, isHebrewUi && styles.rtlRow]}>
+            <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="checkmark-circle" size={20} color={PRIMARY_GREEN} />
+              <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.myTasks')}</Text>
+            </View>
+            <View style={[styles.taskHeaderActions, isHebrewUi && styles.rtlRow]}>
+              <TouchableOpacity onPress={() => setIsTaskEditMode((prev) => !prev)}>
+                <Ionicons name={isTaskEditMode ? 'close-circle' : 'create-outline'} size={21} color={PRIMARY_GREEN} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowTaskModal(true)}>
+                <Ionicons name="add-circle" size={22} color={PRIMARY_GREEN} />
+              </TouchableOpacity>
+            </View>
+          </View>
+          {tasks.length === 0 ? (
+            <Text style={[styles.emptyTasksText, mirroredTextAlignStyle]}>{t('home.noTasks')}</Text>
+          ) : (
+            <>
+              <Text style={[styles.tasksHintText, mirroredTextAlignStyle]}>{t('home.tapTaskToToggle')}</Text>
+              {visibleTasks.map((task) => (
+              <TouchableOpacity
+                key={task.id}
+                style={[styles.taskRow, task.status === 'completed' && styles.taskRowCompleted]}
+                onPress={async () => {
+                  const nextStatus =
+                    task.status === 'pending'
+                      ? 'in-progress'
+                      : task.status === 'in-progress'
+                        ? 'completed'
+                        : 'pending';
+                  await updateTaskStatus(task.id, nextStatus);
+                  setTasks(await getTasks());
+                }}
+              >
+                <Ionicons
+                  name={
+                    task.status === 'completed'
+                      ? 'checkmark-circle'
+                      : task.status === 'in-progress'
+                        ? 'play-circle-outline'
+                        : 'ellipse-outline'
+                  }
+                  size={16}
+                  color={
+                    task.status === 'completed'
+                      ? PRIMARY_GREEN
+                      : task.status === 'in-progress'
+                        ? '#1d4ed8'
+                        : '#6b7280'
+                  }
+                />
+                <Text style={[styles.taskRowText, mirroredTextAlignStyle, task.status === 'completed' && styles.taskRowTextCompleted]}>
+                  {task.title}
+                </Text>
+                <View
+                  style={[
+                    styles.taskStatusBadge,
+                    task.status === 'in-progress' && styles.taskStatusBadgeInProgress,
+                    task.status === 'completed' && styles.taskStatusBadgeDone,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.taskStatusBadgeText,
+                      task.status === 'in-progress' && styles.taskStatusBadgeTextInProgress,
+                      task.status === 'completed' && styles.taskStatusBadgeTextDone,
+                    ]}
                   >
-                    <Text style={styles.courseItemText}>{item.name}</Text>
+                    {task.status === 'completed'
+                      ? t('home.completed')
+                      : task.status === 'in-progress'
+                        ? t('home.inProgress')
+                        : t('home.pending')}
+                  </Text>
+                </View>
+                {isTaskEditMode && (
+                  <TouchableOpacity
+                    style={styles.taskDeleteButton}
+                    onPress={() => {
+                      Alert.alert(
+                        t('home.deleteTask'),
+                        t('home.deleteTaskConfirm'),
+                        [
+                          { text: t('common.cancel'), style: 'cancel' },
+                          {
+                            text: t('common.delete'),
+                            style: 'destructive',
+                            onPress: async () => {
+                              await deleteStudyTask(task.id);
+                              setTasks(await getTasks());
+                            },
+                          },
+                        ]
+                      );
+                    }}
+                  >
+                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
                   </TouchableOpacity>
                 )}
-                scrollEnabled={false}
-              />
-            </View>
+              </TouchableOpacity>
+              ))}
+            </>
           )}
+        </View>
 
-          {/* Quick action: My Courses */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('home.myCourses')}</Text>
-            <Text style={styles.cardText}>
-              {t('home.myCoursesDescription')}
-            </Text>
-            <TouchableOpacity
-              style={[styles.buttonBase, styles.buttonPrimary]}
-              onPress={() => router.push('/(tabs)/courses')}
-            >
-              <Text style={styles.buttonPrimaryText}>{t('home.goToMyCourses')}</Text>
+        <View style={styles.journalCard}>
+          <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.quickActions')}</Text>
+          <View style={styles.quickGrid}>
+            <TouchableOpacity style={styles.quickTile} onPress={() => router.push('/ai-practice-setup' as any)}>
+              <Ionicons name="flask-outline" size={20} color={PRIMARY_GREEN} />
+              <Text style={[styles.quickTileText, mirroredTextAlignStyle]}>{t('home.startPractice')}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.quickTile} onPress={() => router.push('/(tabs)/courses')}>
+              <Ionicons name="book-outline" size={20} color={PRIMARY_GREEN} />
+              <Text style={[styles.quickTileText, mirroredTextAlignStyle]}>{t('home.myCourses')}</Text>
             </TouchableOpacity>
           </View>
-
-          {/* Quick tips section */}
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('home.quickTips')}</Text>
-            <Text style={styles.tipText}>• {t('home.tip1')}</Text>
-            <Text style={styles.tipText}>• {t('home.tip2')}</Text>
-            <Text style={styles.tipText}>• {t('home.tip3')}</Text>
-          </View>
+          {recentCourses.length > 0 && (
+            <TouchableOpacity
+              style={styles.lastCourseRow}
+              onPress={() => router.push(`/course/${recentCourses[0].id}` as any)}
+            >
+              <Ionicons name="play-forward-outline" size={16} color={PRIMARY_GREEN} />
+              <Text style={[styles.lastCourseText, mirroredTextAlignStyle]}>
+                {t('home.continueCourse', { name: recentCourses[0].name })}
+              </Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
+
+      <Modal visible={showTaskModal} transparent animationType="slide" onRequestClose={() => setShowTaskModal(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+        >
+          <View style={styles.modalOverlaySimple}>
+            <ScrollView
+              contentContainerStyle={styles.modalOverlayScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalSimple}>
+                <Text style={styles.modalSimpleTitle}>{t('home.addTask')}</Text>
+                <TextInput
+                  value={taskTitle}
+                  onChangeText={setTaskTitle}
+                  style={[styles.modalInputSimple, isHebrewUi ? styles.modalInputRtl : styles.modalInputLtr]}
+                  placeholder={t('home.taskTitle')}
+                  placeholderTextColor="#9ca3af"
+                  selectionColor={PRIMARY_GREEN}
+                  cursorColor={PRIMARY_GREEN}
+                  multiline={false}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                <View style={styles.modalActionsSimple}>
+                  <TouchableOpacity style={styles.modalCancelSimple} onPress={() => setShowTaskModal(false)}>
+                    <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalSaveSimple} onPress={handleAddTask}>
+                    <Text style={styles.modalSaveText}>{t('common.save')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      <Modal visible={showGoalModal} transparent animationType="slide" onRequestClose={() => setShowGoalModal(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardWrapper}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+        >
+          <View style={styles.modalOverlaySimple}>
+            <ScrollView
+              contentContainerStyle={styles.modalOverlayScrollContent}
+              keyboardShouldPersistTaps="handled"
+            >
+              <View style={styles.modalSimple}>
+                <Text style={styles.modalSimpleTitle}>{t('home.editDailyGoal')}</Text>
+                <View style={styles.goalInputsRow}>
+                  <View style={styles.goalInputBox}>
+                    <Text style={styles.goalInputLabel}>{t('home.hours')}</Text>
+                    <TextInput
+                      value={goalHoursInput}
+                      onChangeText={setGoalHoursInput}
+                      style={styles.modalInputSimple}
+                      keyboardType="numeric"
+                      placeholder="0"
+                      placeholderTextColor="#9ca3af"
+                      selectionColor={PRIMARY_GREEN}
+                      cursorColor={PRIMARY_GREEN}
+                    />
+                  </View>
+                  <View style={styles.goalInputBox}>
+                    <Text style={styles.goalInputLabel}>{t('home.minutes')}</Text>
+                    <TextInput
+                      value={goalMinutesInput}
+                      onChangeText={setGoalMinutesInput}
+                      style={styles.modalInputSimple}
+                      keyboardType="numeric"
+                      placeholder="0-59"
+                      placeholderTextColor="#9ca3af"
+                      selectionColor={PRIMARY_GREEN}
+                      cursorColor={PRIMARY_GREEN}
+                    />
+                  </View>
+                </View>
+                <View style={styles.modalActionsSimple}>
+                  <TouchableOpacity style={styles.modalCancelSimple} onPress={() => setShowGoalModal(false)}>
+                    <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.modalSaveSimple} onPress={handleSaveDailyGoal}>
+                    <Text style={styles.modalSaveText}>{t('common.save')}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </ScrollView>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
@@ -521,6 +944,395 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6b7280',
     fontWeight: '500',
+  },
+  welcomeInlineText: {
+    marginTop: 2,
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+    textAlign: 'center',
+  },
+  journalCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+  },
+  smartAlertItem: {
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 8,
+    borderWidth: 1,
+  },
+  smartAlertInfo: {
+    backgroundColor: '#eff6ff',
+    borderColor: '#bfdbfe',
+  },
+  smartAlertWarning: {
+    backgroundColor: '#fffbeb',
+    borderColor: '#fde68a',
+  },
+  smartAlertCritical: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+  },
+  smartAlertText: {
+    color: '#1f2937',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  journalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 12,
+  },
+  journalHeaderBetween: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  goalEditButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 8,
+  },
+  goalEditButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#047857',
+  },
+  journalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  goalLabel: {
+    fontSize: 13,
+    color: '#6b7280',
+  },
+  goalValue: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#047857',
+    fontWeight: '700',
+  },
+  goalInfoRow: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  goalInfoRowRtl: {
+    justifyContent: 'flex-end',
+  },
+  goalInfoRowLtr: {
+    justifyContent: 'flex-start',
+  },
+  goalPercent: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  goalSubtext: {
+    marginTop: 4,
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  progressRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  progressTrack: {
+    flex: 1,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#e5e7eb',
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#047857',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 16,
+  },
+  statTiny: {
+    alignItems: 'center',
+    gap: 4,
+    flex: 1,
+  },
+  statTinyValue: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  statTinyLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+  },
+  timerDisplayBox: {
+    borderWidth: 2,
+    borderColor: '#047857',
+    borderRadius: 14,
+    paddingVertical: 20,
+    alignItems: 'center',
+  },
+  timerText: {
+    fontSize: 52,
+    fontWeight: '700',
+    color: '#047857',
+  },
+  timerActions: {
+    alignItems: 'center',
+    marginTop: 12,
+  },
+  timerRunningButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  timerPrimaryButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#047857',
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  timerResetButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#2563eb',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  timerContinueButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#f59e0b',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  timerStopButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#ef4444',
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  timerPrimaryButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  tasksHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  taskHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  emptyTasksText: {
+    color: '#9ca3af',
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  tasksHintText: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  taskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  taskRowCompleted: {
+    opacity: 0.9,
+  },
+  taskRowText: {
+    fontSize: 14,
+    color: '#111827',
+    flex: 1,
+  },
+  taskRowTextCompleted: {
+    textDecorationLine: 'line-through',
+    color: '#6b7280',
+  },
+  taskStatusBadge: {
+    backgroundColor: '#f3f4f6',
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  taskStatusBadgeInProgress: {
+    backgroundColor: '#eff6ff',
+  },
+  taskStatusBadgeDone: {
+    backgroundColor: '#ecfdf5',
+  },
+  taskStatusBadgeText: {
+    fontSize: 11,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  taskStatusBadgeTextInProgress: {
+    color: '#1d4ed8',
+  },
+  taskStatusBadgeTextDone: {
+    color: '#047857',
+  },
+  taskDeleteButton: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  quickGrid: {
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 10,
+  },
+  quickTile: {
+    flex: 1,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f9fafb',
+    alignItems: 'center',
+    paddingVertical: 14,
+    gap: 6,
+  },
+  quickTileText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  lastCourseRow: {
+    marginTop: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  lastCourseText: {
+    color: '#047857',
+    fontWeight: '600',
+    fontSize: 13,
+  },
+  modalOverlaySimple: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalKeyboardWrapper: {
+    flex: 1,
+  },
+  modalOverlayScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'flex-end',
+  },
+  modalSimple: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    padding: 18,
+  },
+  modalSimpleTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#111827',
+    marginBottom: 10,
+  },
+  modalInputSimple: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 15,
+    color: '#111827',
+    backgroundColor: '#ffffff',
+    includeFontPadding: false,
+  },
+  modalInputRtl: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  modalInputLtr: {
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  textAlignRight: {
+    textAlign: 'right',
+  },
+  textAlignLeft: {
+    textAlign: 'left',
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  modalActionsSimple: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 10,
+    marginTop: 14,
+  },
+  goalInputsRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  goalInputBox: {
+    flex: 1,
+  },
+  goalInputLabel: {
+    marginBottom: 6,
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  modalCancelSimple: {
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#f3f4f6',
+  },
+  modalSaveSimple: {
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 10,
+    backgroundColor: '#047857',
+  },
+  modalCancelText: {
+    color: '#111827',
+    fontWeight: '600',
+  },
+  modalSaveText: {
+    color: '#ffffff',
+    fontWeight: '700',
   },
   welcomeCard: {
     backgroundColor: '#ffffff',

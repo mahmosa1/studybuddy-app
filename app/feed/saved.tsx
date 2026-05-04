@@ -1,7 +1,9 @@
 // app/feed/saved.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import { auth, db } from '@/lib/firebaseConfig';
+import { arrayRemove, collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import React, { useEffect, useState } from 'react';
 import {
   FlatList,
   StyleSheet,
@@ -28,40 +30,6 @@ type StudyPost = {
   isSaved?: boolean;
 };
 
-// Mock saved posts
-const MOCK_SAVED_POSTS: StudyPost[] = [
-  {
-    id: '2',
-    authorName: 'Michael Chen',
-    authorInstitution: 'Stanford',
-    courseName: 'Calculus II',
-    type: 'Tip',
-    title: 'Integration by Parts Trick',
-    content: 'Remember LIATE: Logarithmic, Inverse trigonometric, Algebraic, Trigonometric, Exponential. Choose u in this order for easier integration by parts.',
-    tags: ['calculus', 'integration', 'tips'],
-    likesCount: 45,
-    savesCount: 28,
-    createdAt: '5 hours ago',
-    isLiked: true,
-    isSaved: true,
-  },
-  {
-    id: '4',
-    authorName: 'David Lee',
-    authorInstitution: 'UC Berkeley',
-    courseName: 'Computer Networks',
-    type: 'Exam Info',
-    title: 'Midterm Exam Schedule',
-    content: 'The midterm exam will cover chapters 1-5. Focus on OSI model, TCP/IP protocol stack, and routing algorithms. Practice problems will be similar to homework assignments.',
-    tags: ['networks', 'exam', 'midterm'],
-    likesCount: 32,
-    savesCount: 41,
-    createdAt: '2 days ago',
-    isLiked: false,
-    isSaved: true,
-  },
-];
-
 const TYPE_COLORS: Record<StudyPost['type'], string> = {
   Summary: '#3b82f6',
   Tip: '#f59e0b',
@@ -71,11 +39,68 @@ const TYPE_COLORS: Record<StudyPost['type'], string> = {
 
 export default function SavedPostsScreen() {
   const router = useRouter();
-  const [savedPosts] = useState<StudyPost[]>(MOCK_SAVED_POSTS);
+  const [savedPosts, setSavedPosts] = useState<StudyPost[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const relativeTime = (date: Date): string => {
+    const diff = Date.now() - date.getTime();
+    const minutes = Math.floor(diff / 60000);
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.floor(hours / 24)}d ago`;
+  };
+
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setLoading(false);
+      return;
+    }
+    const q = query(
+      collection(db, 'feedPosts'),
+      where('savedBy', 'array-contains', currentUser.uid),
+      orderBy('createdAt', 'desc')
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list: StudyPost[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          const likedBy: string[] = data.likedBy || [];
+          const savedBy: string[] = data.savedBy || [];
+          list.push({
+            id: d.id,
+            authorName: data.authorName || 'User',
+            authorInstitution: data.authorInstitution || '',
+            courseName: data.courseName || '',
+            type: (data.type || 'Summary') as StudyPost['type'],
+            title: data.title || '',
+            content: data.content || '',
+            tags: data.tags || [],
+            likesCount: likedBy.length,
+            savesCount: savedBy.length,
+            createdAt: data.createdAt?.toDate ? relativeTime(data.createdAt.toDate()) : 'Just now',
+            isLiked: likedBy.includes(currentUser.uid),
+            isSaved: savedBy.includes(currentUser.uid),
+          });
+        });
+        setSavedPosts(list);
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return unsub;
+  }, []);
 
   const handleUnsave = (postId: string) => {
-    // Mock: remove from saved
-    console.log('Unsave post:', postId);
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    updateDoc(doc(db, 'feedPosts', postId), {
+      savedBy: arrayRemove(currentUser.uid),
+    }).catch((err) => console.log('unsave error', err));
   };
 
   const renderPost = ({ item }: { item: StudyPost }) => (
@@ -160,7 +185,11 @@ export default function SavedPostsScreen() {
         <View style={{ width: 24 }} />
       </View>
 
-      {savedPosts.length === 0 ? (
+      {loading ? (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateTitle}>Loading...</Text>
+        </View>
+      ) : savedPosts.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="bookmark-outline" size={64} color="#9ca3af" />
           <Text style={styles.emptyStateTitle}>No Saved Posts</Text>

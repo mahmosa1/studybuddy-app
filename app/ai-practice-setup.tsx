@@ -6,13 +6,13 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
-  Alert,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 type Course = {
@@ -21,6 +21,7 @@ type Course = {
 };
 
 type PracticeType = 'true-false' | 'open-questions' | 'mixed';
+type PracticeLanguage = 'hebrew' | 'english';
 
 export default function AIPracticeSetupScreen() {
   const router = useRouter();
@@ -28,8 +29,14 @@ export default function AIPracticeSetupScreen() {
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [practiceType, setPracticeType] = useState<PracticeType>('mixed');
+  const [practiceLanguage, setPracticeLanguage] = useState<PracticeLanguage>('hebrew');
   const [numQuestions, setNumQuestions] = useState<number>(10);
+  const [adaptiveMode, setAdaptiveMode] = useState<boolean>(true);
+  const [examMode, setExamMode] = useState<boolean>(false);
+  const [examDurationMin, setExamDurationMin] = useState<number>(30);
   const [loading, setLoading] = useState(true);
+  const [selectedCourseFileCount, setSelectedCourseFileCount] = useState(0);
+  const [checkingSelectedCourseFiles, setCheckingSelectedCourseFiles] = useState(false);
 
   useEffect(() => {
     const loadCourses = async () => {
@@ -67,7 +74,45 @@ export default function AIPracticeSetupScreen() {
     loadCourses();
   }, []);
 
+  useEffect(() => {
+    const loadSelectedCourseFileCount = async () => {
+      if (!selectedCourseId) {
+        setSelectedCourseFileCount(0);
+        return;
+      }
+      try {
+        setCheckingSelectedCourseFiles(true);
+        const filesSnap = await getDocs(
+          query(collection(db, 'courseFiles'), where('courseId', '==', selectedCourseId))
+        );
+        setSelectedCourseFileCount(filesSnap.size);
+      } catch (error) {
+        console.log('Error checking selected course files:', error);
+        setSelectedCourseFileCount(0);
+      } finally {
+        setCheckingSelectedCourseFiles(false);
+      }
+    };
+    loadSelectedCourseFileCount();
+  }, [selectedCourseId]);
+
   const [generating, setGenerating] = useState(false);
+  const [generationStage, setGenerationStage] = useState<string>('');
+
+  const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${label} timed out`)), ms);
+      promise
+        .then((result) => {
+          clearTimeout(timer);
+          resolve(result);
+        })
+        .catch((error) => {
+          clearTimeout(timer);
+          reject(error);
+        });
+    });
+  };
 
   const handleGenerate = async () => {
     if (!selectedCourseId) {
@@ -77,48 +122,106 @@ export default function AIPracticeSetupScreen() {
 
     const selectedCourse = courses.find((c) => c.id === selectedCourseId);
     if (!selectedCourse) {
-      Alert.alert(t('common.error'), 'Course not found');
+      Alert.alert(t('common.error'), t('practice.setup.courseNotFound'));
+      return;
+    }
+    if (selectedCourseFileCount <= 0) {
+      Alert.alert(t('common.error'), t('practice.setup.noFilesForSelectedCourse'));
       return;
     }
 
     try {
       setGenerating(true);
+      setGenerationStage(t('practice.setup.generatingQuestions'));
       
       // Import the AI service
-      const { generatePracticeQuestions } = await import('@/lib/aiService');
+      const { generatePracticeQuestions, generatePracticeQuestionsFast } = await import('@/lib/aiService');
       const { savePracticeSession } = await import('@/lib/practiceService');
       
       // Generate questions using AI
-      const questions = await generatePracticeQuestions(
-        selectedCourseId,
-        selectedCourse.name,
-        practiceType,
-        numQuestions
-      );
+      let questions;
+      try {
+        questions = await withTimeout(
+          generatePracticeQuestions(
+            selectedCourseId,
+            selectedCourse.name,
+            practiceType,
+            numQuestions,
+            practiceLanguage
+          ),
+          90000,
+          'Question generation'
+        );
+      } catch (slowOrFailedError) {
+        console.warn('⚠️ Full AI generation failed, retrying once before fast mode:', slowOrFailedError);
+        try {
+          setGenerationStage(t('practice.setup.generatingQuestions'));
+          questions = await withTimeout(
+            generatePracticeQuestions(
+              selectedCourseId,
+              selectedCourse.name,
+              practiceType,
+              numQuestions,
+              practiceLanguage
+            ),
+            90000,
+            'Question generation retry'
+          );
+        } catch (retryError) {
+          console.warn('⚡ Switching to fast generation mode:', retryError);
+          setGenerationStage(t('practice.setup.switchingFastMode'));
+          questions = await withTimeout(
+            generatePracticeQuestionsFast(
+              selectedCourseId,
+              selectedCourse.name,
+              practiceType,
+              numQuestions,
+              practiceLanguage
+            ),
+            5000,
+            'Fast generation'
+          );
+          Alert.alert(
+            t('common.error'),
+            t('practice.setup.fastModeNotice')
+          );
+        }
+      }
 
       if (!questions || questions.length === 0) {
         Alert.alert(
           t('common.error'),
-          'Failed to generate questions. Please make sure the course has files uploaded and try again.'
+          t('practice.setup.failedToGenerateQuestions')
         );
         return;
       }
 
+      const allFallback = questions.every((q: any) => q?.source === 'fallback');
+      const generationMode: 'ai' | 'fallback' = allFallback ? 'fallback' : 'ai';
+
       // Save the practice session
       let sessionId: string;
       try {
-        sessionId = await savePracticeSession(
-          selectedCourseId,
-          selectedCourse.name,
-          practiceType,
-          numQuestions,
-          questions
+        setGenerationStage(t('practice.setup.savingSession'));
+        sessionId = await withTimeout(
+          savePracticeSession(
+            selectedCourseId,
+            selectedCourse.name,
+            practiceType,
+            numQuestions,
+            questions,
+            practiceLanguage,
+            adaptiveMode,
+            generationMode
+          ),
+          15000,
+          'Session save'
         );
       } catch (saveError: any) {
         console.error('Error saving session:', saveError);
         Alert.alert(
           t('common.error'),
-          'Failed to save practice session. Please try again.'
+          t('practice.setup.failedToSaveSession')
         );
         return;
       }
@@ -126,7 +229,7 @@ export default function AIPracticeSetupScreen() {
       if (!sessionId) {
         Alert.alert(
           t('common.error'),
-          'Failed to create practice session. Please try again.'
+          t('practice.setup.failedToCreateSession')
         );
         return;
       }
@@ -140,16 +243,21 @@ export default function AIPracticeSetupScreen() {
           courseName: selectedCourse.name,
           practiceType: practiceType,
           numQuestions: numQuestions.toString(),
+          language: practiceLanguage,
+          adaptiveMode: adaptiveMode ? 'true' : 'false',
+          examMode: examMode ? 'true' : 'false',
+          examDurationMin: String(examDurationMin),
         },
       });
     } catch (error: any) {
       console.error('Error generating practice:', error);
       Alert.alert(
         t('common.error'),
-        error.message || 'Failed to generate practice questions. Please try again.'
+        error.message || t('practice.setup.failedToGenerateQuestionsGeneric')
       );
     } finally {
       setGenerating(false);
+      setGenerationStage('');
     }
   };
 
@@ -165,17 +273,23 @@ export default function AIPracticeSetupScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <Text style={styles.emptyText}>
-          No courses found. Please add a course first.
+          {t('practice.setup.noCoursesFound')}
         </Text>
         <TouchableOpacity
           style={styles.button}
           onPress={() => router.back()}
         >
-          <Text style={styles.buttonText}>Go Back</Text>
+          <Text style={styles.buttonText}>{t('common.back')}</Text>
         </TouchableOpacity>
       </View>
     );
   }
+
+  const canGenerate =
+    !generating &&
+    !checkingSelectedCourseFiles &&
+    !!selectedCourseId &&
+    selectedCourseFileCount > 0;
 
   return (
     <View style={styles.container}>
@@ -224,6 +338,15 @@ export default function AIPracticeSetupScreen() {
             </TouchableOpacity>
           ))}
         </View>
+        {checkingSelectedCourseFiles ? (
+          <Text style={styles.helperMuted}>{t('practice.setup.checkingCourseFiles')}</Text>
+        ) : selectedCourseId && selectedCourseFileCount <= 0 ? (
+          <Text style={styles.helperError}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
+        ) : selectedCourseId ? (
+          <Text style={styles.helperOk}>
+            {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
+          </Text>
+        ) : null}
 
         <Text style={styles.label}>{t('practice.setup.practiceType')}</Text>
         <View style={styles.optionsContainer}>
@@ -275,15 +398,96 @@ export default function AIPracticeSetupScreen() {
           ))}
         </View>
 
+        <Text style={styles.label}>{t('practice.setup.practiceLanguage')}</Text>
+        <View style={styles.optionsContainer}>
+          {[
+            { label: t('profile.hebrew'), value: 'hebrew' as PracticeLanguage },
+            { label: t('profile.english'), value: 'english' as PracticeLanguage },
+          ].map((lang) => (
+            <TouchableOpacity
+              key={lang.value}
+              style={[
+                styles.optionButton,
+                practiceLanguage === lang.value && styles.optionButtonSelected,
+              ]}
+              onPress={() => setPracticeLanguage(lang.value)}
+            >
+              <Text
+                style={[
+                  styles.optionText,
+                  practiceLanguage === lang.value && styles.optionTextSelected,
+                ]}
+              >
+                {lang.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={styles.label}>{t('practice.setup.adaptivePractice')}</Text>
+        <View style={styles.optionsContainer}>
+          <TouchableOpacity
+            style={[styles.optionButton, adaptiveMode && styles.optionButtonSelected]}
+            onPress={() => setAdaptiveMode(true)}
+          >
+            <Text style={[styles.optionText, adaptiveMode && styles.optionTextSelected]}>
+              {t('practice.setup.adaptiveOn')}
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionButton, !adaptiveMode && styles.optionButtonSelected]}
+            onPress={() => setAdaptiveMode(false)}
+          >
+            <Text style={[styles.optionText, !adaptiveMode && styles.optionTextSelected]}>
+              {t('practice.setup.adaptiveOff')}
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.label}>Exam Simulator</Text>
+        <View style={styles.optionsContainer}>
+          <TouchableOpacity
+            style={[styles.optionButton, examMode && styles.optionButtonSelected]}
+            onPress={() => setExamMode(true)}
+          >
+            <Text style={[styles.optionText, examMode && styles.optionTextSelected]}>ON - Timed pressure mode</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.optionButton, !examMode && styles.optionButtonSelected]}
+            onPress={() => setExamMode(false)}
+          >
+            <Text style={[styles.optionText, !examMode && styles.optionTextSelected]}>OFF - Regular mode</Text>
+          </TouchableOpacity>
+        </View>
+
+        {examMode && (
+          <>
+            <Text style={styles.label}>Exam Duration (minutes)</Text>
+            <View style={styles.optionsContainer}>
+              {[15, 30, 45, 60].map((mins) => (
+                <TouchableOpacity
+                  key={mins}
+                  style={[styles.optionButton, examDurationMin === mins && styles.optionButtonSelected]}
+                  onPress={() => setExamDurationMin(mins)}
+                >
+                  <Text style={[styles.optionText, examDurationMin === mins && styles.optionTextSelected]}>{mins}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        )}
+
         <TouchableOpacity
-          style={[styles.button, styles.primaryButton, generating && styles.buttonDisabled]}
+          style={[styles.button, styles.primaryButton, !canGenerate && styles.buttonDisabled]}
           onPress={handleGenerate}
-          disabled={generating}
+          disabled={!canGenerate}
         >
           {generating ? (
             <>
               <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
-              <Text style={styles.buttonText}>{t('common.loading')}...</Text>
+              <Text style={styles.buttonText}>
+                {generationStage || `${t('common.loading')}...`} ({t('practice.setup.optimized')})
+              </Text>
             </>
           ) : (
             <Text style={styles.buttonText}>{t('practice.setup.generatePractice')}</Text>
@@ -425,6 +629,27 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+  helperMuted: {
+    marginTop: 2,
+    marginBottom: 8,
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '500',
+  },
+  helperError: {
+    marginTop: 2,
+    marginBottom: 8,
+    fontSize: 12,
+    color: '#b91c1c',
+    fontWeight: '600',
+  },
+  helperOk: {
+    marginTop: 2,
+    marginBottom: 8,
+    fontSize: 12,
+    color: '#047857',
+    fontWeight: '600',
   },
 });
 

@@ -3,6 +3,7 @@ import { auth, db } from '@/lib/firebaseConfig';
 import { useRouter } from 'expo-router';
 import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -18,6 +19,7 @@ import {
 
 export default function LecturerAddCourseScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
   const [courseName, setCourseName] = useState('');
   const [description, setDescription] = useState('');
@@ -45,12 +47,12 @@ export default function LecturerAddCourseScreen() {
   const handleSave = async () => {
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert('Error', 'You must be logged in');
+      Alert.alert(t('common.error'), t('auth.emailRequired') || 'You must be logged in');
       return;
     }
 
     if (!courseName.trim()) {
-      Alert.alert('Error', 'Course name is required');
+      Alert.alert(t('common.error'), t('courses.courseNameRequired') || 'Course name is required');
       return;
     }
 
@@ -64,12 +66,12 @@ export default function LecturerAddCourseScreen() {
         createdAt: serverTimestamp(),
       });
 
-      Alert.alert('Success', 'Course created successfully', [
-        { text: 'OK', onPress: () => router.back() },
+      Alert.alert(t('common.success'), t('courses.courseCreatedSuccess') || 'Course created successfully', [
+        { text: t('common.ok'), onPress: () => router.back() },
       ]);
     } catch (err) {
       console.log('Error creating course:', err);
-      Alert.alert('Error', 'Failed to create course');
+      Alert.alert(t('common.error'), t('courses.failedToCreateCourse') || 'Failed to create course');
     } finally {
       setLoading(false);
     }
@@ -84,25 +86,25 @@ export default function LecturerAddCourseScreen() {
         contentContainerStyle={styles.scrollContent}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Create New Course</Text>
+        <Text style={styles.title}>{t('home.createNewCourse')}</Text>
         <Text style={styles.subtitle}>
-          Add a new course and start uploading teaching materials
+          {t('home.createNewCourseDescription')}
         </Text>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Course Name *</Text>
+          <Text style={styles.label}>{t('courses.courseName')} *</Text>
           <TextInput
             style={styles.input}
-            placeholder="e.g. Linear Algebra"
+            placeholder={t('courses.courseNamePlaceholder')}
             placeholderTextColor="#6b7280"
             value={courseName}
             onChangeText={setCourseName}
           />
 
-          <Text style={styles.label}>Description (Optional)</Text>
+          <Text style={styles.label}>{t('courses.courseDescription')} ({t('common.optional')})</Text>
           <TextInput
             style={[styles.input, styles.textArea]}
-            placeholder="Course description..."
+            placeholder={t('courses.courseDescriptionPlaceholder')}
             placeholderTextColor="#6b7280"
             value={description}
             onChangeText={setDescription}
@@ -111,10 +113,10 @@ export default function LecturerAddCourseScreen() {
             textAlignVertical="top"
           />
 
-          <Text style={styles.label}>Institution</Text>
+          <Text style={styles.label}>{t('auth.institution')}</Text>
           <TextInput
             style={styles.input}
-            placeholder="Where do you teach?"
+            placeholder={t('auth.institutionPlaceholder')}
             placeholderTextColor="#6b7280"
             value={institution}
             onChangeText={setInstitution}
@@ -128,7 +130,7 @@ export default function LecturerAddCourseScreen() {
             {loading ? (
               <ActivityIndicator color="#ffffff" />
             ) : (
-              <Text style={styles.saveButtonText}>Create Course</Text>
+              <Text style={styles.saveButtonText}>{t('home.createCourse')}</Text>
             )}
           </TouchableOpacity>
 
@@ -136,7 +138,7 @@ export default function LecturerAddCourseScreen() {
             style={styles.cancelButton}
             onPress={() => router.back()}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>

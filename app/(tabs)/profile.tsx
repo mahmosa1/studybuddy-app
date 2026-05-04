@@ -1,31 +1,39 @@
 // app/(tabs)/profile.tsx
 import { auth, db } from '@/lib/firebaseConfig';
-import { saveLanguage } from '@/lib/i18n';
+import { buildTutorUpdatesSignature, getTutorUpdatesSeenSignature } from '@/lib/profileSystemUpdates';
+import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
 import { Ionicons } from '@expo/vector-icons';
+import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
+    collection,
+    deleteDoc,
+    doc,
+    getDoc,
+    getDocs,
+    limit,
+    orderBy,
+    query,
+    updateDoc,
+    where,
 } from 'firebase/firestore';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Image,
-  Modal,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
+    ActivityIndicator,
+    Alert,
+    FlatList,
+    Image,
+    KeyboardAvoidingView,
+    Modal,
+    Platform,
+    ScrollView,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
 } from 'react-native';
 
 type UserProfile = {
@@ -44,41 +52,97 @@ type CourseHighlight = {
   name: string;
 };
 
+type MyFeedPost = {
+  id: string;
+  title: string;
+  content: string;
+  type?: string;
+  courseId?: string;
+  courseName?: string;
+  tags?: string[];
+  visibility?: 'public' | 'institution';
+  attachments?: Array<{
+    name: string;
+    url: string;
+    mimeType?: string | null;
+    size?: number | null;
+  }>;
+  likesCount: number;
+  savesCount: number;
+  commentsCount: number;
+  createdAtLabel: string;
+  createdAtMs: number;
+};
+
+type FollowListItem = {
+  uid: string;
+  fullName: string;
+  username: string;
+  avatarUrl: string;
+};
+
+type TutorApprovedCourse = {
+  courseId: string;
+  courseName: string;
+  approvedAt?: string;
+};
+
 export default function ProfileScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const hasLoadedOnceRef = useRef(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [courses, setCourses] = useState<CourseHighlight[]>([]);
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
-  const [preferredTime, setPreferredTime] = useState<string>('');
-  const [selectedCoursesForBuddy, setSelectedCoursesForBuddy] = useState<Set<string>>(new Set());
-  const [savingPreferences, setSavingPreferences] = useState(false);
-  const [showPreferencesModal, setShowPreferencesModal] = useState(false);
-  const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const [currentLanguage, setCurrentLanguage] = useState('en');
-  
+  const [myFeedPosts, setMyFeedPosts] = useState<MyFeedPost[]>([]);
+  const [editingPost, setEditingPost] = useState<MyFeedPost | null>(null);
+  const [editingTitle, setEditingTitle] = useState('');
+  const [editingContent, setEditingContent] = useState('');
+  const [editingType, setEditingType] = useState<'Summary' | 'Tip' | 'Question' | 'Exam Info'>('Summary');
+  const [editingTagsInput, setEditingTagsInput] = useState('');
+  const [editingVisibility, setEditingVisibility] = useState<'public' | 'institution'>('public');
+  const [editingCourseId, setEditingCourseId] = useState('');
+  const [editingCourseName, setEditingCourseName] = useState('');
+  const [editingAttachments, setEditingAttachments] = useState<Array<{
+    name: string;
+    url: string;
+    mimeType?: string | null;
+    size?: number | null;
+  }>>([]);
+  const [showEditCoursePicker, setShowEditCoursePicker] = useState(false);
+  const [uploadingEditAttachment, setUploadingEditAttachment] = useState(false);
+  const [savingPostEdit, setSavingPostEdit] = useState(false);
+  const [showFollowsModal, setShowFollowsModal] = useState(false);
+  const [followsModalType, setFollowsModalType] = useState<'followers' | 'following'>('followers');
+  const [followsSearch, setFollowsSearch] = useState('');
+  const [followsLoading, setFollowsLoading] = useState(false);
+  const [followsItems, setFollowsItems] = useState<FollowListItem[]>([]);
+  const [tutorApprovedCourses, setTutorApprovedCourses] = useState<TutorApprovedCourse[]>([]);
+  const [tutorUpdatesUnread, setTutorUpdatesUnread] = useState(false);
+
   // Initialize i18n hook
   const { t, i18n } = useTranslation();
+  const isHebrewUi = i18n.language === 'he';
   
-  // Sync current language with i18n
-  useEffect(() => {
-    setCurrentLanguage(i18n.language);
-  }, [i18n.language]);
-
-  const loadProfileData = useCallback(async () => {
+  const loadProfileData = useCallback(async (options?: { showLoader?: boolean }) => {
     const user = auth.currentUser;
     if (!user) {
       router.replace('/(auth)/login');
       return;
     }
 
+    const shouldShowLoader = options?.showLoader ?? !hasLoadedOnceRef.current;
+
     try {
-      setLoading(true);
+      if (shouldShowLoader) {
+        setLoading(true);
+      }
 
       // --- User profile ---
       const snap = await getDoc(doc(db, 'users', user.uid));
 
+      let tutorList: TutorApprovedCourse[] = [];
       if (snap.exists()) {
         const data = snap.data() as any;
         setProfile({
@@ -91,15 +155,25 @@ export default function ProfileScreen() {
           role: data.role,
           profilePictureUrl: data.profilePictureUrl,
         });
-        
-        // Load study buddy preferences
-        setPreferredTime(data.preferredTime || '');
-        setSelectedCoursesForBuddy(new Set(data.studyBuddyCourses || []));
+        const tutorRaw = Array.isArray(data.tutorApprovedCourses) ? data.tutorApprovedCourses : [];
+        tutorList = tutorRaw
+          .filter((e: any) => e && e.courseId)
+          .map((e: any) => ({
+            courseId: String(e.courseId),
+            courseName: String(e.courseName || 'Course'),
+            approvedAt: e.approvedAt != null ? String(e.approvedAt) : undefined,
+          }));
+        setTutorApprovedCourses(tutorList);
       } else {
         setProfile({
           email: user.email ?? '',
         });
+        setTutorApprovedCourses([]);
+        tutorList = [];
       }
+      const tutorSig = buildTutorUpdatesSignature(tutorList);
+      const seenSig = await getTutorUpdatesSeenSignature(user.uid);
+      setTutorUpdatesUnread(tutorList.length > 0 && seenSig !== tutorSig);
 
       // --- Courses for highlights ---
       const q = query(
@@ -117,22 +191,79 @@ export default function ProfileScreen() {
       });
       setCourses(list);
 
-      // Load followers/following counts (stub - replace with real queries later)
-      // Mock: In real app, query 'follows' collection where followerId == user.uid (following)
-      // and where followingId == user.uid (followers)
-      setFollowersCount(0); // TODO: Replace with real query
-      setFollowingCount(0); // TODO: Replace with real query
+      // Load followers/following counts
+      const followsRef = collection(db, 'follows');
+      const [followersSnap, followingSnap] = await Promise.all([
+        getDocs(query(followsRef, where('followingId', '==', user.uid))),
+        getDocs(query(followsRef, where('followerId', '==', user.uid))),
+      ]);
+      setFollowersCount(followersSnap.size);
+      setFollowingCount(followingSnap.size);
+
+      // Load my feed posts for profile management
+      let myPostsSnap;
+      try {
+        myPostsSnap = await getDocs(
+          query(
+            collection(db, 'feedPosts'),
+            where('authorUid', '==', user.uid),
+            orderBy('createdAt', 'desc'),
+            limit(8)
+          )
+        );
+      } catch (error: any) {
+        // Fallback for environments where composite index is not ready yet.
+        const needsIndex =
+          typeof error?.message === 'string' &&
+          error.message.toLowerCase().includes('requires an index');
+        if (!needsIndex) throw error;
+        myPostsSnap = await getDocs(
+          query(
+            collection(db, 'feedPosts'),
+            where('authorUid', '==', user.uid),
+          )
+        );
+      }
+      const myPosts: MyFeedPost[] = [];
+      myPostsSnap.forEach((postDoc) => {
+        const data = postDoc.data() as any;
+        const createdAt = data?.createdAt?.toDate ? data.createdAt.toDate() : null;
+        const likedBy: string[] = data?.likedBy || [];
+        const savedBy: string[] = data?.savedBy || [];
+        myPosts.push({
+          id: postDoc.id,
+          title: data?.title || 'Untitled post',
+          content: data?.content || '',
+          type: data?.type || 'Summary',
+          courseId: data?.courseId || '',
+          courseName: data?.courseName || '',
+          tags: Array.isArray(data?.tags) ? data.tags : [],
+          visibility: (data?.visibility || 'public') as 'public' | 'institution',
+          attachments: Array.isArray(data?.attachments) ? data.attachments : [],
+          likesCount: likedBy.length,
+          savesCount: savedBy.length,
+          commentsCount: data?.commentsCount || 0,
+          createdAtLabel: createdAt ? createdAt.toLocaleDateString() : '',
+          createdAtMs: createdAt ? createdAt.getTime() : 0,
+        });
+      });
+      myPosts.sort((a, b) => b.createdAtMs - a.createdAtMs);
+      const finalPosts = myPosts.slice(0, 8);
+      setMyFeedPosts(finalPosts);
     } catch (err) {
       console.log('Load profile error:', err);
     } finally {
-      setLoading(false);
+      if (shouldShowLoader) {
+        setLoading(false);
+      }
+      hasLoadedOnceRef.current = true;
     }
   }, [router]);
 
   // Load profile when screen comes into focus (e.g., after editing)
   useFocusEffect(
     useCallback(() => {
-      loadProfileData();
+      loadProfileData({ showLoader: false });
     }, [loadProfileData])
   );
 
@@ -161,17 +292,200 @@ export default function ProfileScreen() {
     return '?';
   };
 
-  const handleLogout = async () => {
+  const filteredFollowsItems = followsItems.filter((item) => {
+    const q = followsSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (
+      item.fullName.toLowerCase().includes(q) ||
+      item.username.toLowerCase().includes(q)
+    );
+  });
+
+  const handleOpenPost = (postId: string) => {
+    router.push(`/feed/post/${postId}` as any);
+  };
+
+  const loadFollowsList = useCallback(
+    async (type: 'followers' | 'following') => {
+      const user = auth.currentUser;
+      if (!user) return;
+      setFollowsLoading(true);
+      try {
+        const field = type === 'followers' ? 'followingId' : 'followerId';
+        const targetField = type === 'followers' ? 'followerId' : 'followingId';
+        const followsSnap = await getDocs(
+          query(collection(db, 'follows'), where(field, '==', user.uid))
+        );
+        const ids = Array.from(
+          new Set(
+            followsSnap.docs
+              .map((d) => (d.data() as any)?.[targetField] as string)
+              .filter(Boolean)
+          )
+        );
+        if (!ids.length) {
+          setFollowsItems([]);
+          return;
+        }
+        const userDocs = await Promise.all(ids.map((uid) => getDoc(doc(db, 'users', uid))));
+        const list: FollowListItem[] = userDocs
+          .map((snap, index) => {
+            if (!snap.exists()) return null;
+            const data = snap.data() as any;
+            return {
+              uid: ids[index],
+              fullName: data?.fullName || data?.username || 'User',
+              username: data?.username || '',
+              avatarUrl: data?.profilePictureUrl || '',
+            } as FollowListItem;
+          })
+          .filter(Boolean) as FollowListItem[];
+        setFollowsItems(list);
+      } catch (err) {
+        console.log('load follows list error:', err);
+        setFollowsItems([]);
+      } finally {
+        setFollowsLoading(false);
+      }
+    },
+    []
+  );
+
+  const openFollowsModal = async (type: 'followers' | 'following') => {
+    setFollowsModalType(type);
+    setFollowsSearch('');
+    setShowFollowsModal(true);
+    await loadFollowsList(type);
+  };
+
+  const openEditPostModal = (post: MyFeedPost) => {
+    setEditingPost(post);
+    setEditingTitle(post.title);
+    setEditingContent(post.content);
+    setEditingType((post.type as any) || 'Summary');
+    setEditingTagsInput((post.tags || []).join(', '));
+    setEditingVisibility(post.visibility || 'public');
+    setEditingCourseId(post.courseId || '');
+    setEditingCourseName(post.courseName || '');
+    setEditingAttachments(post.attachments || []);
+    setShowEditCoursePicker(false);
+  };
+
+  const handleSavePostEdit = async () => {
+    const user = auth.currentUser;
+    if (!user || !editingPost) return;
+    if (!editingTitle.trim() || !editingContent.trim()) {
+      Alert.alert(t('common.error'), t('profile.postTitleAndContentRequired'));
+      return;
+    }
     try {
-      await signOut(auth);
-      router.replace('/(auth)/login');
+      setSavingPostEdit(true);
+      await updateDoc(doc(db, 'feedPosts', editingPost.id), {
+        courseId: editingCourseId || '',
+        courseName: editingCourseName || '',
+        title: editingTitle.trim(),
+        content: editingContent.trim(),
+        type: editingType,
+        tags: editingTagsInput
+          .split(',')
+          .map((v) => v.trim().replace(/^#/, ''))
+          .filter(Boolean)
+          .slice(0, 8),
+        visibility: editingVisibility,
+        attachments: editingAttachments,
+      });
+      setMyFeedPosts((prev) =>
+        prev.map((item) =>
+          item.id === editingPost.id
+            ? {
+                ...item,
+                title: editingTitle.trim(),
+                content: editingContent.trim(),
+                type: editingType,
+                courseId: editingCourseId || '',
+                courseName: editingCourseName || '',
+                tags: editingTagsInput
+                  .split(',')
+                  .map((v) => v.trim().replace(/^#/, ''))
+                  .filter(Boolean)
+                  .slice(0, 8),
+                visibility: editingVisibility,
+                attachments: editingAttachments,
+              }
+            : item
+        )
+      );
+      setEditingPost(null);
+      setEditingTitle('');
+      setEditingContent('');
+      setEditingType('Summary');
+      setEditingTagsInput('');
+      setEditingVisibility('public');
+      setEditingCourseId('');
+      setEditingCourseName('');
+      setEditingAttachments([]);
     } catch (err) {
-      console.log('Logout error:', err);
+      console.log('edit post error', err);
+      Alert.alert(t('common.error'), t('profile.failedToUpdatePost'));
+    } finally {
+      setSavingPostEdit(false);
     }
   };
 
-  const handleEditProfile = () => {
-    router.push('/edit-profile');
+  const handleDeletePost = (post: MyFeedPost) => {
+    Alert.alert(t('common.confirm'), t('profile.deletePostConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, 'feedPosts', post.id));
+            setMyFeedPosts((prev) => prev.filter((p) => p.id !== post.id));
+          } catch (err) {
+            console.log('delete post error', err);
+            Alert.alert(t('common.error'), t('profile.failedToDeletePost'));
+          }
+        },
+      },
+    ]);
+  };
+
+  const handlePickEditAttachment = async () => {
+    const user = auth.currentUser;
+    if (!user) return;
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: '*/*',
+        copyToCacheDirectory: true,
+        multiple: true,
+      });
+      if (result.canceled) return;
+      setUploadingEditAttachment(true);
+      const uploaded: Array<{ name: string; url: string; mimeType?: string | null; size?: number | null }> = [];
+      for (const asset of result.assets || []) {
+        if (!asset.uri) continue;
+        const url = await uploadFeedAttachmentToSupabase(
+          asset.uri,
+          user.uid,
+          asset.mimeType ?? undefined
+        );
+        if (!url) continue;
+        uploaded.push({
+          name: asset.name || 'attachment',
+          url,
+          mimeType: asset.mimeType ?? null,
+          size: asset.size ?? null,
+        });
+      }
+      if (!uploaded.length) return;
+      setEditingAttachments((prev) => [...prev, ...uploaded].slice(0, 5));
+    } catch (err) {
+      console.log('edit attachment upload error', err);
+      Alert.alert(t('common.error'), t('profile.failedToUpdatePost'));
+    } finally {
+      setUploadingEditAttachment(false);
+    }
   };
 
   const renderCourseHighlight = ({ item }: { item: CourseHighlight }) => {
@@ -214,24 +528,30 @@ export default function ProfileScreen() {
         {/* Header with gradient effect */}
         <View style={styles.headerSection}>
           <View style={styles.headerBackground} />
-          <Text style={styles.headerTitle}>{t('profile.title')}</Text>
-        </View>
-
-        {/* Language Section - At the top */}
-        <View style={styles.languageSectionTop}>
-          <TouchableOpacity
-            style={styles.languageButtonTop}
-            onPress={() => setShowLanguageModal(true)}
-          >
-            <Ionicons name="language" size={18} color={PRIMARY_GREEN} />
-            <Text style={styles.languageButtonTextTop}>
-              {currentLanguage === 'he' ? 'עברית' : 'EN'}
-            </Text>
-          </TouchableOpacity>
+          <Text style={[styles.headerTitle, isHebrewUi && styles.rtlText]}>{t('profile.title')}</Text>
         </View>
 
         {/* Profile Card */}
         <View style={styles.profileCard}>
+          <View style={styles.profileCardTopActions}>
+            <TouchableOpacity
+              style={styles.profileCardIconBtn}
+              onPress={() => router.push('/profile/system-updates')}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.systemUpdatesButton')}
+            >
+              <Ionicons name="notifications-outline" size={22} color="#047857" />
+              {tutorUpdatesUnread ? <View style={styles.updatesHeaderBadgeDot} /> : null}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.profileCardIconBtn}
+              onPress={() => router.push('/profile/settings')}
+              accessibilityRole="button"
+              accessibilityLabel={t('profile.settingsTitle')}
+            >
+              <Ionicons name="settings-outline" size={22} color="#047857" />
+            </TouchableOpacity>
+          </View>
           {/* Avatar */}
           <View style={styles.avatarContainer}>
             {profile.profilePictureUrl ? (
@@ -244,9 +564,10 @@ export default function ProfileScreen() {
                 <Text style={styles.avatarText}>{getInitials()}</Text>
               </View>
             )}
-            <View style={styles.avatarBadge}>
+            {/* Avatar Badge - Reserved for future tutor verification */}
+            {/* <View style={styles.avatarBadge}>
               <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
-            </View>
+            </View> */}
           </View>
 
           {/* Name and Info */}
@@ -285,10 +606,7 @@ export default function ProfileScreen() {
           <View style={styles.statsContainer}>
             <TouchableOpacity
               style={styles.statCard}
-              onPress={() => {
-                // TODO: Navigate to followers list
-                console.log('Show followers');
-              }}
+              onPress={() => openFollowsModal('followers')}
             >
               <Text style={styles.statNumber}>{followersCount}</Text>
               <Text style={styles.statLabel}>{t('profile.followers')}</Text>
@@ -296,10 +614,7 @@ export default function ProfileScreen() {
             <View style={styles.statDivider} />
             <TouchableOpacity
               style={styles.statCard}
-              onPress={() => {
-                // TODO: Navigate to following list
-                console.log('Show following');
-              }}
+              onPress={() => openFollowsModal('following')}
             >
               <Text style={styles.statNumber}>{followingCount}</Text>
               <Text style={styles.statLabel}>{t('profile.following')}</Text>
@@ -311,31 +626,32 @@ export default function ProfileScreen() {
             </View>
           </View>
 
-          {/* Action Buttons */}
-          <View style={styles.buttonsRow}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.editButton]}
-              onPress={handleEditProfile}
-            >
-              <Ionicons name="create-outline" size={18} color="#111827" />
-              <Text style={styles.editButtonText}>{t('profile.editProfile')}</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.logoutButton]}
-              onPress={handleLogout}
-            >
-              <Ionicons name="log-out-outline" size={18} color="#ffffff" />
-              <Text style={styles.actionButtonText}>{t('auth.logout')}</Text>
-            </TouchableOpacity>
-          </View>
-
         </View>
+
+        {profile?.role === 'student' && tutorApprovedCourses.length > 0 && (
+          <View style={styles.section}>
+            <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="ribbon-outline" size={20} color={ACCENT_GREEN} />
+              <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>{t('profile.tutorApprovedTitle')}</Text>
+            </View>
+            <View style={styles.tutorApprovedCard}>
+              {tutorApprovedCourses.map((c) => (
+                <View key={c.courseId} style={[styles.tutorApprovedRow, isHebrewUi && styles.rtlRow]}>
+                  <Ionicons name="checkmark-circle" size={18} color="#047857" />
+                  <Text style={[styles.tutorApprovedCourseName, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                    {c.courseName}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Courses Section */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
+          <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
             <Ionicons name="book-outline" size={20} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>{t('profile.myCourses')}</Text>
+            <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>{t('profile.myCourses')}</Text>
           </View>
           {courses.length > 0 ? (
             <FlatList
@@ -356,292 +672,392 @@ export default function ProfileScreen() {
           )}
         </View>
 
-        {/* Study Buddy Preferences Section - Only for students */}
-        {profile?.role === 'student' && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="people-circle-outline" size={20} color={ACCENT_GREEN} />
-              <Text style={styles.sectionTitle}>{t('profile.studyBuddyPreferences')}</Text>
-              <TouchableOpacity
-                style={styles.editButtonSmall}
-                onPress={() => setShowPreferencesModal(true)}
-              >
-                <Ionicons name="create-outline" size={18} color={ACCENT_GREEN} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.preferencesCard}>
-              {preferredTime ? (
-                <View style={styles.preferenceItem}>
-                  <Ionicons name="time-outline" size={16} color="#6b7280" />
-                  <Text style={styles.preferenceText}>{t('profile.preferredTimeLabel')}: {preferredTime}</Text>
-                </View>
-              ) : (
-                <Text style={styles.preferenceEmptyText}>{t('profile.noPreferredTime')}</Text>
-              )}
-              {selectedCoursesForBuddy.size > 0 ? (
-                <View style={styles.preferenceItem}>
-                  <Ionicons name="book-outline" size={16} color="#6b7280" />
-                  <Text style={styles.preferenceText}>
-                    {selectedCoursesForBuddy.size === 1 
-                      ? t('profile.availableInCourses', { count: selectedCoursesForBuddy.size })
-                      : t('profile.availableInCoursesPlural', { count: selectedCoursesForBuddy.size })}
-                  </Text>
-                </View>
-              ) : (
-                <Text style={styles.preferenceEmptyText}>{t('profile.noCoursesSelected')}</Text>
-              )}
-              <TouchableOpacity
-                style={styles.configureButton}
-                onPress={() => setShowPreferencesModal(true)}
-              >
-                <Ionicons name="settings-outline" size={16} color="#ffffff" />
-                <Text style={styles.configureButtonText}>{t('profile.configurePreferences')}</Text>
-              </TouchableOpacity>
-            </View>
+        {/* My Feed Posts Section */}
+        <View style={styles.section}>
+          <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
+            <Ionicons name="newspaper-outline" size={20} color={ACCENT_GREEN} />
+            <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>
+              {t('profile.myFeedPosts')}
+            </Text>
           </View>
-        )}
+          {myFeedPosts.length === 0 ? (
+            <View style={styles.emptyActivityCard}>
+              <Ionicons name="chatbox-ellipses-outline" size={40} color="#4b5563" />
+              <Text style={[styles.emptyActivityTitle, isHebrewUi && styles.rtlText]}>
+                {t('profile.noFeedPostsYet')}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.feedGrid}>
+              {myFeedPosts.map((post) => (
+                <TouchableOpacity
+                  key={post.id}
+                  style={styles.feedSquare}
+                  activeOpacity={0.85}
+                  onPress={() => handleOpenPost(post.id)}
+                >
+                  <View style={styles.feedSquareTopRow}>
+                    <Text style={[styles.feedSquareTitle, isHebrewUi && styles.rtlText]} numberOfLines={3}>
+                      {post.title || post.content}
+                    </Text>
+                    <TouchableOpacity
+                      style={styles.feedSquareMenuBtn}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        Alert.alert(
+                          t('profile.feedPostOptions'),
+                          post.title || '',
+                          [
+                            { text: t('feed.view'), onPress: () => handleOpenPost(post.id) },
+                            { text: t('common.edit'), onPress: () => openEditPostModal(post) },
+                            { text: t('common.delete'), style: 'destructive', onPress: () => handleDeletePost(post) },
+                            { text: t('common.cancel'), style: 'cancel' },
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="ellipsis-vertical" size={14} color="#6b7280" />
+                    </TouchableOpacity>
+                  </View>
+                  <Text style={[styles.feedSquareContentMeta, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                    {t(`feed.postType.${String(post.type || 'summary').toLowerCase().replace(' ', '')}`)}
+                  </Text>
+                  <View style={[styles.feedSquareStats, isHebrewUi && styles.rtlRow]}>
+                    <View style={styles.feedSquareStatItem}>
+                      <Ionicons name="heart" size={11} color="#ef4444" />
+                      <Text style={styles.feedSquareStatText}>{post.likesCount}</Text>
+                    </View>
+                    <View style={styles.feedSquareStatItem}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={11} color="#374151" />
+                      <Text style={styles.feedSquareStatText}>{post.commentsCount}</Text>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+        </View>
 
         {/* Activity Section */}
         <View style={styles.section}>
-          <View style={styles.sectionHeader}>
+          <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
             <Ionicons name="time-outline" size={20} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>{t('profile.recentActivity')}</Text>
+            <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>{t('profile.recentActivity')}</Text>
           </View>
           <View style={styles.emptyActivityCard}>
             <Ionicons name="document-text-outline" size={48} color="#4b5563" />
-            <Text style={styles.emptyActivityTitle}>{t('profile.noActivityYet')}</Text>
-            <Text style={styles.emptyActivityText}>
+            <Text style={[styles.emptyActivityTitle, isHebrewUi && styles.rtlText]}>{t('profile.noActivityYet')}</Text>
+            <Text style={[styles.emptyActivityText, isHebrewUi && styles.rtlText]}>
               {t('profile.activityMessage')}
             </Text>
           </View>
         </View>
       </ScrollView>
 
-      {/* Language Selection Modal */}
       <Modal
-        visible={showLanguageModal}
+        visible={showFollowsModal}
+        transparent={false}
+        animationType="slide"
+        onRequestClose={() => setShowFollowsModal(false)}
+      >
+        <View style={styles.followsScreen}>
+          <View style={styles.followsTopHeader}>
+            <TouchableOpacity
+              onPress={() => setShowFollowsModal(false)}
+              style={styles.modalCloseButton}
+            >
+              <Ionicons name="arrow-back" size={24} color="#111827" />
+            </TouchableOpacity>
+            <Text style={styles.followsTopTitle}>{profile?.username || 'username'}</Text>
+            <View style={{ width: 24 }} />
+          </View>
+
+          <View style={styles.followsTabsRow}>
+            <TouchableOpacity
+              style={styles.followTabItem}
+              onPress={() => {
+                setFollowsModalType('followers');
+                loadFollowsList('followers');
+              }}
+            >
+              <Text style={[styles.followTabNumber, followsModalType === 'followers' && styles.followTabNumberActive]}>
+                {followersCount}
+              </Text>
+              <Text style={[styles.followTabLabel, followsModalType === 'followers' && styles.followTabLabelActive]}>
+                {t('profile.followers')}
+              </Text>
+              {followsModalType === 'followers' && <View style={styles.followTabUnderline} />}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.followTabItem}
+              onPress={() => {
+                setFollowsModalType('following');
+                loadFollowsList('following');
+              }}
+            >
+              <Text style={[styles.followTabNumber, followsModalType === 'following' && styles.followTabNumberActive]}>
+                {followingCount}
+              </Text>
+              <Text style={[styles.followTabLabel, followsModalType === 'following' && styles.followTabLabelActive]}>
+                {t('profile.following')}
+              </Text>
+              {followsModalType === 'following' && <View style={styles.followTabUnderline} />}
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.followsSearchWrap}>
+            <Ionicons name="search" size={16} color="#6b7280" />
+            <TextInput
+              style={styles.followsSearchInput}
+              placeholder={t('search.title')}
+              placeholderTextColor="#9ca3af"
+              value={followsSearch}
+              onChangeText={setFollowsSearch}
+            />
+          </View>
+
+          {followsLoading ? (
+            <View style={styles.followsStateWrap}>
+              <ActivityIndicator color="#047857" />
+            </View>
+          ) : filteredFollowsItems.length ? (
+            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.followsListContent}>
+              {filteredFollowsItems.map((item) => (
+                <TouchableOpacity
+                  key={item.uid}
+                  style={styles.followRow}
+                  onPress={() => {
+                    setShowFollowsModal(false);
+                    router.push(`/user-profile/${item.uid}` as any);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <View style={styles.followAvatarWrap}>
+                    {item.avatarUrl ? (
+                      <Image source={{ uri: item.avatarUrl }} style={styles.followAvatar} />
+                    ) : (
+                      <Ionicons name="person" size={18} color="#047857" />
+                    )}
+                  </View>
+                  <View style={styles.followTextWrap}>
+                    <Text style={styles.followName} numberOfLines={1}>{item.fullName}</Text>
+                    {!!item.username && (
+                      <Text style={styles.followUsername} numberOfLines={1}>@{item.username}</Text>
+                    )}
+                  </View>
+                  {followsModalType === 'following' && (
+                    <View style={styles.followingPill}>
+                      <Text style={styles.followingPillText}>{t('profile.following')}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.followsStateWrap}>
+                <Text style={styles.followsEmptyText}>{t('search.noResults')}</Text>
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* Edit Feed Post Modal */}
+      <Modal
+        visible={!!editingPost}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowLanguageModal(false)}
+        onRequestClose={() => setEditingPost(null)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
+        <KeyboardAvoidingView
+          style={styles.modalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        >
+          <View style={styles.postEditModalContent}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('profile.selectLanguage')}</Text>
+              <Text style={styles.modalTitle}>{t('profile.editFeedPost')}</Text>
               <TouchableOpacity
-                onPress={() => setShowLanguageModal(false)}
+                onPress={() => setEditingPost(null)}
                 style={styles.modalCloseButton}
               >
                 <Ionicons name="close" size={24} color="#111827" />
               </TouchableOpacity>
             </View>
+            <ScrollView
+              style={styles.postEditModalBody}
+              contentContainerStyle={styles.postEditModalBodyContent}
+              showsVerticalScrollIndicator={false}
+            >
+            <Text style={styles.modalLabel}>{t('feed.titleLabel')}</Text>
+            <TextInput
+              style={styles.postEditInput}
+              value={editingTitle}
+              onChangeText={setEditingTitle}
+              placeholder={t('feed.titlePlaceholder')}
+              placeholderTextColor="#9ca3af"
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
+            <Text style={styles.modalLabel}>{t('feed.contentLabel')}</Text>
+            <TextInput
+              style={[styles.postEditInput, styles.postEditTextarea]}
+              value={editingContent}
+              onChangeText={setEditingContent}
+              placeholder={t('feed.contentPlaceholder')}
+              placeholderTextColor="#9ca3af"
+              multiline
+              textAlignVertical="top"
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
 
-            <View style={styles.languageOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.languageOption,
-                  currentLanguage === 'en' && styles.languageOptionSelected,
-                ]}
-                onPress={async () => {
-                  await saveLanguage('en');
-                  i18n.changeLanguage('en');
-                  setCurrentLanguage('en');
-                  setShowLanguageModal(false);
-                }}
-              >
-                <Ionicons
-                  name={currentLanguage === 'en' ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={24}
-                  color={currentLanguage === 'en' ? PRIMARY_GREEN : '#9ca3af'}
-                />
-                <Text
-                  style={[
-                    styles.languageOptionText,
-                    currentLanguage === 'en' && styles.languageOptionTextSelected,
-                  ]}
-                >
-                  {t('profile.english')}
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.languageOption,
-                  currentLanguage === 'he' && styles.languageOptionSelected,
-                ]}
-                onPress={async () => {
-                  await saveLanguage('he');
-                  i18n.changeLanguage('he');
-                  setCurrentLanguage('he');
-                  setShowLanguageModal(false);
-                }}
-              >
-                <Ionicons
-                  name={currentLanguage === 'he' ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={24}
-                  color={currentLanguage === 'he' ? PRIMARY_GREEN : '#9ca3af'}
-                />
-                <Text
-                  style={[
-                    styles.languageOptionText,
-                    currentLanguage === 'he' && styles.languageOptionTextSelected,
-                  ]}
-                >
-                  {t('profile.hebrew')}
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* Study Buddy Preferences Modal */}
-      {showPreferencesModal && (
-        <Modal
-          visible={showPreferencesModal}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowPreferencesModal(false)}
-        >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{t('profile.studyBuddyPreferences')}</Text>
-                <TouchableOpacity
-                  onPress={() => setShowPreferencesModal(false)}
-                  style={styles.modalCloseButton}
-                >
-                  <Ionicons name="close" size={24} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.modalSubtitle}>
-                {t('profile.setPreferencesMessage')}
+            <Text style={styles.modalLabel}>{t('feed.course')} ({t('common.optional')})</Text>
+            <TouchableOpacity
+              style={styles.postEditSelect}
+              onPress={() => setShowEditCoursePicker((prev) => !prev)}
+            >
+              <Text style={editingCourseName ? styles.postEditSelectValue : styles.postEditSelectPlaceholder}>
+                {editingCourseName || t('feed.selectCourse')}
               </Text>
-
-              <Text style={styles.modalLabel}>{t('profile.preferredTime')} *</Text>
-              <View style={styles.timeOptionsContainer}>
-                {['Morning', 'Afternoon', 'Evening', 'Night', 'Weekends', 'Flexible'].map((time) => (
+              <Ionicons name="chevron-down" size={18} color="#6b7280" />
+            </TouchableOpacity>
+            {showEditCoursePicker && (
+              <View style={styles.postEditPickerList}>
+                <TouchableOpacity
+                  style={styles.postEditPickerItem}
+                  onPress={() => {
+                    setEditingCourseId('');
+                    setEditingCourseName('');
+                    setShowEditCoursePicker(false);
+                  }}
+                >
+                  <Text style={styles.postEditPickerText}>{t('feed.selectCourse')}</Text>
+                </TouchableOpacity>
+                {courses.map((course) => (
                   <TouchableOpacity
-                    key={time}
-                    style={[
-                      styles.timeOptionButton,
-                      preferredTime === time && styles.timeOptionButtonSelected,
-                    ]}
-                    onPress={() => setPreferredTime(time)}
+                    key={course.id}
+                    style={styles.postEditPickerItem}
+                    onPress={() => {
+                      setEditingCourseId(course.id);
+                      setEditingCourseName(course.name);
+                      setShowEditCoursePicker(false);
+                    }}
                   >
-                    <Text
-                      style={[
-                        styles.timeOptionText,
-                        preferredTime === time && styles.timeOptionTextSelected,
-                      ]}
-                    >
-                      {t(`profile.time.${time.toLowerCase()}`)}
-                    </Text>
+                    <Text style={styles.postEditPickerText}>{course.name}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
+            )}
 
-              <Text style={styles.modalLabel}>{t('profile.selectCoursesForBuddy')} *</Text>
-              <Text style={styles.modalHelperText}>
-                {t('profile.chooseCoursesMessage')}
-              </Text>
-              <ScrollView style={styles.coursesSelectionContainer}>
-                {courses.length === 0 ? (
-                  <Text style={styles.noCoursesText}>
-                    {t('profile.noCoursesAvailable')}
+            <Text style={styles.modalLabel}>{t('feed.postTypeLabel')}</Text>
+            <View style={styles.postEditTypeRow}>
+              {(['Summary', 'Tip', 'Question', 'Exam Info'] as Array<'Summary' | 'Tip' | 'Question' | 'Exam Info'>).map((type) => (
+                <TouchableOpacity
+                  key={type}
+                  style={[styles.postEditTypeChip, editingType === type && styles.postEditTypeChipActive]}
+                  onPress={() => setEditingType(type)}
+                >
+                  <Text style={[styles.postEditTypeText, editingType === type && styles.postEditTypeTextActive]}>
+                    {t(`feed.postType.${type.toLowerCase().replace(' ', '')}`)}
                   </Text>
-                ) : (
-                  courses.map((course) => (
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.modalLabel}>{t('feed.tags')} ({t('common.optional')})</Text>
+            <TextInput
+              style={styles.postEditInput}
+              value={editingTagsInput}
+              onChangeText={setEditingTagsInput}
+              placeholder={t('feed.tagsPlaceholder')}
+              placeholderTextColor="#9ca3af"
+            />
+
+            <Text style={styles.modalLabel}>{t('feed.visibility')}</Text>
+            <View style={styles.postEditVisibilityRow}>
+              <TouchableOpacity
+                style={[styles.postEditVisibilityBtn, editingVisibility === 'public' && styles.postEditVisibilityBtnActive]}
+                onPress={() => setEditingVisibility('public')}
+              >
+                <Text
+                  style={[
+                    styles.postEditVisibilityText,
+                    editingVisibility === 'public' && styles.postEditVisibilityTextActive
+                  ]}
+                >
+                  {t('feed.public')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.postEditVisibilityBtn,
+                  editingVisibility === 'institution' && styles.postEditVisibilityBtnActive
+                ]}
+                onPress={() => setEditingVisibility('institution')}
+              >
+                <Text
+                  style={[
+                    styles.postEditVisibilityText,
+                    editingVisibility === 'institution' && styles.postEditVisibilityTextActive
+                  ]}
+                >
+                  {t('feed.institutionOnly')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <Text style={styles.modalLabel}>Attachments ({t('common.optional')})</Text>
+            <TouchableOpacity style={styles.postEditAttachBtn} onPress={handlePickEditAttachment}>
+              {uploadingEditAttachment ? (
+                <ActivityIndicator size="small" color="#047857" />
+              ) : (
+                <Ionicons name="attach" size={16} color="#047857" />
+              )}
+              <Text style={styles.postEditAttachText}>
+                {uploadingEditAttachment ? t('common.uploading') : t('profile.addAttachment')}
+              </Text>
+            </TouchableOpacity>
+            {editingAttachments.length > 0 && (
+              <View style={styles.postEditAttachmentsList}>
+                {editingAttachments.map((file, idx) => (
+                  <View key={`${file.url}-${idx}`} style={styles.postEditAttachmentItem}>
+                    <Text style={styles.postEditAttachmentText} numberOfLines={1}>
+                      {file.name}
+                    </Text>
                     <TouchableOpacity
-                      key={course.id}
-                      style={[
-                        styles.courseCheckbox,
-                        selectedCoursesForBuddy.has(course.id) && styles.courseCheckboxSelected,
-                      ]}
-                      onPress={() => {
-                        const newSet = new Set(selectedCoursesForBuddy);
-                        if (newSet.has(course.id)) {
-                          newSet.delete(course.id);
-                        } else {
-                          newSet.add(course.id);
-                        }
-                        setSelectedCoursesForBuddy(newSet);
-                      }}
+                      onPress={() => setEditingAttachments((prev) => prev.filter((_, i) => i !== idx))}
                     >
-                      <Ionicons
-                        name={selectedCoursesForBuddy.has(course.id) ? 'checkbox' : 'checkbox-outline'}
-                        size={24}
-                        color={selectedCoursesForBuddy.has(course.id) ? ACCENT_GREEN : '#6b7280'}
-                      />
-                      <Text
-                        style={[
-                          styles.courseCheckboxText,
-                          selectedCoursesForBuddy.has(course.id) && styles.courseCheckboxTextSelected,
-                        ]}
-                      >
-                        {course.name}
-                      </Text>
+                      <Ionicons name="close-circle" size={18} color="#ef4444" />
                     </TouchableOpacity>
-                  ))
-                )}
-              </ScrollView>
-
-              <View style={styles.modalButtons}>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.modalCancelButton]}
-                  onPress={() => setShowPreferencesModal(false)}
-                >
-                  <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalButton, styles.modalSaveButton]}
-                  onPress={async () => {
-                    if (!preferredTime) {
-                      Alert.alert(t('common.error'), t('profile.selectTimeRequired'));
-                      return;
-                    }
-                    if (selectedCoursesForBuddy.size === 0) {
-                      Alert.alert(t('common.error'), t('profile.selectCourseRequired'));
-                      return;
-                    }
-
-                    const user = auth.currentUser;
-                    if (!user) return;
-
-                    try {
-                      setSavingPreferences(true);
-                      await updateDoc(doc(db, 'users', user.uid), {
-                        preferredTime: preferredTime,
-                        studyBuddyCourses: Array.from(selectedCoursesForBuddy),
-                      });
-                      setShowPreferencesModal(false);
-                      Alert.alert(t('common.success'), t('profile.preferencesUpdated'));
-                    } catch (err) {
-                      console.log('Error saving preferences:', err);
-                      Alert.alert(t('common.error'), t('profile.preferencesSaveError'));
-                    } finally {
-                      setSavingPreferences(false);
-                    }
-                  }}
-                  disabled={savingPreferences}
-                >
-                  {savingPreferences ? (
-                    <ActivityIndicator color="#ffffff" />
-                  ) : (
-                    <Text style={styles.modalSaveText}>{t('common.save')}</Text>
-                  )}
-                </TouchableOpacity>
+                  </View>
+                ))}
               </View>
+            )}
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalCancelButton]}
+                onPress={() => setEditingPost(null)}
+              >
+                <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.modalButton, styles.modalSaveButton]}
+                onPress={handleSavePostEdit}
+                disabled={savingPostEdit}
+              >
+                {savingPostEdit ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.modalSaveText}>{t('common.save')}</Text>
+                )}
+              </TouchableOpacity>
             </View>
           </View>
-        </Modal>
-      )}
+        </KeyboardAvoidingView>
+      </Modal>
     </View>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
 const ACCENT_GREEN = '#047857';
 const GREY = '#4b5563';
 const GREY_LIGHT = '#374151';
@@ -692,6 +1108,40 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.1)',
     textShadowOffset: { width: 0, height: 2 },
     textShadowRadius: 4,
+    paddingHorizontal: 52,
+  },
+  profileCardTopActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    width: '100%',
+    marginBottom: 8,
+  },
+  profileCardIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: '#d1fae5',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  updatesHeaderBadgeDot: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
   },
   profileCard: {
     backgroundColor: '#ffffff',
@@ -818,47 +1268,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontWeight: '500',
   },
-  buttonsRow: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-    gap: 8,
-  },
-  editButton: {
-    backgroundColor: ACCENT_GREEN,
-    borderWidth: 1,
-    borderColor: ACCENT_GREEN,
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  logoutButton: {
-    backgroundColor: '#047857',
-    shadowColor: '#047857',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  actionButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  editButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '700',
-  },
   section: {
     marginHorizontal: 20,
     marginBottom: 20,
@@ -945,6 +1354,136 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     textAlign: 'center',
   },
+  myPostCard: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  myPostTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  myPostContent: {
+    marginTop: 6,
+    fontSize: 13,
+    color: '#4b5563',
+    lineHeight: 18,
+  },
+  myPostStatsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  myPostStatText: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  myPostDate: {
+    marginLeft: 'auto',
+    fontSize: 11,
+    color: '#9ca3af',
+  },
+  myPostActionsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  myPostActionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#f9fafb',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingVertical: 8,
+  },
+  myPostDeleteBtn: {
+    borderColor: '#fecaca',
+    backgroundColor: '#fff1f2',
+  },
+  myPostActionText: {
+    fontSize: 12,
+    color: '#111827',
+    fontWeight: '600',
+  },
+  myPostDeleteText: {
+    fontSize: 12,
+    color: '#ef4444',
+    fontWeight: '700',
+  },
+  feedGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  feedSquare: {
+    width: '31%',
+    aspectRatio: 1,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    borderRadius: 14,
+    padding: 10,
+    justifyContent: 'space-between',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  feedSquareTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  feedSquareTitle: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 16,
+    color: '#111827',
+    fontWeight: '700',
+  },
+  feedSquareMenuBtn: {
+    width: 18,
+    height: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  feedSquareContentMeta: {
+    marginTop: 6,
+    fontSize: 11.5,
+    color: '#6b7280',
+    fontWeight: '600',
+  },
+  feedSquareStats: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#f3f4f6',
+    paddingTop: 6,
+    marginTop: 6,
+  },
+  feedSquareStatItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  feedSquareStatText: {
+    fontSize: 11,
+    color: '#4b5563',
+    fontWeight: '700',
+  },
   highlightsEmptyText: {
     fontSize: 13,
     color: '#6b7280',
@@ -965,6 +1504,27 @@ const styles = StyleSheet.create({
     padding: 16,
     borderWidth: 1,
     borderColor: '#374151',
+  },
+  tutorApprovedCard: {
+    backgroundColor: '#ecfdf5',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+  },
+  tutorApprovedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#d1fae5',
+  },
+  tutorApprovedCourseName: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#064e3b',
   },
   preferenceItem: {
     flexDirection: 'row',
@@ -1026,6 +1586,61 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
   },
+  followsScreen: {
+    flex: 1,
+    backgroundColor: '#ffffff',
+    paddingTop: 58,
+  },
+  followsTopHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+  },
+  followsTopTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#111827',
+  },
+  followsTabsRow: {
+    flexDirection: 'row',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+    marginTop: 4,
+  },
+  followTabItem: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 10,
+    position: 'relative',
+  },
+  followTabNumber: {
+    color: '#6b7280',
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  followTabNumberActive: {
+    color: '#111827',
+  },
+  followTabLabel: {
+    marginTop: 2,
+    color: '#6b7280',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  followTabLabelActive: {
+    color: '#111827',
+  },
+  followTabUnderline: {
+    position: 'absolute',
+    left: 24,
+    right: 24,
+    bottom: 0,
+    height: 2.5,
+    borderRadius: 1.5,
+    backgroundColor: '#111827',
+  },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1040,82 +1655,90 @@ const styles = StyleSheet.create({
   modalCloseButton: {
     padding: 4,
   },
-  modalSubtitle: {
+  followsSearchWrap: {
+    marginTop: 10,
+    marginBottom: 8,
+    marginHorizontal: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 44,
+    backgroundColor: '#f9fafb',
+  },
+  followsSearchInput: {
+    flex: 1,
+    color: '#111827',
     fontSize: 14,
+  },
+  followsStateWrap: {
+    minHeight: 180,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  followsListContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 20,
+  },
+  followsEmptyText: {
     color: '#6b7280',
-    marginBottom: 24,
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  followRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  followAvatarWrap: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    backgroundColor: '#f3f4f6',
+    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  followAvatar: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 21,
+  },
+  followTextWrap: {
+    flex: 1,
+  },
+  followName: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  followUsername: {
+    marginTop: 1,
+    color: '#6b7280',
+    fontSize: 13,
+  },
+  followingPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: '#f3f4f6',
+  },
+  followingPillText: {
+    color: '#111827',
+    fontSize: 13,
+    fontWeight: '700',
   },
   modalLabel: {
     fontSize: 15,
     fontWeight: '600',
     color: '#374151',
     marginBottom: 12,
-  },
-  modalHelperText: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 12,
-  },
-  timeOptionsContainer: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 24,
-  },
-  timeOptionButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: '#374151',
-    backgroundColor: '#f9fafb',
-  },
-  timeOptionButtonSelected: {
-    backgroundColor: '#dbeafe',
-    borderColor: '#047857',
-  },
-  timeOptionText: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  timeOptionTextSelected: {
-    color: '#047857',
-    fontWeight: '600',
-  },
-  coursesSelectionContainer: {
-    maxHeight: 200,
-    marginBottom: 24,
-  },
-  noCoursesText: {
-    fontSize: 13,
-    color: '#6b7280',
-    textAlign: 'center',
-    paddingVertical: 20,
-  },
-  courseCheckbox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: '#374151',
-    backgroundColor: '#f9fafb',
-    gap: 12,
-  },
-  courseCheckboxSelected: {
-    backgroundColor: '#dbeafe',
-    borderColor: '#047857',
-  },
-  courseCheckboxText: {
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  courseCheckboxTextSelected: {
-    color: '#111827',
-    fontWeight: '600',
   },
   modalButtons: {
     flexDirection: 'row',
@@ -1151,60 +1774,168 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
   },
-  languageOptions: {
-    paddingVertical: 8,
-  },
-  languageOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    marginBottom: 8,
-    backgroundColor: '#f9fafb',
+  postEditInput: {
     borderWidth: 1,
     borderColor: '#e5e7eb',
-  },
-  languageOptionSelected: {
-    backgroundColor: '#f0fdf4',
-    borderColor: PRIMARY_GREEN,
-    borderWidth: 2,
-  },
-  languageOptionText: {
-    fontSize: 16,
-    fontWeight: '500',
+    borderRadius: 12,
+    backgroundColor: '#f9fafb',
     color: '#111827',
-    marginLeft: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 14,
   },
-  languageOptionTextSelected: {
-    color: PRIMARY_GREEN,
-    fontWeight: '600',
+  postEditTextarea: {
+    minHeight: 120,
   },
-  languageSectionTop: {
-    position: 'absolute',
-    top: 70,
-    right: 20,
-    zIndex: 10,
+  postEditModalContent: {
+    width: '92%',
+    maxHeight: '86%',
+    backgroundColor: '#ffffff',
+    borderRadius: 20,
+    paddingTop: 20,
+    paddingHorizontal: 14,
+    paddingBottom: 14,
   },
-  languageButtonTop: {
+  postEditModalBody: {
+    maxHeight: '78%',
+  },
+  postEditModalBodyContent: {
+    paddingBottom: 8,
+  },
+  postEditSelect: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    backgroundColor: '#f9fafb',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    borderWidth: 1.5,
-    borderColor: PRIMARY_GREEN,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'space-between',
+    marginBottom: 10,
   },
-  languageButtonTextTop: {
+  postEditSelectValue: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  postEditSelectPlaceholder: {
+    color: '#9ca3af',
+    fontSize: 14,
+  },
+  postEditPickerList: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 12,
+    backgroundColor: '#ffffff',
+    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  postEditPickerItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  postEditPickerText: {
+    fontSize: 14,
+    color: '#111827',
+  },
+  postEditTypeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  postEditTypeChip: {
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    backgroundColor: '#f3f4f6',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  postEditTypeChipActive: {
+    borderColor: '#047857',
+    backgroundColor: '#ecfdf5',
+  },
+  postEditTypeText: {
+    color: '#374151',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  postEditTypeTextActive: {
+    color: '#047857',
+  },
+  postEditVisibilityRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 12,
+  },
+  postEditVisibilityBtn: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+  },
+  postEditVisibilityBtnActive: {
+    borderColor: '#047857',
+    backgroundColor: '#ecfdf5',
+  },
+  postEditVisibilityText: {
+    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  postEditVisibilityTextActive: {
+    color: '#047857',
+  },
+  postEditAttachBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#d1fae5',
+    backgroundColor: '#f0fdf4',
+    borderRadius: 10,
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  postEditAttachText: {
+    color: '#047857',
     fontSize: 13,
     fontWeight: '600',
-    color: PRIMARY_GREEN,
+  },
+  postEditAttachmentsList: {
+    gap: 8,
+    marginBottom: 12,
+  },
+  postEditAttachmentItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fff',
+  },
+  postEditAttachmentText: {
+    flex: 1,
+    color: '#374151',
+    fontSize: 12,
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });
