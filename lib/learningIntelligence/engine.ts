@@ -50,11 +50,45 @@ async function chatCompletionJSON(prompt: string, temperature = 0.3, maxTokens =
 }
 
 function parseJSONBlock(content: string): any {
-  const arrMatch = content.match(/\[[\s\S]*\]/);
-  if (arrMatch) return JSON.parse(arrMatch[0]);
-  const objMatch = content.match(/\{[\s\S]*\}/);
-  if (objMatch) return JSON.parse(objMatch[0]);
-  return JSON.parse(content);
+  const raw = String(content || '').trim();
+  if (!raw) throw new Error('Empty model response');
+
+  // Strip markdown fences if model returned ```json ... ```
+  let normalized = raw
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*/g, '')
+    .trim();
+
+  // Remove common noisy leading chars before JSON starts (e.g. ", { ... }")
+  const firstJsonStart = normalized.search(/[\[{]/);
+  if (firstJsonStart > 0) {
+    normalized = normalized.slice(firstJsonStart).trim();
+  }
+
+  const tryParse = (value: string) => {
+    try {
+      return JSON.parse(value);
+    } catch {
+      return null;
+    }
+  };
+
+  const direct = tryParse(normalized);
+  if (direct !== null) return direct;
+
+  const arrMatch = normalized.match(/\[[\s\S]*\]/);
+  if (arrMatch) {
+    const parsedArr = tryParse(arrMatch[0]);
+    if (parsedArr !== null) return parsedArr;
+  }
+
+  const objMatch = normalized.match(/\{[\s\S]*\}/);
+  if (objMatch) {
+    const parsedObj = tryParse(objMatch[0]);
+    if (parsedObj !== null) return parsedObj;
+  }
+
+  throw new Error(`Failed to parse model JSON response: ${normalized.slice(0, 180)}`);
 }
 
 function isGenericAnswer(text: string): boolean {

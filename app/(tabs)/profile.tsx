@@ -1,6 +1,6 @@
 // app/(tabs)/profile.tsx
 import { auth, db } from '@/lib/firebaseConfig';
-import { buildTutorUpdatesSignature, getTutorUpdatesSeenSignature } from '@/lib/profileSystemUpdates';
+import { buildSystemUpdatesSignature, getTutorUpdatesSeenSignature } from '@/lib/profileSystemUpdates';
 import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
@@ -171,9 +171,42 @@ export default function ProfileScreen() {
         setTutorApprovedCourses([]);
         tutorList = [];
       }
-      const tutorSig = buildTutorUpdatesSignature(tutorList);
+      const pendingTutorRequestsSnap = await getDocs(
+        query(
+          collection(db, 'tutorSupportRequests'),
+          where('tutorUid', '==', user.uid),
+          where('status', '==', 'pending'),
+        ),
+      );
+      const pendingTutorRequests = pendingTutorRequestsSnap.docs.map((d) => {
+        const createdAtMs = (d.data() as any)?.createdAt?.toMillis?.() ?? 0;
+        return { id: d.id, createdAtMs };
+      });
+      const studentDecisionRequestsSnap = await getDocs(
+        query(
+          collection(db, 'tutorSupportRequests'),
+          where('studentUid', '==', user.uid),
+        ),
+      );
+      const studentDecisionRequests = studentDecisionRequestsSnap.docs
+        .map((d) => {
+          const data = d.data() as any;
+          const status = String(data?.status || 'pending');
+          if (status === 'pending') return null;
+          const reviewedAtMs = data?.reviewedAt?.toMillis?.() ?? data?.createdAt?.toMillis?.() ?? 0;
+          return { id: d.id, createdAtMs: reviewedAtMs };
+        })
+        .filter((x): x is { id: string; createdAtMs: number } => !!x);
+      const tutorSig = buildSystemUpdatesSignature({
+        courses: tutorList,
+        tutorRequests: pendingTutorRequests,
+        studentDecisionRequests,
+      });
       const seenSig = await getTutorUpdatesSeenSignature(user.uid);
-      setTutorUpdatesUnread(tutorList.length > 0 && seenSig !== tutorSig);
+      setTutorUpdatesUnread(
+        (tutorList.length > 0 || pendingTutorRequests.length > 0 || studentDecisionRequests.length > 0) &&
+          seenSig !== tutorSig,
+      );
 
       // --- Courses for highlights ---
       const q = query(

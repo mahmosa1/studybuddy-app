@@ -37,7 +37,7 @@ export type PracticeResult = {
   incorrectAnswers: number;
   answers: PracticeAnswer[];
   weakTopics: string[]; // Topics with incorrect answers
-  completedAt: Date;
+  completedAt: Date | null;
 };
 
 export type TopicPerformance = {
@@ -204,16 +204,8 @@ export async function savePracticeResults(
         if (Array.isArray(value)) {
           // Filter out any undefined/null items from arrays
           finalData[key] = value.filter(item => item !== undefined && item !== null);
-        } else if (typeof value === 'object' && value !== null) {
-          // Clean nested objects
-          const cleanedObj: any = {};
-          Object.keys(value).forEach(subKey => {
-            if (value[subKey] !== undefined && value[subKey] !== null) {
-              cleanedObj[subKey] = value[subKey];
-            }
-          });
-          finalData[key] = cleanedObj;
         } else {
+          // Keep non-array objects as-is (e.g. Firestore FieldValue/serverTimestamp sentinels).
           finalData[key] = value;
         }
       }
@@ -439,47 +431,71 @@ export async function getPracticeHistory(courseId: string): Promise<PracticeResu
     }
 
     const results: PracticeResult[] = [];
+    const sessionCompletedAtCache = new Map<string, Date | null>();
 
-    snapshot.forEach((docSnap) => {
+    for (const docSnap of snapshot.docs) {
       try {
         const data = docSnap.data();
         
-        // Handle completedAt - it might be a Firestore Timestamp, Date, or undefined
-        let completedAt: Date = new Date(); // Default to current date
-        
-        if (data.completedAt) {
+        // Handle completedAt - it might be a Firestore Timestamp, Date, number, or string.
+        // IMPORTANT: Never default to "now", otherwise old records without date look like "today".
+        const parseDateLike = (value: any): Date | null => {
+          if (!value) return null;
           try {
-            // Check if it's a Firestore Timestamp with toDate method
-            if (data.completedAt.toDate && typeof data.completedAt.toDate === 'function') {
-              completedAt = data.completedAt.toDate();
-            } 
-            // Check if it's already a Date object
-            else if (data.completedAt instanceof Date) {
-              completedAt = data.completedAt;
-            } 
-            // Check if it's a Firestore Timestamp object with seconds property
-            else if (data.completedAt.seconds && typeof data.completedAt.seconds === 'number') {
-              completedAt = new Date(data.completedAt.seconds * 1000);
+            if (value.toDate && typeof value.toDate === 'function') {
+              const d = value.toDate();
+              return d instanceof Date && !isNaN(d.getTime()) ? d : null;
             }
-            // Check if it's a number (timestamp in milliseconds)
-            else if (typeof data.completedAt === 'number') {
-              completedAt = new Date(data.completedAt);
+            if (value instanceof Date) {
+              return !isNaN(value.getTime()) ? value : null;
             }
-            // If it's a string, try to parse it
-            else if (typeof data.completedAt === 'string') {
-              const parsed = new Date(data.completedAt);
-              if (!isNaN(parsed.getTime())) {
-                completedAt = parsed;
-              }
+            if (value.seconds && typeof value.seconds === 'number') {
+              const d = new Date(value.seconds * 1000);
+              return !isNaN(d.getTime()) ? d : null;
             }
-          } catch (dateError) {
-            console.warn('Error parsing completedAt date, using current date:', dateError);
-            completedAt = new Date();
+            if (typeof value === 'number') {
+              const d = new Date(value);
+              return !isNaN(d.getTime()) ? d : null;
+            }
+            if (typeof value === 'string') {
+              const d = new Date(value);
+              return !isNaN(d.getTime()) ? d : null;
+            }
+          } catch {
+            return null;
+          }
+          return null;
+        };
+
+        let completedAt: Date | null =
+          parseDateLike(data.completedAt) ||
+          parseDateLike(data.createdAt) ||
+          null;
+
+        // Recovery path for legacy/malformed result rows:
+        // fall back to the practice session completion timestamp.
+        const rawSessionId = String(data.sessionId || '');
+        if (!completedAt && rawSessionId) {
+          if (sessionCompletedAtCache.has(rawSessionId)) {
+            completedAt = sessionCompletedAtCache.get(rawSessionId) || null;
+          } else {
+            try {
+              const sessionSnap = await getDoc(doc(db, 'practiceSessions', rawSessionId));
+              const sessionData = sessionSnap.exists() ? sessionSnap.data() : null;
+              const sessionCompletedAt =
+                parseDateLike(sessionData?.completedAt) ||
+                parseDateLike(sessionData?.createdAt) ||
+                null;
+              sessionCompletedAtCache.set(rawSessionId, sessionCompletedAt);
+              completedAt = sessionCompletedAt;
+            } catch {
+              sessionCompletedAtCache.set(rawSessionId, null);
+            }
           }
         }
         
         results.push({
-          sessionId: String(data.sessionId || ''),
+          sessionId: rawSessionId,
           courseId: String(data.courseId || ''),
           courseName: String(data.courseName || 'Course'),
           userId: String(data.userId || ''),
@@ -489,19 +505,19 @@ export async function getPracticeHistory(courseId: string): Promise<PracticeResu
           incorrectAnswers: Number(data.incorrectAnswers || 0),
           answers: Array.isArray(data.answers) ? data.answers : [],
           weakTopics: Array.isArray(data.weakTopics) ? data.weakTopics : [],
-          completedAt: completedAt,
+          completedAt,
         });
       } catch (itemError) {
         console.error('Error processing practice result item:', itemError);
         // Skip this item and continue with others
       }
-    });
+    }
 
     // If we used fallback query, sort by date in memory
-    if (results.length > 0 && results[0].completedAt) {
+    if (results.length > 0) {
       results.sort((a, b) => {
-        const dateA = a.completedAt.getTime();
-        const dateB = b.completedAt.getTime();
+        const dateA = a.completedAt ? a.completedAt.getTime() : 0;
+        const dateB = b.completedAt ? b.completedAt.getTime() : 0;
         return dateB - dateA; // Descending order (newest first)
       });
     }
@@ -568,7 +584,8 @@ export async function getPracticeStats(courseId: string): Promise<{
   return {
     totalPractices,
     averageScore,
-    lastPracticeDate: history[0]?.completedAt || null,
+    lastPracticeDate:
+      history.find((item) => item.completedAt && item.completedAt.getTime() > 0)?.completedAt || null,
     weakTopics: sortedTopics,
   };
 }

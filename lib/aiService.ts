@@ -16,6 +16,7 @@ import { traceLearningEvent } from './learningIntelligence/tracing';
 // You'll need to add your OpenAI API key to environment variables
 // For now, we'll use a placeholder - you should use Expo Constants or environment variables
 const OPENAI_API_KEY = process.env.EXPO_PUBLIC_OPENAI_API_KEY || '';
+const ENABLE_OPENAI_FILE_UPLOAD = process.env.EXPO_PUBLIC_ENABLE_OPENAI_FILE_UPLOAD === 'true';
 
 /**
  * Upload a file to OpenAI and get file ID
@@ -130,8 +131,16 @@ type QuestionsCacheEntry = {
   filesSignature: string;
 };
 
+type ExtractedContentCacheEntry = {
+  content: string;
+  createdAt: number;
+  filesSignature: string;
+};
+
 const QUESTIONS_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
 const questionsCache = new Map<string, QuestionsCacheEntry>();
+const EXTRACTION_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+const extractedContentCache = new Map<string, ExtractedContentCacheEntry>();
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -157,6 +166,10 @@ function buildCacheKey(
   language: 'hebrew' | 'english'
 ): string {
   return `${courseId}:${practiceType}:${numQuestions}:${language}`;
+}
+
+function buildExtractionCacheKey(courseId: string, language: 'hebrew' | 'english'): string {
+  return `${courseId}:${language}`;
 }
 
 function buildFilesSignature(
@@ -315,24 +328,44 @@ export async function generatePracticeQuestions(
       }));
     }
 
-    // Extract text content from PDF files (PRIMARY METHOD)
-    // OpenAI File API has limitations in React Native, so we extract text and send it directly
+    // Extract text content from course files (PRIMARY METHOD)
+    // Uses cache to avoid re-parsing heavy PDFs for repeated generations.
     console.log('📝 Extracting text content from course files (PDFs)...');
     const extractionPlan = buildExtractionPlan(files.length);
-    let fileContent = await withTimeout(
-      extractTextFromCourseFiles(files, extractionPlan.firstPass),
-      45000,
-      'File extraction'
-    );
-
-    // If first pass extraction is weak, retry with a broader budget for better coverage.
-    if (!fileContent || fileContent.trim().length < 1200) {
-      console.log('🔁 First extraction pass was short, retrying with expanded budget...');
+    const extractionCacheKey = buildExtractionCacheKey(courseId, language);
+    const cachedExtraction = extractedContentCache.get(extractionCacheKey);
+    let fileContent = '';
+    if (
+      cachedExtraction &&
+      cachedExtraction.filesSignature === filesSignature &&
+      Date.now() - cachedExtraction.createdAt < EXTRACTION_CACHE_TTL_MS
+    ) {
+      fileContent = cachedExtraction.content;
+      console.log(`⚡ Using cached extracted content (${fileContent.length} chars)`);
+    } else {
       fileContent = await withTimeout(
-        extractTextFromCourseFiles(files, extractionPlan.secondPass),
-        65000,
-        'File extraction retry'
+        extractTextFromCourseFiles(files, extractionPlan.firstPass),
+        30000,
+        'File extraction'
       );
+
+      // If first pass extraction is weak, retry with a broader budget for better coverage.
+      if (!fileContent || fileContent.trim().length < 1200) {
+        console.log('🔁 First extraction pass was short, retrying with expanded budget...');
+        fileContent = await withTimeout(
+          extractTextFromCourseFiles(files, extractionPlan.secondPass),
+          45000,
+          'File extraction retry'
+        );
+      }
+
+      if (fileContent && fileContent.trim().length > 100) {
+        extractedContentCache.set(extractionCacheKey, {
+          content: fileContent,
+          createdAt: Date.now(),
+          filesSignature,
+        });
+      }
     }
     
     if (fileContent && fileContent.trim().length > 100) {
@@ -345,7 +378,11 @@ export async function generatePracticeQuestions(
     
     let fileIds: string[] = [];
     let useFileAPI = false;
-    if (OPENAI_API_KEY && OPENAI_API_KEY !== 'your_openai_api_key_here') {
+    if (
+      ENABLE_OPENAI_FILE_UPLOAD &&
+      OPENAI_API_KEY &&
+      OPENAI_API_KEY !== 'your_openai_api_key_here'
+    ) {
       try {
         fileIds = await withTimeout(
           uploadFilesToOpenAI(files.slice(0, 6)),
@@ -730,12 +767,127 @@ export async function generatePracticeQuestionsFast(
   language: 'hebrew' | 'english' = 'hebrew'
 ): Promise<PracticeQuestion[]> {
   try {
-    const files = await withTimeout(getCourseFiles(courseId), 4000, 'Fast file lookup');
+    // First try the unified engine with a strict timeout for quality.
+    if (process.env.EXPO_PUBLIC_DISABLE_UNIFIED_ENGINE !== 'true') {
+      try {
+        const unified = await withTimeout(
+          generateUnifiedPracticeQuestions({
+            userId: auth.currentUser?.uid,
+            courseId,
+            courseName,
+            practiceType,
+            numQuestions,
+            language,
+          }),
+          18000,
+          'Fast unified questions'
+        );
+        if (Array.isArray(unified) && unified.length > 0) {
+          return unified.slice(0, numQuestions).map((q, index) => ({
+            id: q.id || `q${index + 1}`,
+            question: q.question,
+            type: q.type,
+            options: q.options,
+            correctAnswer: q.correctAnswer,
+            explanation: q.explanation,
+            topic: q.topic,
+            source: q.source || 'ai',
+          }));
+        }
+      } catch (engineError) {
+        console.log('Fast unified path failed, switching to lightweight local AI path:', engineError);
+      }
+    }
+
+    const files = await withTimeout(getCourseFiles(courseId), 3000, 'Fast file lookup');
     const fileInfo = {
       fileNames: files.map((f) => f.name),
       fileTypes: files.map((f) => f.mimeType || 'file'),
       fileCount: files.length,
     };
+
+    // Lightweight grounded AI path: small extraction budget + short model timeout.
+    if (OPENAI_API_KEY && OPENAI_API_KEY !== 'your_openai_api_key_here' && files.length > 0) {
+      try {
+        const quickExtraction = await withTimeout(
+          extractTextFromCourseFiles(files, {
+            maxFiles: Math.min(files.length, 2),
+            maxTotalChars: 32000,
+          }),
+          9000,
+          'Fast extraction'
+        );
+
+        if (quickExtraction && quickExtraction.trim().length > 200) {
+          const typeInstruction =
+            practiceType === 'true-false'
+              ? 'Generate ONLY true/false questions with type "true-false".'
+              : practiceType === 'open-questions'
+              ? 'Generate ONLY open-ended questions with type "open".'
+              : 'Generate a balanced mix of true/false, multiple-choice, and open-ended questions.';
+          const languageInstruction =
+            language === 'hebrew'
+              ? 'All output must be in Hebrew.'
+              : 'All output must be in English.';
+
+          const quickPrompt = `Generate EXACTLY ${numQuestions} high-quality practice questions for "${courseName}".
+${typeInstruction}
+${languageInstruction}
+Base questions strictly on this course content (avoid generic/random questions):
+${quickExtraction}
+
+Return JSON only:
+{"questions":[{"question":"...","type":"true-false|multiple-choice|open","options":["..."],"correctAnswer":"...","explanation":"...","topic":"..."}]}`;
+
+          const response = await withTimeout(
+            fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                Authorization: `Bearer ${OPENAI_API_KEY}`,
+              },
+              body: JSON.stringify({
+                model: 'gpt-4o-mini',
+                temperature: 0.25,
+                max_tokens: 1400,
+                response_format: { type: 'json_object' },
+                messages: [
+                  { role: 'system', content: 'You generate grounded course practice questions only.' },
+                  { role: 'user', content: quickPrompt },
+                ],
+              }),
+            }),
+            12000,
+            'Fast grounded generation'
+          );
+
+          if (response.ok) {
+            const data = await response.json();
+            const raw = String(data?.choices?.[0]?.message?.content || '').trim();
+            const parsed = JSON.parse(raw);
+            const arr = Array.isArray(parsed) ? parsed : parsed?.questions;
+            if (Array.isArray(arr) && arr.length > 0) {
+              return arr
+                .filter((q: any) => q?.question && q?.type && q?.correctAnswer)
+                .slice(0, numQuestions)
+                .map((q: any, index: number) => ({
+                  id: `q${index + 1}`,
+                  question: String(q.question),
+                  type: q.type as 'true-false' | 'open' | 'multiple-choice',
+                  options: Array.isArray(q.options) ? q.options : undefined,
+                  correctAnswer: String(q.correctAnswer),
+                  explanation: q.explanation ? String(q.explanation) : undefined,
+                  topic: q.topic ? String(q.topic) : undefined,
+                  source: 'ai' as const,
+                }));
+            }
+          }
+        }
+      } catch (fastAiError) {
+        console.log('Fast grounded AI path failed, using contextual fallback:', fastAiError);
+      }
+    }
+
     return generateMockQuestionsWithContext(courseName, practiceType, numQuestions, fileInfo, language);
   } catch (error) {
     console.warn('⚠️ Fast generator fallback used without course file metadata:', error);

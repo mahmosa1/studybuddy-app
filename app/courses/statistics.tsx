@@ -14,6 +14,11 @@ type Stat = {
   recentScores: number[];
 };
 
+type CourseItem = {
+  id: string;
+  name: string;
+};
+
 export default function CourseStatsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
@@ -25,6 +30,9 @@ export default function CourseStatsScreen() {
     bestScore: 0,
     recentScores: [],
   });
+  const [courses, setCourses] = useState<CourseItem[]>([]);
+  const [allResults, setAllResults] = useState<any[]>([]);
+  const [selectedCourseId, setSelectedCourseId] = useState<string>('all');
 
   useEffect(() => {
     const load = async () => {
@@ -38,22 +46,44 @@ export default function CourseStatsScreen() {
           getDocs(query(collection(db, 'courses'), where('ownerUid', '==', user.uid))),
           getDocs(query(collection(db, 'practiceResults'), where('userId', '==', user.uid))),
         ]);
-        const totalCourses = coursesSnap.size;
+        const courseItems: CourseItem[] = coursesSnap.docs.map((d) => ({
+          id: d.id,
+          name: String(d.data()?.name || 'Course'),
+        }));
+        setCourses(courseItems);
+
         const results = resultsSnap.docs.map((d) => d.data() as any);
-        const scores = results
-          .map((r) => Number(r.scorePercent ?? r.score ?? 0))
-          .filter((v) => Number.isFinite(v) && v >= 0);
-        const totalSessions = scores.length;
-        const avgScore = totalSessions ? Math.round(scores.reduce((a, b) => a + b, 0) / totalSessions) : 0;
-        const bestScore = totalSessions ? Math.max(...scores) : 0;
-        const recentScores = [...scores].slice(-7);
-        setStats({ totalCourses, totalSessions, avgScore, bestScore, recentScores });
+        setAllResults(results);
       } finally {
         setLoading(false);
       }
     };
     load();
   }, []);
+
+  useEffect(() => {
+    const filteredResults =
+      selectedCourseId === 'all'
+        ? allResults
+        : allResults.filter((r) => String(r.courseId || '') === selectedCourseId);
+
+    const scores = filteredResults
+      .map((r) => Number(r.scorePercent ?? r.score ?? 0))
+      .filter((v) => Number.isFinite(v) && v >= 0);
+
+    const totalSessions = scores.length;
+    const avgScore = totalSessions ? Math.round(scores.reduce((a, b) => a + b, 0) / totalSessions) : 0;
+    const bestScore = totalSessions ? Math.max(...scores) : 0;
+    const recentScores = [...scores].slice(-7);
+
+    setStats({
+      totalCourses: selectedCourseId === 'all' ? courses.length : (selectedCourseId ? 1 : 0),
+      totalSessions,
+      avgScore,
+      bestScore,
+      recentScores,
+    });
+  }, [allResults, selectedCourseId, courses.length]);
 
   return (
     <View style={styles.container}>
@@ -71,6 +101,50 @@ export default function CourseStatsScreen() {
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
+          <Text style={styles.filterTitle}>{t('courses.hub.statisticsFilterTitle')}</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filtersRow}
+          >
+            <TouchableOpacity
+              style={[
+                styles.filterChip,
+                selectedCourseId === 'all' && styles.filterChipActive,
+              ]}
+              onPress={() => setSelectedCourseId('all')}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  selectedCourseId === 'all' && styles.filterChipTextActive,
+                ]}
+              >
+                {t('courses.hub.statisticsAllCourses')}
+              </Text>
+            </TouchableOpacity>
+            {courses.map((course) => (
+              <TouchableOpacity
+                key={course.id}
+                style={[
+                  styles.filterChip,
+                  selectedCourseId === course.id && styles.filterChipActive,
+                ]}
+                onPress={() => setSelectedCourseId(course.id)}
+              >
+                <Text
+                  style={[
+                    styles.filterChipText,
+                    selectedCourseId === course.id && styles.filterChipTextActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {course.name}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
           <View style={styles.grid}>
             <View style={styles.card}>
               <Text style={styles.value}>{stats.totalCourses}</Text>
@@ -134,6 +208,38 @@ const styles = StyleSheet.create({
   headerTitle: { color: '#111827', fontSize: 20, fontWeight: '700' },
   loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: 14, paddingBottom: 28 },
+  filterTitle: {
+    color: '#111827',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 10,
+  },
+  filtersRow: {
+    gap: 8,
+    paddingBottom: 6,
+    marginBottom: 10,
+  },
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    maxWidth: 180,
+  },
+  filterChipActive: {
+    backgroundColor: '#047857',
+    borderColor: '#047857',
+  },
+  filterChipText: {
+    color: '#374151',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  filterChipTextActive: {
+    color: '#ffffff',
+  },
   grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
   card: {
     width: '48.5%',

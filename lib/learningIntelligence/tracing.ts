@@ -4,8 +4,12 @@ import { TracePayload } from './types';
 
 export async function traceLearningEvent(payload: TracePayload): Promise<string | null> {
   try {
+    const sanitizedPayload = Object.fromEntries(
+      Object.entries(payload).filter(([, value]) => value !== undefined)
+    );
+
     const docRef = await addDoc(collection(db, 'ragTraces'), {
-      ...payload,
+      ...sanitizedPayload,
       createdAt: serverTimestamp(),
     });
     return docRef.id;

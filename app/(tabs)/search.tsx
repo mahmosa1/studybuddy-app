@@ -1,9 +1,19 @@
 // app/(tabs)/search.tsx
 import { auth, db } from '@/lib/firebaseConfig';
+import { submitTutorSupportRequest, TutorSupportRequestStatus } from '@/lib/tutorSupportRequestService';
 import { useUser } from '@/lib/UserContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { collection, query as firestoreQuery, getDocs, where } from 'firebase/firestore';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query as firestoreQuery,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,7 +30,7 @@ import {
     View
 } from 'react-native';
 
-type SearchMode = 'users' | 'studybuddy';
+type SearchMode = 'users' | 'studybuddy' | 'tutors';
 
 type UserResult = {
   id: string;
@@ -43,6 +53,16 @@ type StudyBuddyResult = {
   matchScore?: number;
 };
 
+type TutorResult = {
+  id: string;
+  username?: string;
+  fullName?: string;
+  profilePictureUrl?: string | null;
+  courseId: string;
+  courseName: string;
+  requestStatus?: TutorSupportRequestStatus;
+};
+
 export default function SearchScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
@@ -52,8 +72,10 @@ export default function SearchScreen() {
   const [query, setQuery] = useState('');
   const [preferredTime, setPreferredTime] = useState('');
   const [showPreferredTimeOptions, setShowPreferredTimeOptions] = useState(false);
+  const [showModeOptions, setShowModeOptions] = useState(false);
   const [userResults, setUserResults] = useState<UserResult[]>([]);
   const [studyBuddyResults, setStudyBuddyResults] = useState<StudyBuddyResult[]>([]);
+  const [tutorResults, setTutorResults] = useState<TutorResult[]>([]);
   const [loading, setLoading] = useState(false);
 
   // Force mode to 'users' if user is a lecturer
@@ -63,10 +85,21 @@ export default function SearchScreen() {
     }
   }, [role, mode]);
 
+  const modeOptions: Array<{ key: SearchMode; label: string; icon: string }> = [
+    { key: 'users', label: t('search.users'), icon: 'people-outline' },
+    ...(role !== 'lecturer'
+      ? [
+          { key: 'studybuddy' as SearchMode, label: t('search.studyBuddy'), icon: 'people-circle-outline' },
+          { key: 'tutors' as SearchMode, label: t('search.tutors'), icon: 'ribbon-outline' },
+        ]
+      : []),
+  ];
+
   const performSearch = useCallback(async (searchText: string) => {
     if (!searchText.trim()) {
       setUserResults([]);
       setStudyBuddyResults([]);
+      setTutorResults([]);
       return;
     }
 
@@ -120,7 +153,7 @@ export default function SearchScreen() {
           }
         });
         setUserResults(results);
-      } else {
+      } else if (mode === 'studybuddy') {
         // Study buddy search: Find users who have set preferences matching the query
         const searchLower = searchText.toLowerCase();
         const currentUser = auth.currentUser;
@@ -221,6 +254,69 @@ export default function SearchScreen() {
 
         studyBuddyResultsList.sort((a, b) => (b.matchScore || 0) - (a.matchScore || 0));
         setStudyBuddyResults(studyBuddyResultsList);
+      } else {
+        const searchLower = searchText.toLowerCase();
+        const currentUser = auth.currentUser;
+        const usersRef = collection(db, 'users');
+        const usersQuery = firestoreQuery(
+          usersRef,
+          where('status', '==', 'active'),
+          where('role', '==', 'student')
+        );
+        const usersSnap = await getDocs(usersQuery);
+
+        const tutors: TutorResult[] = [];
+        usersSnap.forEach((userDoc) => {
+          if (currentUser && userDoc.id === currentUser.uid) return;
+          const userData = userDoc.data() as any;
+          const approvedCourses = Array.isArray(userData.tutorApprovedCourses) ? userData.tutorApprovedCourses : [];
+          approvedCourses.forEach((c: any) => {
+            const courseName = String(c?.courseName || '');
+            const courseId = String(c?.courseId || '');
+            if (!courseId || !courseName) return;
+            if (!courseName.toLowerCase().includes(searchLower)) return;
+            tutors.push({
+              id: userDoc.id,
+              username: userData.username,
+              fullName: userData.fullName,
+              profilePictureUrl: userData.profilePictureUrl || null,
+              courseId,
+              courseName,
+            });
+          });
+        });
+
+        if (currentUser) {
+          const requestsQ = firestoreQuery(
+            collection(db, 'tutorSupportRequests'),
+            where('studentUid', '==', currentUser.uid),
+          );
+          const requestsSnap = await getDocs(requestsQ);
+          const latestStatusByPair = new Map<string, { status: TutorSupportRequestStatus; createdAtMs: number }>();
+          requestsSnap.forEach((d) => {
+            const data = d.data() as any;
+            const tutorUid = String(data?.tutorUid || '');
+            const courseId = String(data?.courseId || '');
+            const status = String(data?.status || 'pending') as TutorSupportRequestStatus;
+            const createdAtMs = data?.createdAt?.toMillis?.() ?? 0;
+            if (!tutorUid || !courseId) return;
+            const key = `${tutorUid}__${courseId}`;
+            const prev = latestStatusByPair.get(key);
+            if (!prev || createdAtMs >= prev.createdAtMs) {
+              latestStatusByPair.set(key, { status, createdAtMs });
+            }
+          });
+          tutors.forEach((t) => {
+            const key = `${t.id}__${t.courseId}`;
+            const status = latestStatusByPair.get(key)?.status;
+            if (status) t.requestStatus = status;
+          });
+        }
+
+        tutors.sort((a, b) =>
+          (a.fullName || a.username || '').localeCompare(b.fullName || b.username || '')
+        );
+        setTutorResults(tutors);
       }
     } catch (err) {
       console.log('Search error:', err);
@@ -323,67 +419,105 @@ export default function SearchScreen() {
     );
   };
 
-  const renderStudyBuddyResult = ({ item }: { item: StudyBuddyResult }) => {
-    // If no phone number, show message
-    if (!item.phone) {
-      return (
-        <View style={styles.resultCard}>
-          <View style={styles.studyBuddyHeader}>
-            {item.profilePictureUrl ? (
-              <Image
-                source={{ uri: item.profilePictureUrl }}
-                style={styles.studyBuddyAvatarImage}
-              />
-            ) : (
-              <View style={styles.studyBuddyAvatar}>
-                <Text style={styles.studyBuddyInitial}>
-                  {(item.username || item.fullName || 'U')[0].toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View style={styles.studyBuddyInfo}>
-              <Text style={styles.resultTitle}>
-                {item.fullName || item.username || 'User'}
+  const openDirectChat = async (targetUid: string, targetName: string) => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) return;
+    try {
+      const sorted = [currentUser.uid, targetUid].sort();
+      const chatId = `direct_${sorted[0]}_${sorted[1]}`;
+      const threadRef = doc(db, 'chatThreads', chatId);
+      const existing = await getDoc(threadRef);
+      if (!existing.exists()) {
+        await setDoc(threadRef, {
+          type: 'direct',
+          title: targetName || 'Chat',
+          members: sorted,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          lastMessage: '',
+          unreadCountBy: {
+            [sorted[0]]: 0,
+            [sorted[1]]: 0,
+          },
+        });
+      }
+      router.push(`/chat/${chatId}` as any);
+    } catch (e) {
+      console.log('open direct chat error', e);
+      Alert.alert(t('common.error'), t('chat.createFailed', { defaultValue: 'Could not open chat.' }));
+    }
+  };
+
+  const handleRequestTutorSupport = async (item: TutorResult) => {
+    const res = await submitTutorSupportRequest({
+      tutorUid: item.id,
+      tutorName: item.fullName || item.username || 'Tutor',
+      courseId: item.courseId,
+      courseName: item.courseName,
+    });
+    if (!res.ok) {
+      if (res.reason === 'pending_exists') {
+        Alert.alert(t('common.error'), t('search.tutorRequestAlreadyPending'));
+      } else if (res.reason === 'accepted_exists') {
+        Alert.alert(t('common.success'), t('search.tutorRequestAlreadyAccepted'));
+      } else {
+        Alert.alert(t('common.error'), t('search.tutorRequestFailed'));
+      }
+      return;
+    }
+    Alert.alert(t('common.success'), t('search.tutorRequestSent'));
+  };
+
+  const renderTutorResult = ({ item }: { item: TutorResult }) => (
+    <View style={styles.resultCard}>
+      <View style={styles.studyBuddyHeader}>
+        <TouchableOpacity onPress={() => router.push(`/user-profile/${item.id}` as any)} activeOpacity={0.8}>
+          {item.profilePictureUrl ? (
+            <Image source={{ uri: item.profilePictureUrl }} style={styles.studyBuddyAvatarImage} />
+          ) : (
+            <View style={styles.studyBuddyAvatar}>
+              <Text style={styles.studyBuddyInitial}>
+                {(item.username || item.fullName || 'U')[0].toUpperCase()}
               </Text>
-              <View style={styles.studyBuddyTags}>
-                {item.course && (
-                  <View style={styles.studyBuddyTag}>
-                    <Ionicons name="book" size={12} color={ACCENT_GREEN} />
-                    <Text style={styles.studyBuddyTagText}>{item.course}</Text>
-                  </View>
-                )}
-                {item.availability && (
-                  <View style={styles.studyBuddyTag}>
-                    <Ionicons name="time" size={12} color={ACCENT_GREEN} />
-                    <Text style={styles.studyBuddyTagText}>
-                      {t(`profile.time.${item.availability.toLowerCase()}`, { defaultValue: item.availability })}
-                    </Text>
-                  </View>
-                )}
-              </View>
-            </View>
-          </View>
-          {item.institution && (
-            <View style={styles.studyBuddyFooter}>
-              <Ionicons name="location-outline" size={14} color="#6b7280" />
-              <Text style={styles.studyBuddyFooterText}>{item.institution}</Text>
             </View>
           )}
-          <View style={styles.noPhoneMessage}>
-            <Ionicons name="information-circle-outline" size={16} color="#6b7280" />
-            <Text style={styles.noPhoneText}>{t('search.noPhoneNumber')}</Text>
+        </TouchableOpacity>
+        <View style={styles.studyBuddyInfo}>
+          <Text style={styles.resultTitle}>{item.fullName || item.username || 'Tutor'}</Text>
+          <View style={styles.studyBuddyTags}>
+            <View style={styles.studyBuddyTag}>
+              <Ionicons name="book" size={12} color={ACCENT_GREEN} />
+              <Text style={styles.studyBuddyTagText}>{item.courseName}</Text>
+            </View>
+            <View style={styles.studyBuddyTag}>
+              <Ionicons name="ribbon-outline" size={12} color={ACCENT_GREEN} />
+              <Text style={styles.studyBuddyTagText}>{t('search.tutorLabel')}</Text>
+            </View>
           </View>
         </View>
-      );
-    }
+      </View>
+      {item.requestStatus === 'accepted' ? (
+        <View style={styles.tutorParticipatingBadge}>
+          <Ionicons name="checkmark-circle" size={16} color="#047857" />
+          <Text style={styles.tutorParticipatingText}>{t('search.tutorRequestAcceptedState')}</Text>
+        </View>
+      ) : item.requestStatus === 'pending' ? (
+        <View style={styles.tutorPendingBadge}>
+          <Ionicons name="time-outline" size={16} color="#b45309" />
+          <Text style={styles.tutorPendingText}>{t('search.tutorRequestPendingState')}</Text>
+        </View>
+      ) : (
+        <TouchableOpacity style={styles.requestTutorButton} onPress={() => handleRequestTutorSupport(item)}>
+          <Ionicons name="paper-plane-outline" size={16} color="#ffffff" />
+          <Text style={styles.requestTutorButtonText}>{t('search.requestTutorSupport')}</Text>
+        </TouchableOpacity>
+      )}
+    </View>
+  );
 
-    // If phone number exists, clicking the card goes directly to WhatsApp
+  const renderStudyBuddyResult = ({ item }: { item: StudyBuddyResult }) => {
     return (
-      <TouchableOpacity
-        style={styles.resultCard}
-        onPress={() => handleWhatsAppMessage(item.phone!, item.fullName || item.username || 'User')}
-        activeOpacity={0.7}
-      >
+      <View style={styles.resultCard}>
         <View style={styles.studyBuddyHeader}>
           {item.profilePictureUrl ? (
             <Image
@@ -418,7 +552,6 @@ export default function SearchScreen() {
               )}
             </View>
           </View>
-          <Ionicons name="logo-whatsapp" size={24} color="#25D366" />
         </View>
         {item.institution && (
           <View style={styles.studyBuddyFooter}>
@@ -426,11 +559,28 @@ export default function SearchScreen() {
             <Text style={styles.studyBuddyFooterText}>{item.institution}</Text>
           </View>
         )}
-        <View style={styles.whatsappHint}>
-          <Ionicons name="arrow-forward-circle-outline" size={16} color="#25D366" />
-          <Text style={styles.whatsappHintText}>{t('search.tapToMessage')}</Text>
-        </View>
-      </TouchableOpacity>
+        {item.phone ? (
+          <TouchableOpacity
+            style={styles.whatsappButton}
+            onPress={() => handleWhatsAppMessage(item.phone!, item.fullName || item.username || 'User')}
+          >
+            <Ionicons name="logo-whatsapp" size={18} color="#ffffff" />
+            <Text style={styles.whatsappButtonText}>{t('search.openWhatsApp')}</Text>
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.noPhoneMessage}>
+            <Ionicons name="information-circle-outline" size={16} color="#6b7280" />
+            <Text style={styles.noPhoneText}>{t('search.noPhoneNumber')}</Text>
+          </View>
+        )}
+        <TouchableOpacity
+          style={styles.chatButton}
+          onPress={() => openDirectChat(item.id, item.fullName || item.username || 'User')}
+        >
+          <Ionicons name="chatbubble-ellipses-outline" size={16} color="#ffffff" />
+          <Text style={styles.chatButtonText}>{t('search.sendInAppMessage')}</Text>
+        </TouchableOpacity>
+      </View>
     );
   };
 
@@ -454,53 +604,30 @@ export default function SearchScreen() {
           </View>
         </View>
 
-        {/* Mode toggle */}
+        {/* Search method selector */}
         <View style={styles.modeContainer}>
           <TouchableOpacity
-            style={[
-              styles.modeButton,
-              mode === 'users' && styles.modeButtonActive,
-            ]}
-            onPress={() => setMode('users')}
+            style={styles.modePickerButton}
+            onPress={() => setShowModeOptions(true)}
           >
-            <Ionicons
-              name={mode === 'users' ? 'people' : 'people-outline'}
-              size={20}
-              color={mode === 'users' ? '#ffffff' : '#3b82f6'}
-            />
-            <Text
-              style={[
-                styles.modeText,
-                mode === 'users' && styles.modeTextActive,
-              ]}
-            >
-              {t('search.users')}
-            </Text>
-          </TouchableOpacity>
-
-          {role !== 'lecturer' && (
-            <TouchableOpacity
-              style={[
-                styles.modeButton,
-                mode === 'studybuddy' && styles.modeButtonActive,
-              ]}
-              onPress={() => setMode('studybuddy')}
-            >
+            <View style={styles.modePickerLeft}>
               <Ionicons
-                name={mode === 'studybuddy' ? 'people-circle' : 'people-circle-outline'}
+                name={
+                  mode === 'users'
+                    ? 'people-outline'
+                    : mode === 'studybuddy'
+                    ? 'people-circle-outline'
+                    : 'ribbon-outline'
+                }
                 size={20}
-                color={mode === 'studybuddy' ? '#ffffff' : '#3b82f6'}
+                color="#3b82f6"
               />
-              <Text
-                style={[
-                  styles.modeText,
-                  mode === 'studybuddy' && styles.modeTextActive,
-                ]}
-              >
-                {t('search.studyBuddy')}
+              <Text style={styles.modePickerLabel}>
+                {modeOptions.find((m) => m.key === mode)?.label || t('search.users')}
               </Text>
-            </TouchableOpacity>
-          )}
+            </View>
+            <Ionicons name="chevron-down" size={18} color="#6b7280" />
+          </TouchableOpacity>
         </View>
 
         {/* Filters / inputs */}
@@ -518,7 +645,11 @@ export default function SearchScreen() {
                 value={query}
                 onChangeText={setQuery}
                 placeholder={
-                  mode === 'users' ? t('search.searchPlaceholder') : t('search.searchPlaceholderBuddy')
+                  mode === 'users'
+                    ? t('search.searchPlaceholder')
+                    : mode === 'studybuddy'
+                    ? t('search.searchPlaceholderBuddy')
+                    : t('search.searchPlaceholderTutor')
                 }
                 placeholderTextColor="#6b7280"
                 textAlign={isHebrewUi ? 'right' : 'left'}
@@ -611,6 +742,56 @@ export default function SearchScreen() {
 
         </View>
 
+        <Modal
+          visible={showModeOptions}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowModeOptions(false)}
+        >
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => setShowModeOptions(false)}
+          >
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>{t('search.chooseSearchMethod')}</Text>
+                <TouchableOpacity onPress={() => setShowModeOptions(false)}>
+                  <Ionicons name="close" size={24} color="#6b7280" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.optionsList}>
+                {modeOptions.map((m) => (
+                  <TouchableOpacity
+                    key={m.key}
+                    style={[
+                      styles.listOptionButton,
+                      mode === m.key && styles.listOptionButtonSelected,
+                    ]}
+                    onPress={() => {
+                      setMode(m.key);
+                      setShowModeOptions(false);
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                      <Ionicons name={m.icon as any} size={18} color={mode === m.key ? ACCENT_GREEN : '#6b7280'} />
+                      <Text
+                        style={[
+                          styles.listOptionText,
+                          mode === m.key && styles.listOptionTextSelected,
+                        ]}
+                      >
+                        {m.label}
+                      </Text>
+                    </View>
+                    {mode === m.key && <Ionicons name="checkmark" size={20} color={ACCENT_GREEN} />}
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </TouchableOpacity>
+        </Modal>
+
         {/* Results */}
         {loading ? (
           <View style={styles.loadingContainer}>
@@ -640,7 +821,7 @@ export default function SearchScreen() {
               ))}
             </View>
           )
-        ) : (
+        ) : mode === 'studybuddy' ? (
           studyBuddyResults.length === 0 ? (
             <View style={styles.emptyState}>
               <Ionicons name="people-outline" size={64} color="#4b5563" />
@@ -667,6 +848,29 @@ export default function SearchScreen() {
               {studyBuddyResults.map((item) => (
                 <View key={item.id}>
                   {renderStudyBuddyResult({ item })}
+                </View>
+              ))}
+            </View>
+          )
+        ) : (
+          tutorResults.length === 0 ? (
+            <View style={styles.emptyState}>
+              <Ionicons name="ribbon-outline" size={64} color="#4b5563" />
+              <Text style={styles.emptyTitle}>{t('search.noTutorResults')}</Text>
+              <Text style={styles.emptyText}>
+                {t('search.noTutorResultsMessage')}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.resultsContainer}>
+              <Text style={styles.resultsHeader}>
+                {tutorResults.length === 1
+                  ? t('search.resultsFound', { count: tutorResults.length })
+                  : t('search.resultsFoundPlural', { count: tutorResults.length })}
+              </Text>
+              {tutorResults.map((item) => (
+                <View key={`${item.id}-${item.courseId}`}>
+                  {renderTutorResult({ item })}
                 </View>
               ))}
             </View>
@@ -753,7 +957,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   modeContainer: {
-    flexDirection: 'row',
     backgroundColor: '#ffffff',
     borderRadius: 24,
     padding: 8,
@@ -768,25 +971,27 @@ const styles = StyleSheet.create({
     borderColor: '#e5e7eb',
     justifyContent: 'center',
   },
-  modeButton: {
-    flex: 1,
+  modePickerButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 12,
+    paddingHorizontal: 14,
     borderRadius: 16,
     gap: 8,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
-  modeButtonActive: {
-    backgroundColor: PRIMARY_GREEN,
+  modePickerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  modeText: {
-    color: '#6b7280',
+  modePickerLabel: {
+    color: '#111827',
     fontSize: 15,
-    fontWeight: '600',
-  },
-  modeTextActive: {
-    color: '#ffffff',
+    fontWeight: '700',
   },
   formBox: {
     backgroundColor: '#ffffff',
@@ -1101,6 +1306,72 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PRIMARY_GREEN,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 10,
+    gap: 8,
+  },
+  chatButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  requestTutorButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: PRIMARY_GREEN,
+    borderRadius: 12,
+    paddingVertical: 12,
+    gap: 8,
+  },
+  requestTutorButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tutorParticipatingBadge: {
+    marginTop: 8,
+    borderRadius: 12,
+    backgroundColor: '#ecfdf5',
+    borderWidth: 1,
+    borderColor: '#a7f3d0',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  tutorParticipatingText: {
+    color: '#047857',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  tutorPendingBadge: {
+    marginTop: 8,
+    borderRadius: 12,
+    backgroundColor: '#fffbeb',
+    borderWidth: 1,
+    borderColor: '#fcd34d',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  tutorPendingText: {
+    color: '#b45309',
+    fontSize: 14,
+    fontWeight: '700',
+  },
   noPhoneMessage: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1116,22 +1387,6 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 13,
     fontStyle: 'italic',
-  },
-  whatsappHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    backgroundColor: '#f0fdf4',
-    borderRadius: 12,
-    marginTop: 12,
-    gap: 8,
-  },
-  whatsappHintText: {
-    color: '#25D366',
-    fontSize: 13,
-    fontWeight: '600',
   },
   preferredTimeContainer: {
     marginBottom: 14,

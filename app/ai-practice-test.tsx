@@ -6,6 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
     ActivityIndicator,
     Alert,
@@ -23,6 +24,7 @@ type Question = PracticeQuestion & {
 
 export default function AIPracticeTestScreen() {
   const router = useRouter();
+  const { i18n } = useTranslation();
   const params = useLocalSearchParams<{
     sessionId?: string;
     courseId?: string;
@@ -52,13 +54,101 @@ export default function AIPracticeTestScreen() {
   const [adaptiveStep, setAdaptiveStep] = useState(0);
   const [linearStep, setLinearStep] = useState(0);
   const [generationMode, setGenerationMode] = useState<'ai' | 'fallback'>('ai');
+  const appLanguage: 'hebrew' | 'english' = i18n.language === 'he' ? 'hebrew' : 'english';
+  const uiText = appLanguage === 'hebrew'
+    ? {
+        error: 'שגיאה',
+        warning: 'אזהרה',
+        sessionMissing: 'מזהה הסשן חסר',
+        sessionNotFound: 'סשן התרגול לא נמצא',
+        loadFailed: 'טעינת שאלות התרגול נכשלה',
+        answerCurrentFirst: 'נא לענות קודם על השאלה הנוכחית.',
+        sessionMissingStartNew: 'מזהה הסשן חסר. יש להתחיל סשן תרגול חדש.',
+        noQuestionsFoundStartNew: 'לא נמצאו שאלות. יש להתחיל סשן תרגול חדש.',
+        saveWarningBody: 'לא ניתן היה לשמור את התוצאות: {{msg}}\n\nעדיין אפשר לראות את הציון, אבל הוא לא יישמר בהיסטוריית התרגול.',
+        submitFailed: 'שליחת התרגול נכשלה. נסה/י שוב.',
+        question: 'שאלה',
+        correct: 'נכון',
+        incorrect: 'לא נכון',
+        yourAnswer: 'התשובה שלך:',
+        yourAnswerPlaceholder: 'התשובה שלך...',
+        correctAnswer: 'תשובה נכונה:',
+        correctAnswerPlaceholder: 'תשובה נכונה...',
+        notAnswered: 'לא נענה',
+        typeYourAnswer: 'כתוב/כתבי את התשובה כאן...',
+        loadingQuestions: 'טוען שאלות תרגול...',
+        noQuestions: 'לא נמצאו שאלות',
+        goBack: 'חזרה',
+        reviewAnswers: 'סקירת תשובות',
+        coursePrefix: 'קורס: {{course}}',
+        yourScore: 'הציון שלך',
+        outOfCorrect: '{{correct}} מתוך {{total}} תשובות נכונות',
+        viewResults: 'הצג תוצאות',
+        backToCourse: 'חזרה לקורס',
+        practiceTitle: 'מבחן תרגול AI',
+        aiVerified: 'שאלות מאומתות AI',
+        fallbackQuestions: 'שאלות מהירות חלופיות',
+        timeLeft: 'זמן שנותר: {{time}}',
+        testResults: 'תוצאות מבחן',
+        excellent: 'מעולה! המשך/י כך!',
+        good: 'עבודה טובה! מומלץ לעבור על התשובות השגויות.',
+        keepStudying: 'המשך/י ללמוד! עבר/י שוב על החומר ונסה/י שוב.',
+        adaptiveStep: 'אדפטיבי',
+        linearStep: 'שלב-שלב',
+        submit: 'סיום ושליחה',
+        nextAdaptive: 'לשאלה האדפטיבית הבאה',
+        nextQuestion: 'לשאלה הבאה',
+      }
+    : {
+        error: 'Error',
+        warning: 'Warning',
+        sessionMissing: 'Session ID missing',
+        sessionNotFound: 'Practice session not found',
+        loadFailed: 'Failed to load practice questions',
+        answerCurrentFirst: 'Please answer the current question first.',
+        sessionMissingStartNew: 'Session ID missing. Please start a new practice session.',
+        noQuestionsFoundStartNew: 'No questions found. Please start a new practice session.',
+        saveWarningBody: `Results could not be saved: {{msg}}\n\nYou can still view your score, but it won't be saved to your practice history.`,
+        submitFailed: 'Failed to submit practice. Please try again.',
+        question: 'Question',
+        correct: 'Correct',
+        incorrect: 'Incorrect',
+        yourAnswer: 'Your answer:',
+        yourAnswerPlaceholder: 'Your answer...',
+        correctAnswer: 'Correct answer:',
+        correctAnswerPlaceholder: 'Correct answer...',
+        notAnswered: 'Not answered',
+        typeYourAnswer: 'Type your answer here...',
+        loadingQuestions: 'Loading practice questions...',
+        noQuestions: 'No questions found',
+        goBack: 'Go Back',
+        reviewAnswers: 'Review Your Answers',
+        coursePrefix: 'Course: {{course}}',
+        yourScore: 'Your Score',
+        outOfCorrect: '{{correct}} out of {{total}} questions correct',
+        viewResults: 'View Results',
+        backToCourse: 'Back to Course',
+        practiceTitle: 'AI Practice Test',
+        aiVerified: 'AI Verified Questions',
+        fallbackQuestions: 'Quick Fallback Questions',
+        timeLeft: 'Time left: {{time}}',
+        testResults: 'Test Results',
+        excellent: 'Great job! Keep practicing!',
+        good: 'Good effort! Review the incorrect answers.',
+        keepStudying: 'Keep studying! Review the material and try again.',
+        adaptiveStep: 'Adaptive',
+        linearStep: 'Step-by-step',
+        submit: 'Submit',
+        nextAdaptive: 'Next Adaptive Question',
+        nextQuestion: 'Next Question',
+      };
 
   // Load questions from session
   useEffect(() => {
     const loadQuestions = async () => {
       if (!sessionId) {
         // Fallback: use mock questions if no session
-        Alert.alert('Error', 'Session ID missing');
+        Alert.alert(uiText.error, uiText.sessionMissing);
         setLoading(false);
         return;
       }
@@ -66,7 +156,7 @@ export default function AIPracticeTestScreen() {
       try {
         const sessionDoc = await getDoc(doc(db, 'practiceSessions', sessionId));
         if (!sessionDoc.exists()) {
-          Alert.alert('Error', 'Practice session not found');
+          Alert.alert(uiText.error, uiText.sessionNotFound);
           setLoading(false);
           return;
         }
@@ -97,7 +187,7 @@ export default function AIPracticeTestScreen() {
         setAdaptiveOrder(preparedQuestions.map((_, index) => index));
       } catch (error) {
         console.error('Error loading questions:', error);
-        Alert.alert('Error', 'Failed to load practice questions');
+        Alert.alert(uiText.error, uiText.loadFailed);
       } finally {
         setLoading(false);
       }
@@ -138,7 +228,7 @@ export default function AIPracticeTestScreen() {
 
     const userAnswer = currentQuestion.userAnswer?.trim();
     if (!userAnswer) {
-      Alert.alert('Please answer the current question first.');
+      Alert.alert(uiText.error, uiText.answerCurrentFirst);
       return;
     }
 
@@ -178,7 +268,7 @@ export default function AIPracticeTestScreen() {
     const question = questions[linearStep];
     if (!question) return;
     if (!question.userAnswer || question.userAnswer.trim().length === 0) {
-      Alert.alert('Please answer the current question first.');
+      Alert.alert(uiText.error, uiText.answerCurrentFirst);
       return;
     }
     if (linearStep >= questions.length - 1) {
@@ -190,12 +280,12 @@ export default function AIPracticeTestScreen() {
 
   const handleSubmit = async () => {
     if (!sessionId) {
-      Alert.alert('Error', 'Session ID missing. Please start a new practice session.');
+      Alert.alert(uiText.error, uiText.sessionMissingStartNew);
       return;
     }
 
     if (questions.length === 0) {
-      Alert.alert('Error', 'No questions found. Please start a new practice session.');
+      Alert.alert(uiText.error, uiText.noQuestionsFoundStartNew);
       return;
     }
 
@@ -294,8 +384,8 @@ export default function AIPracticeTestScreen() {
         // Show more detailed error message
         const errorMessage = saveError.message || saveError.toString();
         Alert.alert(
-          'Warning',
-          `Results could not be saved: ${errorMessage}\n\nYou can still view your score, but it won't be saved to your practice history.`,
+          uiText.warning,
+          uiText.saveWarningBody.replace('{{msg}}', errorMessage),
           [{ text: 'OK' }]
         );
       }
@@ -305,8 +395,8 @@ export default function AIPracticeTestScreen() {
     } catch (error: any) {
       console.error('Error submitting practice:', error);
       Alert.alert(
-        'Error',
-        error.message || 'Failed to submit practice. Please try again.'
+        uiText.error,
+        error.message || uiText.submitFailed
       );
       setSubmitting(false);
       setSubmitted(false);
@@ -337,16 +427,16 @@ export default function AIPracticeTestScreen() {
           ]}
         >
           <View style={styles.questionHeader}>
-            <Text style={styles.questionNumber}>Question {index + 1}</Text>
+            <Text style={styles.questionNumber}>{uiText.question} {index + 1}</Text>
             {isCorrect ? (
               <View style={styles.correctBadge}>
                 <Ionicons name="checkmark-circle" size={20} color={ACCENT_GREEN} />
-                <Text style={styles.correctBadgeText}>Correct</Text>
+                <Text style={styles.correctBadgeText}>{uiText.correct}</Text>
               </View>
             ) : (
               <View style={styles.incorrectBadge}>
                 <Ionicons name="close-circle" size={20} color="#ef4444" />
-                <Text style={styles.incorrectBadgeText}>Incorrect</Text>
+                <Text style={styles.incorrectBadgeText}>{uiText.incorrect}</Text>
               </View>
             )}
           </View>
@@ -432,19 +522,19 @@ export default function AIPracticeTestScreen() {
 
           {question.type === 'open' && (
             <>
-              <Text style={styles.answerLabel}>Your answer:</Text>
+              <Text style={styles.answerLabel}>{uiText.yourAnswer}</Text>
               <TextInput
                 style={[styles.textInput, styles.disabledInput]}
                 value={question.userAnswer || ''}
-                placeholder="Your answer..."
+                placeholder={uiText.yourAnswerPlaceholder}
                 multiline
                 editable={false}
               />
-              <Text style={styles.answerLabel}>Correct answer:</Text>
+              <Text style={styles.answerLabel}>{uiText.correctAnswer}</Text>
               <TextInput
                 style={[styles.textInput, styles.disabledInput, styles.correctAnswerInput]}
                 value={question.correctAnswer || ''}
-                placeholder="Correct answer..."
+                placeholder={uiText.correctAnswerPlaceholder}
                 multiline
                 editable={false}
               />
@@ -454,10 +544,10 @@ export default function AIPracticeTestScreen() {
           {!isCorrect && (
             <View style={styles.feedbackContainer}>
               <Text style={styles.feedbackText}>
-                Your answer: {question.userAnswer || 'Not answered'}
+                {uiText.yourAnswer} {question.userAnswer || uiText.notAnswered}
               </Text>
               <Text style={styles.correctAnswerText}>
-                Correct answer: {question.correctAnswer}
+                {uiText.correctAnswer} {question.correctAnswer}
               </Text>
             </View>
           )}
@@ -467,7 +557,7 @@ export default function AIPracticeTestScreen() {
 
     return (
       <View key={question.id} style={styles.questionCard}>
-        <Text style={styles.questionNumber}>Question {index + 1}</Text>
+        <Text style={styles.questionNumber}>{uiText.question} {index + 1}</Text>
         <Text style={styles.questionText}>{question.question}</Text>
 
         {question.type === 'true-false' && (() => {
@@ -547,7 +637,7 @@ export default function AIPracticeTestScreen() {
             style={styles.textInput}
             value={question.userAnswer || ''}
             onChangeText={(text) => handleAnswerChange(question.id, text)}
-            placeholder="Type your answer here..."
+            placeholder={uiText.typeYourAnswer}
             multiline
             numberOfLines={4}
             editable={!submitted}
@@ -561,7 +651,7 @@ export default function AIPracticeTestScreen() {
     return (
       <View style={[styles.container, styles.center]}>
         <ActivityIndicator size="large" color={ACCENT_GREEN} />
-        <Text style={styles.loadingText}>Loading practice questions...</Text>
+        <Text style={styles.loadingText}>{uiText.loadingQuestions}</Text>
       </View>
     );
   }
@@ -569,7 +659,7 @@ export default function AIPracticeTestScreen() {
   if (questions.length === 0) {
     return (
       <View style={[styles.container, styles.center]}>
-        <Text style={styles.emptyText}>No questions found</Text>
+        <Text style={styles.emptyText}>{uiText.noQuestions}</Text>
         <TouchableOpacity
           style={styles.backToCourseButton}
           onPress={() => {
@@ -580,7 +670,7 @@ export default function AIPracticeTestScreen() {
             }
           }}
         >
-          <Text style={styles.backToCourseButtonText}>Go Back</Text>
+          <Text style={styles.backToCourseButtonText}>{uiText.goBack}</Text>
         </TouchableOpacity>
       </View>
     );
@@ -596,15 +686,17 @@ export default function AIPracticeTestScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>Review Your Answers</Text>
-          <Text style={styles.subtitle}>Course: {courseName}</Text>
+          <Text style={styles.title}>{uiText.reviewAnswers}</Text>
+          <Text style={styles.subtitle}>{uiText.coursePrefix.replace('{{course}}', courseName)}</Text>
 
           {score !== null && (
             <View style={styles.resultCard}>
-              <Text style={styles.resultTitle}>Your Score</Text>
+              <Text style={styles.resultTitle}>{uiText.yourScore}</Text>
               <Text style={styles.scoreText}>{score}%</Text>
               <Text style={styles.resultSubtitle}>
-                {correctCount} out of {questions.length} questions correct
+                {uiText.outOfCorrect
+                  .replace('{{correct}}', String(correctCount))
+                  .replace('{{total}}', String(questions.length))}
               </Text>
             </View>
           )}
@@ -632,7 +724,7 @@ export default function AIPracticeTestScreen() {
               }}
             >
               <Ionicons name="stats-chart" size={20} color="#ffffff" />
-              <Text style={styles.viewResultsButtonText}>View Results</Text>
+              <Text style={styles.viewResultsButtonText}>{uiText.viewResults}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
@@ -645,7 +737,7 @@ export default function AIPracticeTestScreen() {
                 }
               }}
             >
-              <Text style={styles.backToCourseButtonText}>Back to Course</Text>
+              <Text style={styles.backToCourseButtonText}>{uiText.backToCourse}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -659,7 +751,7 @@ export default function AIPracticeTestScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>AI Practice Test</Text>
+        <Text style={styles.title}>{uiText.practiceTitle}</Text>
         <View style={generationMode === 'ai' ? styles.modeBadgeAI : styles.modeBadgeFallback}>
           <Ionicons
             name={generationMode === 'ai' ? 'shield-checkmark-outline' : 'flash-outline'}
@@ -667,29 +759,32 @@ export default function AIPracticeTestScreen() {
             color={generationMode === 'ai' ? '#065f46' : '#9a3412'}
           />
           <Text style={generationMode === 'ai' ? styles.modeBadgeAITxt : styles.modeBadgeFallbackTxt}>
-            {generationMode === 'ai' ? 'AI Verified Questions' : 'Quick Fallback Questions'}
+            {generationMode === 'ai' ? uiText.aiVerified : uiText.fallbackQuestions}
           </Text>
         </View>
-        <Text style={styles.subtitle}>Course: {courseName}</Text>
+        <Text style={styles.subtitle}>{uiText.coursePrefix.replace('{{course}}', courseName)}</Text>
         {examMode && (
           <View style={styles.examTimerBox}>
             <Ionicons name="timer-outline" size={16} color="#ef4444" />
             <Text style={styles.examTimerText}>
-              Time left: {Math.floor(timeLeftSec / 60)}:{String(Math.max(0, timeLeftSec % 60)).padStart(2, '0')}
+              {uiText.timeLeft.replace(
+                '{{time}}',
+                `${Math.floor(timeLeftSec / 60)}:${String(Math.max(0, timeLeftSec % 60)).padStart(2, '0')}`
+              )}
             </Text>
           </View>
         )}
 
         {submitted && score !== null && (
           <View style={styles.resultCard}>
-            <Text style={styles.resultTitle}>Test Results</Text>
+            <Text style={styles.resultTitle}>{uiText.testResults}</Text>
             <Text style={styles.scoreText}>{score}%</Text>
             <Text style={styles.resultSubtitle}>
               {score >= 70
-                ? 'Great job! Keep practicing!'
+                ? uiText.excellent
                 : score >= 50
-                ? 'Good effort! Review the incorrect answers.'
-                : 'Keep studying! Review the material and try again.'}
+                ? uiText.good
+                : uiText.keepStudying}
             </Text>
           </View>
         )}
@@ -698,7 +793,7 @@ export default function AIPracticeTestScreen() {
           <View style={styles.adaptiveHeader}>
             <Ionicons name="list-outline" size={16} color={ACCENT_GREEN} />
             <Text style={styles.adaptiveHeaderText}>
-              {adaptiveMode ? 'Adaptive' : 'Step-by-step'}: {(adaptiveMode ? adaptiveStep : linearStep) + 1}/{questions.length}
+              {adaptiveMode ? uiText.adaptiveStep : uiText.linearStep}: {(adaptiveMode ? adaptiveStep : linearStep) + 1}/{questions.length}
             </Text>
           </View>
           {adaptiveMode
@@ -715,7 +810,7 @@ export default function AIPracticeTestScreen() {
               disabled={submitting}
             >
               <Text style={styles.submitButtonText}>
-                {adaptiveStep === questions.length - 1 ? 'Submit' : 'Next Adaptive Question'}
+                {adaptiveStep === questions.length - 1 ? uiText.submit : uiText.nextAdaptive}
               </Text>
             </TouchableOpacity>
           ) : (
@@ -725,7 +820,7 @@ export default function AIPracticeTestScreen() {
               disabled={submitting}
             >
               <Text style={styles.submitButtonText}>
-                {linearStep === questions.length - 1 ? 'Submit' : 'Next Question'}
+                {linearStep === questions.length - 1 ? uiText.submit : uiText.nextQuestion}
               </Text>
             </TouchableOpacity>
           )

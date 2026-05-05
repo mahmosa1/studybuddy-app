@@ -34,6 +34,7 @@ export default function AIPracticeSetupScreen() {
   const [adaptiveMode, setAdaptiveMode] = useState<boolean>(true);
   const [examMode, setExamMode] = useState<boolean>(false);
   const [examDurationMin, setExamDurationMin] = useState<number>(30);
+  const [currentStep, setCurrentStep] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [selectedCourseFileCount, setSelectedCourseFileCount] = useState(0);
   const [checkingSelectedCourseFiles, setCheckingSelectedCourseFiles] = useState(false);
@@ -98,6 +99,7 @@ export default function AIPracticeSetupScreen() {
 
   const [generating, setGenerating] = useState(false);
   const [generationStage, setGenerationStage] = useState<string>('');
+  const totalSteps = 6;
 
   const withTimeout = async <T,>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
     return new Promise<T>((resolve, reject) => {
@@ -149,43 +151,27 @@ export default function AIPracticeSetupScreen() {
             numQuestions,
             practiceLanguage
           ),
-          90000,
+          50000,
           'Question generation'
         );
       } catch (slowOrFailedError) {
-        console.warn('⚠️ Full AI generation failed, retrying once before fast mode:', slowOrFailedError);
-        try {
-          setGenerationStage(t('practice.setup.generatingQuestions'));
-          questions = await withTimeout(
-            generatePracticeQuestions(
-              selectedCourseId,
-              selectedCourse.name,
-              practiceType,
-              numQuestions,
-              practiceLanguage
-            ),
-            90000,
-            'Question generation retry'
-          );
-        } catch (retryError) {
-          console.warn('⚡ Switching to fast generation mode:', retryError);
-          setGenerationStage(t('practice.setup.switchingFastMode'));
-          questions = await withTimeout(
-            generatePracticeQuestionsFast(
-              selectedCourseId,
-              selectedCourse.name,
-              practiceType,
-              numQuestions,
-              practiceLanguage
-            ),
-            5000,
-            'Fast generation'
-          );
-          Alert.alert(
-            t('common.error'),
-            t('practice.setup.fastModeNotice')
-          );
-        }
+        console.warn('⚡ Switching to fast generation mode:', slowOrFailedError);
+        setGenerationStage(t('practice.setup.switchingFastMode'));
+        questions = await withTimeout(
+          generatePracticeQuestionsFast(
+            selectedCourseId,
+            selectedCourse.name,
+            practiceType,
+            numQuestions,
+            practiceLanguage
+          ),
+          22000,
+          'Fast generation'
+        );
+        Alert.alert(
+          t('common.error'),
+          t('practice.setup.fastModeNotice')
+        );
       }
 
       if (!questions || questions.length === 0) {
@@ -291,6 +277,25 @@ export default function AIPracticeSetupScreen() {
     !!selectedCourseId &&
     selectedCourseFileCount > 0;
 
+  const canContinueCurrentStep = (() => {
+    if (currentStep === 1) return !!selectedCourseId && selectedCourseFileCount > 0;
+    return true;
+  })();
+
+  const handleNextStep = () => {
+    if (!canContinueCurrentStep) {
+      if (currentStep === 1) {
+        Alert.alert(t('common.error'), t('practice.setup.noFilesForSelectedCourse'));
+      }
+      return;
+    }
+    setCurrentStep((prev) => Math.min(totalSteps, prev + 1));
+  };
+
+  const handlePrevStep = () => {
+    setCurrentStep((prev) => Math.max(1, prev - 1));
+  };
+
   return (
     <View style={styles.container}>
       {/* Header with back button */}
@@ -316,183 +321,238 @@ export default function AIPracticeSetupScreen() {
       >
 
       <View style={styles.card}>
-        <Text style={styles.label}>{t('practice.setup.selectCourse')}</Text>
-        <View style={styles.optionsContainer}>
-          {courses.map((course) => (
-            <TouchableOpacity
-              key={course.id}
-              style={[
-                styles.optionButton,
-                selectedCourseId === course.id && styles.optionButtonSelected,
-              ]}
-              onPress={() => setSelectedCourseId(course.id)}
-            >
-              <Text
-                style={[
-                  styles.optionText,
-                  selectedCourseId === course.id && styles.optionTextSelected,
-                ]}
-              >
-                {course.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-        {checkingSelectedCourseFiles ? (
-          <Text style={styles.helperMuted}>{t('practice.setup.checkingCourseFiles')}</Text>
-        ) : selectedCourseId && selectedCourseFileCount <= 0 ? (
-          <Text style={styles.helperError}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
-        ) : selectedCourseId ? (
-          <Text style={styles.helperOk}>
-            {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
-          </Text>
-        ) : null}
+        <Text style={styles.stepCounter}>
+          {t('practice.setup.stepOf', { current: currentStep, total: totalSteps })}
+        </Text>
+        <Text style={styles.stepTitle}>
+          {currentStep === 1
+            ? t('practice.setup.selectCourse')
+            : currentStep === 2
+            ? t('practice.setup.practiceType')
+            : currentStep === 3
+            ? t('practice.setup.numQuestions')
+            : currentStep === 4
+            ? t('practice.setup.practiceLanguage')
+            : currentStep === 5
+            ? t('practice.setup.adaptivePractice')
+            : t('practice.setup.examSimulator')}
+        </Text>
 
-        <Text style={styles.label}>{t('practice.setup.practiceType')}</Text>
-        <View style={styles.optionsContainer}>
-          {[
-            { label: t('practice.setup.trueFalse'), value: 'true-false' },
-            { label: t('practice.setup.openQuestions'), value: 'open-questions' },
-            { label: t('practice.setup.mixed'), value: 'mixed' },
-          ].map((type) => (
-            <TouchableOpacity
-              key={type.value}
-              style={[
-                styles.optionButton,
-                practiceType === type.value && styles.optionButtonSelected,
-              ]}
-              onPress={() => setPracticeType(type.value as PracticeType)}
-            >
-              <Text
-                style={[
-                  styles.optionText,
-                  practiceType === type.value && styles.optionTextSelected,
-                ]}
-              >
-                {type.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>{t('practice.setup.numQuestions')}</Text>
-        <View style={styles.optionsContainer}>
-          {[5, 10, 20, 30].map((num) => (
-            <TouchableOpacity
-              key={num}
-              style={[
-                styles.optionButton,
-                numQuestions === num && styles.optionButtonSelected,
-              ]}
-              onPress={() => setNumQuestions(num)}
-            >
-              <Text
-                style={[
-                  styles.optionText,
-                  numQuestions === num && styles.optionTextSelected,
-                ]}
-              >
-                {num}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>{t('practice.setup.practiceLanguage')}</Text>
-        <View style={styles.optionsContainer}>
-          {[
-            { label: t('profile.hebrew'), value: 'hebrew' as PracticeLanguage },
-            { label: t('profile.english'), value: 'english' as PracticeLanguage },
-          ].map((lang) => (
-            <TouchableOpacity
-              key={lang.value}
-              style={[
-                styles.optionButton,
-                practiceLanguage === lang.value && styles.optionButtonSelected,
-              ]}
-              onPress={() => setPracticeLanguage(lang.value)}
-            >
-              <Text
-                style={[
-                  styles.optionText,
-                  practiceLanguage === lang.value && styles.optionTextSelected,
-                ]}
-              >
-                {lang.label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
-        <Text style={styles.label}>{t('practice.setup.adaptivePractice')}</Text>
-        <View style={styles.optionsContainer}>
-          <TouchableOpacity
-            style={[styles.optionButton, adaptiveMode && styles.optionButtonSelected]}
-            onPress={() => setAdaptiveMode(true)}
-          >
-            <Text style={[styles.optionText, adaptiveMode && styles.optionTextSelected]}>
-              {t('practice.setup.adaptiveOn')}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.optionButton, !adaptiveMode && styles.optionButtonSelected]}
-            onPress={() => setAdaptiveMode(false)}
-          >
-            <Text style={[styles.optionText, !adaptiveMode && styles.optionTextSelected]}>
-              {t('practice.setup.adaptiveOff')}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        <Text style={styles.label}>Exam Simulator</Text>
-        <View style={styles.optionsContainer}>
-          <TouchableOpacity
-            style={[styles.optionButton, examMode && styles.optionButtonSelected]}
-            onPress={() => setExamMode(true)}
-          >
-            <Text style={[styles.optionText, examMode && styles.optionTextSelected]}>ON - Timed pressure mode</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.optionButton, !examMode && styles.optionButtonSelected]}
-            onPress={() => setExamMode(false)}
-          >
-            <Text style={[styles.optionText, !examMode && styles.optionTextSelected]}>OFF - Regular mode</Text>
-          </TouchableOpacity>
-        </View>
-
-        {examMode && (
+        {currentStep === 1 ? (
           <>
-            <Text style={styles.label}>Exam Duration (minutes)</Text>
             <View style={styles.optionsContainer}>
-              {[15, 30, 45, 60].map((mins) => (
+              {courses.map((course) => (
                 <TouchableOpacity
-                  key={mins}
-                  style={[styles.optionButton, examDurationMin === mins && styles.optionButtonSelected]}
-                  onPress={() => setExamDurationMin(mins)}
+                  key={course.id}
+                  style={[
+                    styles.optionButton,
+                    selectedCourseId === course.id && styles.optionButtonSelected,
+                  ]}
+                  onPress={() => setSelectedCourseId(course.id)}
                 >
-                  <Text style={[styles.optionText, examDurationMin === mins && styles.optionTextSelected]}>{mins}</Text>
+                  <Text
+                    style={[
+                      styles.optionText,
+                      selectedCourseId === course.id && styles.optionTextSelected,
+                    ]}
+                  >
+                    {course.name}
+                  </Text>
                 </TouchableOpacity>
               ))}
             </View>
-          </>
-        )}
-
-        <TouchableOpacity
-          style={[styles.button, styles.primaryButton, !canGenerate && styles.buttonDisabled]}
-          onPress={handleGenerate}
-          disabled={!canGenerate}
-        >
-          {generating ? (
-            <>
-              <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
-              <Text style={styles.buttonText}>
-                {generationStage || `${t('common.loading')}...`} ({t('practice.setup.optimized')})
+            {checkingSelectedCourseFiles ? (
+              <Text style={styles.helperMuted}>{t('practice.setup.checkingCourseFiles')}</Text>
+            ) : selectedCourseId && selectedCourseFileCount <= 0 ? (
+              <Text style={styles.helperError}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
+            ) : selectedCourseId ? (
+              <Text style={styles.helperOk}>
+                {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
               </Text>
-            </>
+            ) : null}
+          </>
+        ) : null}
+
+        {currentStep === 2 ? (
+          <View style={styles.optionsContainer}>
+            {[
+              { label: t('practice.setup.trueFalse'), value: 'true-false' },
+              { label: t('practice.setup.openQuestions'), value: 'open-questions' },
+              { label: t('practice.setup.mixed'), value: 'mixed' },
+            ].map((type) => (
+              <TouchableOpacity
+                key={type.value}
+                style={[
+                  styles.optionButton,
+                  practiceType === type.value && styles.optionButtonSelected,
+                ]}
+                onPress={() => setPracticeType(type.value as PracticeType)}
+              >
+                <Text
+                  style={[
+                    styles.optionText,
+                    practiceType === type.value && styles.optionTextSelected,
+                  ]}
+                >
+                  {type.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {currentStep === 3 ? (
+          <View style={styles.optionsContainer}>
+            {[5, 10, 20, 30].map((num) => (
+              <TouchableOpacity
+                key={num}
+                style={[
+                  styles.optionButton,
+                  numQuestions === num && styles.optionButtonSelected,
+                ]}
+                onPress={() => setNumQuestions(num)}
+              >
+                <Text
+                  style={[
+                    styles.optionText,
+                    numQuestions === num && styles.optionTextSelected,
+                  ]}
+                >
+                  {num}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {currentStep === 4 ? (
+          <View style={styles.optionsContainer}>
+            {[
+              { label: t('profile.hebrew'), value: 'hebrew' as PracticeLanguage },
+              { label: t('profile.english'), value: 'english' as PracticeLanguage },
+            ].map((lang) => (
+              <TouchableOpacity
+                key={lang.value}
+                style={[
+                  styles.optionButton,
+                  practiceLanguage === lang.value && styles.optionButtonSelected,
+                ]}
+                onPress={() => setPracticeLanguage(lang.value)}
+              >
+                <Text
+                  style={[
+                    styles.optionText,
+                    practiceLanguage === lang.value && styles.optionTextSelected,
+                  ]}
+                >
+                  {lang.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : null}
+
+        {currentStep === 5 ? (
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity
+              style={[styles.optionButton, adaptiveMode && styles.optionButtonSelected]}
+              onPress={() => setAdaptiveMode(true)}
+            >
+              <Text style={[styles.optionText, adaptiveMode && styles.optionTextSelected]}>
+                {t('practice.setup.adaptiveOn')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.optionButton, !adaptiveMode && styles.optionButtonSelected]}
+              onPress={() => setAdaptiveMode(false)}
+            >
+              <Text style={[styles.optionText, !adaptiveMode && styles.optionTextSelected]}>
+                {t('practice.setup.adaptiveOff')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        {currentStep === 6 ? (
+          <>
+            <View style={styles.optionsContainer}>
+              <TouchableOpacity
+                style={[styles.optionButton, examMode && styles.optionButtonSelected]}
+                onPress={() => setExamMode(true)}
+              >
+                <Text style={[styles.optionText, examMode && styles.optionTextSelected]}>
+                  {t('practice.setup.examOn')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.optionButton, !examMode && styles.optionButtonSelected]}
+                onPress={() => setExamMode(false)}
+              >
+                <Text style={[styles.optionText, !examMode && styles.optionTextSelected]}>
+                  {t('practice.setup.examOff')}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {examMode ? (
+              <>
+                <Text style={styles.label}>{t('practice.setup.examDuration')}</Text>
+                <View style={styles.optionsContainer}>
+                  {[15, 30, 45, 60].map((mins) => (
+                    <TouchableOpacity
+                      key={mins}
+                      style={[styles.optionButton, examDurationMin === mins && styles.optionButtonSelected]}
+                      onPress={() => setExamDurationMin(mins)}
+                    >
+                      <Text style={[styles.optionText, examDurationMin === mins && styles.optionTextSelected]}>
+                        {mins}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </>
+            ) : null}
+          </>
+        ) : null}
+
+        <View style={styles.stepActionsRow}>
+          {currentStep > 1 ? (
+            <TouchableOpacity style={[styles.button, styles.secondaryButton]} onPress={handlePrevStep}>
+              <Text style={styles.secondaryButtonText}>{t('practice.setup.backStep')}</Text>
+            </TouchableOpacity>
+          ) : <View style={styles.stepActionSpacer} />}
+
+          {currentStep < totalSteps ? (
+            <TouchableOpacity
+              style={[styles.button, styles.primaryButton, !canContinueCurrentStep && styles.buttonDisabled]}
+              onPress={handleNextStep}
+              disabled={!canContinueCurrentStep}
+            >
+              <Text style={styles.buttonText}>{t('practice.setup.nextStep')}</Text>
+            </TouchableOpacity>
           ) : (
-            <Text style={styles.buttonText}>{t('practice.setup.generatePractice')}</Text>
+            <TouchableOpacity
+              style={[styles.button, styles.primaryButton, !canGenerate && styles.buttonDisabled]}
+              onPress={handleGenerate}
+              disabled={!canGenerate}
+            >
+              {generating ? (
+                <>
+                  <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
+                  <Text style={styles.buttonText}>
+                    {generationStage || `${t('common.loading')}...`} ({t('practice.setup.optimized')})
+                  </Text>
+                </>
+              ) : (
+                <Text style={styles.buttonText}>{t('practice.setup.generatePractice')}</Text>
+              )}
+            </TouchableOpacity>
           )}
-        </TouchableOpacity>
+        </View>
+        {currentStep < totalSteps ? (
+          <Text style={styles.stepHint}>
+            {t('practice.setup.stepHint')}
+          </Text>
+        ) : null}
       </View>
       </ScrollView>
     </View>
@@ -579,6 +639,18 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     fontWeight: '500',
   },
+  stepCounter: {
+    fontSize: 12,
+    color: '#6b7280',
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  stepTitle: {
+    fontSize: 18,
+    color: '#111827',
+    fontWeight: '700',
+    marginBottom: 12,
+  },
   optionsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -607,19 +679,46 @@ const styles = StyleSheet.create({
     color: ACCENT_GREEN,
     fontWeight: '600',
   },
+  stepActionsRow: {
+    marginTop: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  stepActionSpacer: {
+    flex: 1,
+  },
   button: {
-    marginTop: 24,
     paddingVertical: 14,
     borderRadius: 999,
     alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
   },
   primaryButton: {
     backgroundColor: ACCENT_GREEN,
+  },
+  secondaryButton: {
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
+  },
+  secondaryButtonText: {
+    color: '#111827',
+    fontSize: 16,
+    fontWeight: '600',
   },
   buttonText: {
     color: '#ffffff',
     fontSize: 16,
     fontWeight: '600',
+  },
+  stepHint: {
+    marginTop: 10,
+    color: '#6b7280',
+    fontSize: 12,
+    textAlign: 'center',
   },
   emptyText: {
     fontSize: 14,

@@ -1,13 +1,37 @@
 // app/(tabs)/courses.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { useUser } from '@/lib/UserContext';
+import { auth, db } from '@/lib/firebaseConfig';
+import { doc, getDoc } from 'firebase/firestore';
 
 export default function CoursesScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { role } = useUser();
+  const [isApprovedTutor, setIsApprovedTutor] = useState(false);
+
+  useEffect(() => {
+    const loadTutorFlag = async () => {
+      const user = auth.currentUser;
+      if (!user) {
+        setIsApprovedTutor(false);
+        return;
+      }
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        const data = snap.data() as any;
+        const approved = Array.isArray(data?.tutorApprovedCourses) ? data.tutorApprovedCourses : [];
+        setIsApprovedTutor(approved.length > 0);
+      } catch {
+        setIsApprovedTutor(false);
+      }
+    };
+    loadTutorFlag();
+  }, []);
 
   return (
     <View style={styles.container}>
@@ -35,7 +59,7 @@ export default function CoursesScreen() {
             <Text style={styles.cardSubtitleDark}>{t('courses.hub.participatingSubtitle')}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.card} onPress={() => router.push('/ai-practice-setup' as any)}>
+          <TouchableOpacity style={styles.card} onPress={() => router.push('/courses/ai-hub' as any)}>
             <View style={[styles.cardIcon, styles.cardIconSoft]}>
               <Ionicons name="flask-outline" size={20} color={PRIMARY_GREEN} />
             </View>
@@ -43,13 +67,15 @@ export default function CoursesScreen() {
             <Text style={styles.cardSubtitleDark}>{t('courses.hub.aiPracticeSubtitle')}</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.card} onPress={() => router.push('/courses/statistics' as any)}>
-            <View style={[styles.cardIcon, styles.cardIconSoft]}>
-              <Ionicons name="bar-chart-outline" size={20} color={PRIMARY_GREEN} />
-            </View>
-            <Text style={styles.cardTitleDark}>{t('courses.hub.statisticsTitle')}</Text>
-            <Text style={styles.cardSubtitleDark}>{t('courses.hub.statisticsSubtitle')}</Text>
-          </TouchableOpacity>
+          {role === 'student' && isApprovedTutor && (
+            <TouchableOpacity style={styles.card} onPress={() => router.push('/tutor/hub' as any)}>
+              <View style={[styles.cardIcon, styles.cardIconSoft]}>
+                <Ionicons name="ribbon-outline" size={20} color={PRIMARY_GREEN} />
+              </View>
+              <Text style={styles.cardTitleDark}>{t('courses.hub.tutorHubTitle')}</Text>
+              <Text style={styles.cardSubtitleDark}>{t('courses.hub.tutorHubSubtitle')}</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </ScrollView>
     </View>
