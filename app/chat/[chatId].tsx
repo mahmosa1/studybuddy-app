@@ -1,6 +1,10 @@
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
 import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { Audio, InterruptionModeAndroid, InterruptionModeIOS } from 'expo-av';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -45,7 +49,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-const PRIMARY_GREEN = '#047857';
 const FAST_RECORDING_OPTIONS: Audio.RecordingOptions = {
   isMeteringEnabled: false,
   android: {
@@ -93,6 +96,7 @@ export default function ChatRoomScreen() {
   const isScreenFocused = useIsFocused();
   const { firebaseUser } = useUser();
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const { chatId, friendId, friendName, friendAvatar } = useLocalSearchParams<{
     chatId: string;
     conversationId?: string;
@@ -960,131 +964,166 @@ export default function ChatRoomScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={0}
     >
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={28} color="#111827" />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.headerCenter}
-          activeOpacity={threadType === 'group' ? 0.75 : 1}
-          disabled={threadType !== 'group'}
-          onPress={() => {
-            setGroupDetailsStep('info');
-            setShowGroupDetailsModal(true);
-          }}
-        >
-          {headerAvatarUrl ? (
-            <Image source={{ uri: headerAvatarUrl }} style={styles.headerAvatar} />
-          ) : (
-            <View style={styles.headerAvatarFallback}>
-              <Ionicons name={threadType === 'group' ? 'people' : 'person'} size={15} color="#047857" />
-            </View>
-          )}
-          {isHeaderReady ? (
-            <Text style={styles.headerTitle} numberOfLines={1}>
-              {title || 'Chat'}
-            </Text>
-          ) : (
-            <ActivityIndicator size="small" color="#6b7280" />
-          )}
-        </TouchableOpacity>
-        <View style={{ width: 24 }} />
-      </View>
+      <AppScreen>
+        <View style={[styles.header, { borderBottomColor: colors.border }]}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.headerSideBtn} accessibilityRole="button">
+            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
 
-      <FlatList
-        ref={messagesListRef}
-        data={displayMessages}
-        inverted
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={[
-          styles.messagesContent,
-          { paddingBottom: 6 },
-        ]}
-        onScroll={handleMessagesScroll}
-        scrollEventThrottle={16}
-        renderItem={({ item, index }) => {
-          const mine = firebaseUser?.uid === item.senderUid;
-          const isLastMessage = item.id === messages[messages.length - 1]?.id;
-          return (
-            <View>
-              {initialUnreadMessageId === item.id && (
-                <View style={styles.newMessagesDividerRow}>
-                  <View style={styles.newMessagesDividerLine} />
-                  <View style={styles.newMessagesDividerPill}>
-                    <Text style={styles.newMessagesDividerText}>New messages</Text>
-                  </View>
-                  <View style={styles.newMessagesDividerLine} />
-                </View>
+          <TouchableOpacity
+            style={styles.headerCenter}
+            activeOpacity={threadType === 'group' ? 0.8 : 1}
+            disabled={threadType !== 'group'}
+            onPress={() => {
+              setGroupDetailsStep('info');
+              setShowGroupDetailsModal(true);
+            }}
+          >
+            {headerAvatarUrl ? (
+              <Image source={{ uri: headerAvatarUrl }} style={[styles.headerAvatar, { borderColor: colors.border }]} />
+            ) : (
+              <View style={[styles.headerAvatarFallback, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                <Ionicons name={threadType === 'group' ? 'people' : 'person'} size={15} color={colors.primary} />
+              </View>
+            )}
+            <View style={styles.headerTitleWrap}>
+              {isHeaderReady ? (
+                <Text style={[styles.headerTitle, { color: colors.textPrimary }]} numberOfLines={1}>
+                  {title || 'Chat'}
+                </Text>
+              ) : (
+                <ActivityIndicator size="small" color={colors.textSecondary} />
               )}
-              <View
-                style={[
-                  styles.messageRow,
-                  mine ? styles.messageRowMine : styles.messageRowOther,
-                  isLastMessage && styles.messageRowLast,
-                ]}
-              >
-                {!mine && (
-                  <View style={styles.messageAvatarWrap}>
-                    {chatMembersMeta[item.senderUid]?.avatarUrl ? (
-                      <Image source={{ uri: chatMembersMeta[item.senderUid].avatarUrl }} style={styles.messageAvatar} />
-                    ) : (
-                      <Ionicons name="person" size={14} color="#047857" />
-                    )}
+              {threadType === 'group' ? (
+                <Text style={[styles.headerSubtitle, { color: colors.textSecondary }]} numberOfLines={1}>
+                  {threadMembers.length ? `${threadMembers.length} members` : 'Group'}
+                </Text>
+              ) : null}
+            </View>
+          </TouchableOpacity>
+
+          <View style={styles.headerSideBtn} />
+        </View>
+
+        <FlatList
+          ref={messagesListRef}
+          data={displayMessages}
+          inverted
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={[
+            styles.messagesContent,
+            { paddingBottom: 6 },
+          ]}
+          onScroll={handleMessagesScroll}
+          scrollEventThrottle={16}
+          renderItem={({ item }) => {
+            const mine = firebaseUser?.uid === item.senderUid;
+            const isLastMessage = item.id === messages[messages.length - 1]?.id;
+            return (
+              <View>
+                {initialUnreadMessageId === item.id && (
+                  <View style={styles.newMessagesDividerRow}>
+                    <View style={[styles.newMessagesDividerLine, { backgroundColor: colors.border }]} />
+                    <View style={[styles.newMessagesDividerPill, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                      <Text style={[styles.newMessagesDividerText, { color: colors.textSecondary }]}>New messages</Text>
+                    </View>
+                    <View style={[styles.newMessagesDividerLine, { backgroundColor: colors.border }]} />
                   </View>
                 )}
-                <View style={[styles.bubble, mine ? styles.bubbleMine : styles.bubbleOther]}>
-                  {item.type === 'image' && item.mediaUrl ? (
-                    <TouchableOpacity
-                      onPress={() => setPreviewImageUrl(item.mediaUrl || null)}
-                      onLongPress={() => {
-                        if (mine) handleDeleteOwnMessage(item);
-                      }}
-                      delayLongPress={260}
-                    >
-                      <Image source={{ uri: item.mediaUrl }} style={styles.messageImage} />
-                    </TouchableOpacity>
-                  ) : item.type === 'audio' && item.mediaUrl ? (
-                    <TouchableOpacity
-                      style={styles.audioRow}
-                      onPress={() => handlePlayAudioMessage(item.id, item.mediaUrl || '')}
-                      onLongPress={() => {
-                        if (mine) handleDeleteOwnMessage(item);
-                      }}
-                      delayLongPress={260}
-                    >
-                      {loadingAudioMessageId === item.id ? (
-                        <ActivityIndicator size="small" color={mine ? '#fff' : '#111827'} />
+
+                <View
+                  style={[
+                    styles.messageRow,
+                    mine ? styles.messageRowMine : styles.messageRowOther,
+                    isLastMessage && styles.messageRowLast,
+                  ]}
+                >
+                  {!mine ? (
+                    <View style={[styles.messageAvatarWrap, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                      {chatMembersMeta[item.senderUid]?.avatarUrl ? (
+                        <Image source={{ uri: chatMembersMeta[item.senderUid].avatarUrl }} style={styles.messageAvatar} />
                       ) : (
-                        <Ionicons
-                          name={activeAudioMessageId === item.id ? 'pause' : 'play'}
-                          size={14}
-                          color={mine ? '#fff' : '#111827'}
-                        />
+                        <Ionicons name="person" size={14} color={colors.primary} />
                       )}
-                      <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>
-                        Voice message
-                      </Text>
-                    </TouchableOpacity>
-                  ) : (
-                    <TouchableOpacity
-                      activeOpacity={1}
-                      onLongPress={() => {
-                        if (mine) handleDeleteOwnMessage(item);
-                      }}
-                      delayLongPress={260}
+                    </View>
+                  ) : null}
+
+                  <View
+                    style={[
+                      styles.bubble,
+                      mine
+                        ? { backgroundColor: colors.primary }
+                        : { backgroundColor: colors.surface, borderColor: colors.border, borderWidth: 1 },
+                    ]}
+                  >
+                    {item.type === 'image' && item.mediaUrl ? (
+                      <TouchableOpacity
+                        onPress={() => setPreviewImageUrl(item.mediaUrl || null)}
+                        onLongPress={() => {
+                          if (mine) handleDeleteOwnMessage(item);
+                        }}
+                        delayLongPress={260}
+                      >
+                        <Image source={{ uri: item.mediaUrl }} style={styles.messageImage} />
+                      </TouchableOpacity>
+                    ) : item.type === 'audio' && item.mediaUrl ? (
+                      <TouchableOpacity
+                        style={styles.audioRow}
+                        onPress={() => handlePlayAudioMessage(item.id, item.mediaUrl || '')}
+                        onLongPress={() => {
+                          if (mine) handleDeleteOwnMessage(item);
+                        }}
+                        delayLongPress={260}
+                        activeOpacity={0.85}
+                      >
+                        <View
+                          style={[
+                            styles.audioIcon,
+                            mine ? { backgroundColor: `${colors.textOnPrimary}22` } : { backgroundColor: colors.surfaceMuted },
+                          ]}
+                        >
+                          {loadingAudioMessageId === item.id ? (
+                            <ActivityIndicator size="small" color={mine ? colors.textOnPrimary : colors.textPrimary} />
+                          ) : (
+                            <Ionicons
+                              name={activeAudioMessageId === item.id ? 'pause' : 'play'}
+                              size={14}
+                              color={mine ? colors.textOnPrimary : colors.textPrimary}
+                            />
+                          )}
+                        </View>
+                        <View style={styles.audioTextWrap}>
+                          <Text style={[styles.bubbleText, { color: mine ? colors.textOnPrimary : colors.textPrimary }]}>
+                            Voice message
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        activeOpacity={1}
+                        onLongPress={() => {
+                          if (mine) handleDeleteOwnMessage(item);
+                        }}
+                        delayLongPress={260}
+                      >
+                        <Text style={[styles.bubbleText, { color: mine ? colors.textOnPrimary : colors.textPrimary }]}>{item.text}</Text>
+                      </TouchableOpacity>
+                    )}
+                    <Text
+                      style={[
+                        styles.messageTime,
+                        { color: mine ? 'rgba(255,255,255,0.82)' : colors.textSecondary },
+                        mine ? styles.messageTimeMine : styles.messageTimeOther,
+                      ]}
                     >
-                      <Text style={[styles.bubbleText, mine && styles.bubbleTextMine]}>{item.text}</Text>
-                    </TouchableOpacity>
-                  )}
-                  <Text style={[styles.messageTime, mine ? styles.messageTimeMine : styles.messageTimeOther]}>
-                    {formatMessageTime(item.createdAtMs)}
-                  </Text>
+                      {formatMessageTime(item.createdAtMs)}
+                    </Text>
+                  </View>
                 </View>
               </View>
-            </View>
-          );
-        }}
-      />
+            );
+          }}
+        />
 
       <Modal
         visible={!!previewImageUrl}
@@ -1114,10 +1153,12 @@ export default function ChatRoomScreen() {
           setShowGroupDetailsModal(false);
         }}
       >
-        <View style={styles.groupDetailsBackdrop}>
-          <View style={styles.groupDetailsCard}>
-            <View style={styles.groupDetailsHeader}>
-              <Text style={styles.groupDetailsTitle}>{groupDetailsStep === 'addMembers' ? 'Add members' : 'Group info'}</Text>
+        <View style={[styles.groupDetailsBackdrop, { backgroundColor: 'rgba(15, 23, 42, 0.45)' }]}>
+          <AppCard style={[styles.groupDetailsCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <View style={[styles.groupDetailsHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.groupDetailsTitle, { color: colors.textPrimary }]}>
+                {groupDetailsStep === 'addMembers' ? 'Add members' : 'Group info'}
+              </Text>
               <TouchableOpacity
                 onPress={() => {
                   if (groupDetailsStep === 'addMembers') {
@@ -1126,8 +1167,9 @@ export default function ChatRoomScreen() {
                   }
                   setShowGroupDetailsModal(false);
                 }}
+                accessibilityRole="button"
               >
-                <Ionicons name={groupDetailsStep === 'addMembers' ? 'arrow-back' : 'close'} size={22} color="#111827" />
+                <Ionicons name={groupDetailsStep === 'addMembers' ? 'arrow-back' : 'close'} size={22} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
             {groupDetailsStep === 'info' && editingGroupName ? (
@@ -1136,37 +1178,37 @@ export default function ChatRoomScreen() {
                   value={groupNameDraft}
                   onChangeText={setGroupNameDraft}
                   placeholder="Group name"
-                  placeholderTextColor="#9ca3af"
-                  style={styles.groupNameInput}
+                  placeholderTextColor={colors.textSecondary}
+                  style={[styles.groupNameInput, { color: colors.textPrimary }]}
                 />
                 <TouchableOpacity onPress={handleSaveGroupName}>
-                  <Ionicons name="checkmark" size={20} color="#047857" />
+                  <Ionicons name="checkmark" size={20} color={colors.primary} />
                 </TouchableOpacity>
               </View>
             ) : groupDetailsStep === 'info' ? (
-              <Text style={styles.groupDetailsName}>{title || 'Group Chat'}</Text>
+              <Text style={[styles.groupDetailsName, { color: colors.textPrimary }]}>{title || 'Group Chat'}</Text>
             ) : null}
             {groupDetailsStep === 'info' ? (
-              <Text style={styles.groupDetailsMembersCount}>
+              <Text style={[styles.groupDetailsMembersCount, { color: colors.textSecondary }]}>
                 {groupMembers.length} {groupMembers.length === 1 ? 'member' : 'members'}
               </Text>
             ) : null}
             {groupDetailsStep === 'info' && isGroupCreator && !editingGroupName ? (
               <View style={styles.groupActionsRow}>
-                <TouchableOpacity style={styles.groupActionBtn} onPress={() => setEditingGroupName(true)}>
-                  <Ionicons name="create-outline" size={15} color="#111827" />
-                  <Text style={styles.groupActionBtnText}>Rename</Text>
+                <TouchableOpacity style={[styles.groupActionBtn, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]} onPress={() => setEditingGroupName(true)}>
+                  <Ionicons name="create-outline" size={15} color={colors.textPrimary} />
+                  <Text style={[styles.groupActionBtnText, { color: colors.textPrimary }]}>Rename</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={styles.groupActionBtn}
+                  style={[styles.groupActionBtn, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}
                   onPress={() => {
                     setAddMemberSearch('');
                     setSelectedAddMemberIds([]);
                     setGroupDetailsStep('addMembers');
                   }}
                 >
-                  <Ionicons name="person-add-outline" size={15} color="#111827" />
-                  <Text style={styles.groupActionBtnText}>Add members</Text>
+                  <Ionicons name="person-add-outline" size={15} color={colors.textPrimary} />
+                  <Text style={[styles.groupActionBtnText, { color: colors.textPrimary }]}>Add members</Text>
                 </TouchableOpacity>
               </View>
             ) : null}
@@ -1179,27 +1221,27 @@ export default function ChatRoomScreen() {
                   style={styles.groupMembersList}
                   renderItem={({ item }) => (
                     <View style={styles.groupMemberRow}>
-                      <View style={styles.groupMemberAvatarWrap}>
+                      <View style={[styles.groupMemberAvatarWrap, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
                         {item.avatarUrl ? (
                           <Image source={{ uri: item.avatarUrl }} style={styles.groupMemberAvatar} />
                         ) : (
-                          <Ionicons name="person" size={14} color="#047857" />
+                          <Ionicons name="person" size={14} color={colors.primary} />
                         )}
                       </View>
-                      <Text style={styles.groupMemberName}>{item.name}</Text>
+                      <Text style={[styles.groupMemberName, { color: colors.textPrimary }]}>{item.name}</Text>
                       {item.uid === threadCreatorUid ? (
-                        <Text style={styles.groupCreatorBadge}>Creator</Text>
+                        <Text style={[styles.groupCreatorBadge, { color: colors.primary }]}>Creator</Text>
                       ) : null}
                       {isGroupCreator && item.uid !== threadCreatorUid ? (
                         <TouchableOpacity onPress={() => handleRemoveMember(item.uid)} style={styles.groupMemberRemoveBtn}>
-                          <Ionicons name="remove-circle-outline" size={17} color="#dc2626" />
+                          <Ionicons name="remove-circle-outline" size={17} color={colors.danger} />
                         </TouchableOpacity>
                       ) : null}
                     </View>
                   )}
                 />
                 <TouchableOpacity style={styles.leaveGroupBtn} onPress={handleLeaveGroup}>
-                  <Text style={styles.leaveGroupBtnText}>Leave group</Text>
+                  <Text style={[styles.leaveGroupBtnText, { color: colors.danger }]}>Leave group</Text>
                 </TouchableOpacity>
               </>
             ) : (
@@ -1209,36 +1251,39 @@ export default function ChatRoomScreen() {
                     value={addMemberSearch}
                     onChangeText={setAddMemberSearch}
                     placeholder="Search users..."
-                    placeholderTextColor="#9ca3af"
-                    style={styles.groupNameInput}
+                    placeholderTextColor={colors.textSecondary}
+                    style={[styles.groupNameInput, { color: colors.textPrimary }]}
                   />
                 </View>
                 {loadingAddMembersUsers ? (
-                  <ActivityIndicator color="#047857" style={{ marginTop: 16 }} />
+                  <ActivityIndicator color={colors.primary} style={{ marginTop: 16 }} />
                 ) : (
                   <FlatList
                     data={addableUsers}
                     keyExtractor={(item) => item.uid}
                     style={styles.groupMembersList}
-                    ListEmptyComponent={<Text style={styles.groupDetailsMembersCount}>No users to add</Text>}
+                    ListEmptyComponent={<Text style={[styles.groupDetailsMembersCount, { color: colors.textSecondary }]}>No users to add</Text>}
                     renderItem={({ item }) => (
                       <TouchableOpacity style={styles.groupMemberRow} onPress={() => toggleAddMemberSelection(item.uid)}>
-                        <View style={styles.groupMemberAvatarWrap}>
+                        <View style={[styles.groupMemberAvatarWrap, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
                           {item.avatarUrl ? (
                             <Image source={{ uri: item.avatarUrl }} style={styles.groupMemberAvatar} />
                           ) : (
-                            <Ionicons name="person" size={14} color="#047857" />
+                            <Ionicons name="person" size={14} color={colors.primary} />
                           )}
                         </View>
-                        <Text style={styles.groupMemberName}>{item.name}</Text>
+                        <Text style={[styles.groupMemberName, { color: colors.textPrimary }]}>{item.name}</Text>
                         <View
                           style={[
                             styles.groupMemberSelectCircle,
-                            selectedAddMemberIds.includes(item.uid) && styles.groupMemberSelectCircleSelected,
+                            {
+                              borderColor: selectedAddMemberIds.includes(item.uid) ? colors.primary : colors.border,
+                              backgroundColor: selectedAddMemberIds.includes(item.uid) ? colors.primary : 'transparent',
+                            },
                           ]}
                         >
                           {selectedAddMemberIds.includes(item.uid) ? (
-                            <Ionicons name="checkmark" size={12} color="#fff" />
+                            <Ionicons name="checkmark" size={12} color={colors.textOnPrimary} />
                           ) : null}
                         </View>
                       </TouchableOpacity>
@@ -1248,6 +1293,7 @@ export default function ChatRoomScreen() {
                 <TouchableOpacity
                   style={[
                     styles.addMembersConfirmBtn,
+                    { backgroundColor: colors.primary, borderColor: colors.primary },
                     (!selectedAddMemberIds.length || loadingAddMembersUsers) && styles.addMembersConfirmBtnDisabled,
                   ]}
                   disabled={!selectedAddMemberIds.length || loadingAddMembersUsers}
@@ -1257,7 +1303,7 @@ export default function ChatRoomScreen() {
                 </TouchableOpacity>
               </>
             )}
-          </View>
+          </AppCard>
         </View>
       </Modal>
 
@@ -1265,79 +1311,105 @@ export default function ChatRoomScreen() {
         style={[
           styles.inputBar,
           { paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom, 10) },
+          { borderTopColor: colors.border, backgroundColor: colors.bg },
         ]}
       >
-        <TouchableOpacity style={styles.iconBtn} onPress={handleTakePhoto}>
-          <Ionicons name="camera-outline" size={18} color="#047857" />
+        <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]} onPress={handleTakePhoto}>
+          <Ionicons name="camera-outline" size={18} color={colors.primary} />
         </TouchableOpacity>
         <TextInput
-          style={styles.input}
+          style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, color: colors.textPrimary }]}
           value={draft}
           onChangeText={setDraft}
           placeholder="Type a message..."
-          placeholderTextColor="#9ca3af"
+          placeholderTextColor={colors.textSecondary}
         />
         <TouchableOpacity
-          style={[styles.iconBtn, isRecording && styles.iconBtnRecording]}
+          style={[
+            styles.iconBtn,
+            { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+            isRecording && styles.iconBtnRecording,
+          ]}
           onLongPress={startVoiceRecording}
           onPressOut={() => {
             if (isRecording) stopVoiceRecording();
           }}
           delayLongPress={220}
         >
-          <Ionicons name={isRecording ? 'stop' : 'mic-outline'} size={18} color={isRecording ? '#fff' : '#6b7280'} />
+          <Ionicons
+            name={isRecording ? 'stop' : 'mic-outline'}
+            size={18}
+            color={isRecording ? colors.textOnPrimary : colors.textSecondary}
+          />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconBtn} onPress={handlePickFromGallery}>
-          <Ionicons name="image-outline" size={18} color="#6b7280" />
+        <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]} onPress={handlePickFromGallery}>
+          <Ionicons name="image-outline" size={18} color={colors.textSecondary} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.sendBtn} onPress={sendMessage}>
+        <TouchableOpacity style={[styles.sendBtn, { backgroundColor: colors.primary }]} onPress={sendMessage}>
           {sendingMedia ? (
-            <Ionicons name="hourglass-outline" size={16} color="#fff" />
+            <Ionicons name="hourglass-outline" size={16} color={colors.textOnPrimary} />
           ) : (
-            <Ionicons name="send" size={16} color="#fff" />
+            <Ionicons name="send" size={16} color={colors.textOnPrimary} />
           )}
         </TouchableOpacity>
       </View>
+      </AppScreen>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
+  container: { flex: 1 },
   header: {
-    backgroundColor: '#fff',
-    paddingTop: 56,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+    paddingTop: layout.headerTopPadding,
+    paddingBottom: layout.headerBottomPadding,
+    paddingHorizontal: layout.screenPadding,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  headerSideBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerCenter: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 8,
+    gap: 10,
+    paddingHorizontal: 10,
   },
   headerTitle: { fontSize: 20, fontWeight: '700', color: '#111827', maxWidth: '75%' },
+  headerTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    alignItems: 'center',
+  },
+  headerSubtitle: {
+    marginTop: 1,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   headerAvatar: {
     width: 36,
     height: 36,
     borderRadius: 18,
+    borderWidth: 1,
   },
   headerAvatarFallback: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 1,
   },
-  messagesContent: { paddingHorizontal: 12, paddingTop: 14, paddingBottom: 24 },
+  messagesContent: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.md, paddingBottom: spacing.xl },
   messagesLoadingPlaceholder: {
     flex: 1,
   },
@@ -1360,10 +1432,10 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
   },
   messageAvatar: {
     width: '100%',
@@ -1371,21 +1443,21 @@ const styles = StyleSheet.create({
   },
   bubble: {
     maxWidth: '78%',
-    borderRadius: 18,
+    borderRadius: radius.lg,
     paddingHorizontal: 14,
     paddingVertical: 10,
     marginBottom: 0,
   },
-  bubbleMine: { alignSelf: 'flex-end', backgroundColor: PRIMARY_GREEN },
-  bubbleOther: { alignSelf: 'flex-start', backgroundColor: '#fff', borderWidth: 1, borderColor: '#e5e7eb' },
+  bubbleMine: { alignSelf: 'flex-end' },
+  bubbleOther: { alignSelf: 'flex-start' },
   senderName: {
     fontSize: 12,
     color: '#6b7280',
     marginBottom: 4,
     fontWeight: '600',
   },
-  bubbleText: { color: '#111827', fontSize: 17, lineHeight: 24 },
-  bubbleTextMine: { color: '#fff' },
+  bubbleText: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
+  bubbleTextMine: {},
   messageImage: {
     width: 210,
     height: 160,
@@ -1415,18 +1487,16 @@ const styles = StyleSheet.create({
   newMessagesDividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#d1d5db',
   },
   newMessagesDividerText: {
     fontSize: 12,
-    color: '#4b5563',
     fontWeight: '700',
   },
   newMessagesDividerPill: {
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 999,
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
   },
   imagePreviewBackdrop: {
     flex: 1,
@@ -1447,23 +1517,23 @@ const styles = StyleSheet.create({
   },
   groupDetailsBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.3)',
     justifyContent: 'flex-end',
   },
   groupDetailsCard: {
-    backgroundColor: '#fff',
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
-    paddingHorizontal: 16,
-    paddingTop: 14,
-    paddingBottom: 24,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
     maxHeight: '72%',
   },
   groupDetailsHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    paddingBottom: spacing.sm,
+    marginBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   groupDetailsTitle: {
     fontSize: 18,
@@ -1487,7 +1557,6 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 8,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 10,
@@ -1508,11 +1577,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
+    borderWidth: 1,
   },
   groupActionBtnText: {
     fontSize: 12,
@@ -1534,10 +1602,10 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
   },
   groupMemberAvatar: {
     width: '100%',
@@ -1551,7 +1619,6 @@ const styles = StyleSheet.create({
   groupCreatorBadge: {
     marginLeft: 8,
     fontSize: 11,
-    color: '#047857',
     fontWeight: '700',
   },
   groupMemberRemoveBtn: {
@@ -1564,25 +1631,20 @@ const styles = StyleSheet.create({
     height: 24,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#9ca3af',
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  groupMemberSelectCircleSelected: {
-    backgroundColor: '#047857',
-    borderColor: '#047857',
   },
   addMembersConfirmBtn: {
     marginTop: 12,
     borderRadius: 12,
-    backgroundColor: '#047857',
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 52,
     paddingVertical: 12,
+    borderWidth: 1,
   },
   addMembersConfirmBtnDisabled: {
-    backgroundColor: '#9ca3af',
+    opacity: 0.5,
   },
   addMembersConfirmBtnText: {
     color: '#fff',
@@ -1599,19 +1661,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   leaveGroupBtnText: {
-    color: '#dc2626',
     fontSize: 13,
     fontWeight: '700',
   },
   audioRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    gap: 10,
+    minWidth: 160,
+  },
+  audioIcon: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  audioTextWrap: {
+    flex: 1,
+    minWidth: 0,
   },
   inputBar: {
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    backgroundColor: '#fff',
     paddingHorizontal: 12,
     paddingTop: 12,
     flexDirection: 'row',
@@ -1624,7 +1695,7 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
   },
   iconBtnRecording: {
     backgroundColor: '#ef4444',
@@ -1632,19 +1703,15 @@ const styles = StyleSheet.create({
   input: {
     flex: 1,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 22,
     paddingHorizontal: 12,
     paddingVertical: 12,
     fontSize: 16,
-    color: '#111827',
-    backgroundColor: '#f9fafb',
   },
   sendBtn: {
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: PRIMARY_GREEN,
     alignItems: 'center',
     justifyContent: 'center',
   },

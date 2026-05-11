@@ -1,4 +1,10 @@
 // app/admin/appeals.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -17,6 +23,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
+  I18nManager,
   Image,
   Modal,
   Pressable,
@@ -43,6 +50,8 @@ type AppealItem = {
 export default function AdminAppealsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const isRtl = I18nManager.isRTL;
   const [appeals, setAppeals] = useState<AppealItem[]>([]);
   const [filteredAppeals, setFilteredAppeals] = useState<AppealItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -221,11 +230,11 @@ export default function AdminAppealsScreen() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'approved':
-        return '#22c55e';
+        return colors.success;
       case 'rejected':
-        return '#ef4444';
+        return colors.danger;
       default:
-        return ACCENT_GREEN;
+        return colors.warning;
     }
   };
 
@@ -241,37 +250,38 @@ export default function AdminAppealsScreen() {
 
   const renderAppeal = (appeal: AppealItem) => (
     <TouchableOpacity
-      style={styles.card}
+      style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
       onPress={() => openDetailModal(appeal)}
       activeOpacity={0.7}
     >
-      <View style={styles.cardHeader}>
+      <View style={[styles.cardAccentLine, { backgroundColor: getStatusColor(appeal.status) }]} />
+      <View style={[styles.cardHeader, isRtl && styles.rtlRow]}>
         {appeal.userProfilePicture ? (
           <Image
             source={{ uri: appeal.userProfilePicture }}
-            style={styles.profileImage}
+            style={[styles.profileImage, { borderColor: colors.border }]}
           />
         ) : (
-          <View style={styles.profilePlaceholder}>
-            <Text style={styles.profileInitials}>{getInitials(appeal)}</Text>
+          <View style={[styles.profilePlaceholder, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+            <Text style={[styles.profileInitials, { color: colors.textPrimary }]}>{getInitials(appeal)}</Text>
           </View>
         )}
         <View style={styles.appealInfo}>
-          <Text style={styles.email}>{appeal.email}</Text>
-          <Text style={styles.userName}>{appeal.userFullName || t('admin.unknownUser')}</Text>
-          <Text style={styles.appealPreview} numberOfLines={2}>
+          <Text style={[styles.email, { color: colors.textPrimary }, isRtl && styles.rtlText]}>{appeal.email}</Text>
+          <Text style={[styles.userName, { color: colors.textSecondary }, isRtl && styles.rtlText]}>{appeal.userFullName || t('admin.unknownUser')}</Text>
+          <Text style={[styles.appealPreview, { color: colors.textSecondary }, isRtl && styles.rtlText]} numberOfLines={2}>
             {appeal.appealMessage}
           </Text>
           {appeal.appealImageUrl && (
-            <View style={styles.imageIndicator}>
-              <Ionicons name="image" size={14} color={ACCENT_GREEN} />
-              <Text style={styles.imageIndicatorText}>{t('admin.imageAttached')}</Text>
+            <View style={[styles.imageIndicator, isRtl && styles.rtlRow]}>
+              <Ionicons name="image" size={14} color={colors.primary} />
+              <Text style={[styles.imageIndicatorText, { color: colors.primary }]}>{t('admin.imageAttached')}</Text>
             </View>
           )}
         </View>
       </View>
 
-      <View style={[styles.statusPill, { borderColor: getStatusColor(appeal.status) }]}>
+      <View style={[styles.statusPill, { borderColor: getStatusColor(appeal.status), backgroundColor: colors.surfaceMuted }, isRtl && styles.rtlRow]}>
         <View style={[styles.statusDot, { backgroundColor: getStatusColor(appeal.status) }]} />
         <Text style={[styles.statusPillText, { color: getStatusColor(appeal.status) }]}>
           {t(`admin.status.${appeal.status}`)}
@@ -279,9 +289,9 @@ export default function AdminAppealsScreen() {
       </View>
 
       {appeal.status === 'pending' && (
-        <View style={styles.actionsRow}>
+        <View style={[styles.actionsRow, { borderTopColor: colors.border }, isRtl && styles.rtlRow]}>
           <TouchableOpacity
-            style={[styles.actionButton, styles.approveButton]}
+            style={[styles.actionButton, { backgroundColor: colors.primary }]}
             onPress={(e) => {
               e.stopPropagation();
               handleApproveAppeal(appeal);
@@ -289,17 +299,17 @@ export default function AdminAppealsScreen() {
             disabled={updatingId === appeal.id}
           >
             {updatingId === appeal.id ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#ffffff" />
-                <Text style={styles.actionText}>{t('admin.approve')}</Text>
+                <Ionicons name="checkmark-circle-outline" size={16} color={colors.textOnPrimary} />
+                <Text style={[styles.actionText, { color: colors.textOnPrimary }]}>{t('admin.approve')}</Text>
               </>
             )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.actionButton, styles.rejectButton]}
+            style={[styles.actionButton, { backgroundColor: colors.danger }]}
             onPress={(e) => {
               e.stopPropagation();
               handleRejectAppeal(appeal);
@@ -307,11 +317,11 @@ export default function AdminAppealsScreen() {
             disabled={updatingId === appeal.id}
           >
             {updatingId === appeal.id ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.textOnPrimary} />
             ) : (
               <>
-                <Ionicons name="trash-outline" size={16} color="#ffffff" />
-                <Text style={styles.actionText}>{t('admin.rejectAndDelete')}</Text>
+                <Ionicons name="trash-outline" size={16} color={colors.textOnPrimary} />
+                <Text style={[styles.actionText, { color: colors.textOnPrimary }]}>{t('admin.rejectAndDelete')}</Text>
               </>
             )}
           </TouchableOpacity>
@@ -321,30 +331,26 @@ export default function AdminAppealsScreen() {
   );
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={t('admin.appealsManagement')} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonHeader}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <Ionicons name="chatbubble-ellipses" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{t('admin.appealsManagement')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('admin.appealsManagementDescription')}
-          </Text>
+        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
+            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.appeals')}</Text>
+          </View>
+          <SectionTitle title={t('admin.appealsManagement')} subtitle={t('admin.appealsManagementDescription')} />
         </View>
 
         {/* Pending Appeals Count */}
         {!loading && appeals.length > 0 && (
           <View style={styles.countContainer}>
-            <Text style={styles.countText}>
+            <Text style={[styles.countText, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
               {appeals.length === 1
                 ? t('admin.pendingAppeal', { count: appeals.length })
                 : t('admin.pendingAppeals', { count: appeals.length })}
@@ -354,17 +360,17 @@ export default function AdminAppealsScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={PRIMARY_GREEN} />
-            <Text style={styles.loadingText}>{t('admin.loadingAppeals')}</Text>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('admin.loadingAppeals')}</Text>
           </View>
         ) : appeals.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons name="checkmark-circle" size={64} color="#22c55e" />
-            <Text style={styles.emptyTitle}>{t('admin.noPendingAppeals')}</Text>
-            <Text style={styles.emptyText}>
+          <AppCard style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Ionicons name="checkmark-circle" size={44} color={colors.success} />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }]}>{t('admin.noPendingAppeals')}</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
               {t('admin.allAppealsReviewed')}
             </Text>
-          </View>
+          </AppCard>
         ) : (
           <View style={styles.appealsList}>
             {appeals.map((appeal) => (
@@ -534,20 +540,59 @@ export default function AdminAppealsScreen() {
           </View>
         </View>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
+const PRIMARY_GREEN = '#2563eb';
+const ACCENT_GREEN = '#2563eb';
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   scrollContent: {
+    paddingHorizontal: spacing.md,
     paddingBottom: 40,
+  },
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    top: -72,
+    right: -38,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    bottom: -52,
+    left: -26,
+    opacity: 0.1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  heroBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   header: {
     backgroundColor: PRIMARY_GREEN,
@@ -631,21 +676,21 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     paddingHorizontal: 20,
   },
-  appealsList: {
-    paddingHorizontal: 20,
-  },
+  appealsList: { gap: 10 },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 20,
+    borderRadius: 16,
+    padding: 16,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    overflow: 'hidden',
+  },
+  cardAccentLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    opacity: 0.6,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -664,12 +709,12 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#374151',
+    backgroundColor: '#eef2ff',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#374151',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
   },
   profileInitials: {
     fontSize: 24,
@@ -718,24 +763,18 @@ const styles = StyleSheet.create({
   },
   actionsRow: {
     flexDirection: 'row',
-    gap: 12,
-    paddingTop: 16,
+    gap: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#374151',
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 10,
+    minHeight: 38,
     gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
   approveButton: {
     backgroundColor: '#22c55e',
@@ -953,6 +992,12 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.5)',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
   },
 });
 

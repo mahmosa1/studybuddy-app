@@ -1,11 +1,17 @@
 // app/lecturer/add-course.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing, typography, ThemeColors } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { addDoc, collection, doc, getDoc, serverTimestamp } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
   Platform,
@@ -13,13 +19,14 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 
 export default function LecturerAddCourseScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const [loading, setLoading] = useState(false);
   const [courseName, setCourseName] = useState('');
   const [description, setDescription] = useState('');
@@ -47,12 +54,12 @@ export default function LecturerAddCourseScreen() {
   const handleSave = async () => {
     const user = auth.currentUser;
     if (!user) {
-      Alert.alert(t('common.error'), t('auth.emailRequired') || 'You must be logged in');
+      Alert.alert(t('common.error'), t('auth.emailRequired'));
       return;
     }
 
     if (!courseName.trim()) {
-      Alert.alert(t('common.error'), t('courses.courseNameRequired') || 'Course name is required');
+      Alert.alert(t('common.error'), t('courses.courseNameRequired'));
       return;
     }
 
@@ -66,171 +73,162 @@ export default function LecturerAddCourseScreen() {
         createdAt: serverTimestamp(),
       });
 
-      Alert.alert(t('common.success'), t('courses.courseCreatedSuccess') || 'Course created successfully', [
+      Alert.alert(t('common.success'), t('courses.courseCreatedSuccess'), [
         { text: t('common.ok'), onPress: () => router.back() },
       ]);
     } catch (err) {
       console.log('Error creating course:', err);
-      Alert.alert(t('common.error'), t('courses.failedToCreateCourse') || 'Failed to create course');
+      Alert.alert(t('common.error'), t('courses.failedToCreateCourse'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-      >
-        <Text style={styles.title}>{t('home.createNewCourse')}</Text>
-        <Text style={styles.subtitle}>
-          {t('home.createNewCourseDescription')}
-        </Text>
+    <AppScreen>
+      <AppHeader title={t('lecturer.createCourse')} onBack={() => router.back()} />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+          <View style={styles.heroWrap}>
+            <View style={styles.heroGlowPrimary} />
+            <View style={styles.heroBadge}>
+              <Ionicons name="add-circle-outline" size={14} color={colors.primary} />
+              <Text style={styles.heroBadgeText}>{t('lecturer.createCourse')}</Text>
+            </View>
+            <Text style={styles.heroTitle}>{t('lecturer.createCourse')}</Text>
+            <Text style={styles.heroSubtitle}>{t('lecturer.createCourseSubtitle')}</Text>
+          </View>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>{t('courses.courseName')} *</Text>
-          <TextInput
-            style={styles.input}
-            placeholder={t('courses.courseNamePlaceholder')}
-            placeholderTextColor="#6b7280"
-            value={courseName}
-            onChangeText={setCourseName}
-          />
+          <AppCard style={styles.card}>
+            <Text style={styles.label}>{t('lecturer.courseName')} *</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={t('courses.courseNamePlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={courseName}
+              onChangeText={setCourseName}
+            />
 
-          <Text style={styles.label}>{t('courses.courseDescription')} ({t('common.optional')})</Text>
-          <TextInput
-            style={[styles.input, styles.textArea]}
-            placeholder={t('courses.courseDescriptionPlaceholder')}
-            placeholderTextColor="#6b7280"
-            value={description}
-            onChangeText={setDescription}
-            multiline
-            numberOfLines={4}
-            textAlignVertical="top"
-          />
+            <Text style={styles.label}>{t('lecturer.courseDescription')} ({t('common.optional')})</Text>
+            <TextInput
+              style={[styles.input, styles.textArea]}
+              placeholder={t('courses.courseDescriptionPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={description}
+              onChangeText={setDescription}
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+            />
 
-          <Text style={styles.label}>{t('auth.institution')}</Text>
-          <TextInput
-            style={styles.input}
-            placeholder={t('auth.institutionPlaceholder')}
-            placeholderTextColor="#6b7280"
-            value={institution}
-            onChangeText={setInstitution}
-          />
+            <Text style={styles.label}>{t('lecturer.institution')}</Text>
+            <TextInput
+              style={styles.input}
+              placeholder={t('auth.institutionPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={institution}
+              onChangeText={setInstitution}
+            />
 
-          <TouchableOpacity
-            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={loading || !courseName.trim()}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.saveButtonText}>{t('home.createCourse')}</Text>
-            )}
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.cancelButton}
-            onPress={() => router.back()}
-          >
-            <Text style={styles.cancelButtonText}>{t('common.cancel')}</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <View style={styles.actions}>
+              <PrimaryButton
+                label={t('lecturer.cancel')}
+                variant="secondary"
+                onPress={() => router.back()}
+                style={styles.actionButton}
+              />
+              <PrimaryButton
+                label={t('lecturer.createCourse')}
+                onPress={handleSave}
+                loading={loading}
+                disabled={loading || !courseName.trim()}
+                style={styles.actionButton}
+              />
+            </View>
+          </AppCard>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
-const ACCENT_GREEN = '#047857';
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
     paddingBottom: 40,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 4,
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  subtitle: {
-    fontSize: 14,
-    color: '#4b5563',
-    textAlign: 'center',
-    marginBottom: 24,
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    top: -90,
+    right: -45,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    marginBottom: spacing.sm,
+  },
+  heroBadgeText: {
+    color: colors.textSecondary,
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  heroTitle: { color: colors.textPrimary, ...typography.h3 },
+  heroSubtitle: {
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
+    fontSize: 13,
+    lineHeight: 18,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    borderColor: colors.border,
   },
   label: {
     fontSize: 13,
-    color: '#374151',
+    color: colors.textPrimary,
     marginTop: 12,
     marginBottom: 6,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   input: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 10,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#111827',
+    color: colors.textPrimary,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
     fontSize: 14,
   },
   textArea: {
     minHeight: 100,
   },
-  saveButton: {
-    marginTop: 24,
-    backgroundColor: ACCENT_GREEN,
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
-  },
-  saveButtonDisabled: {
-    opacity: 0.7,
-  },
-  saveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  cancelButton: {
-    marginTop: 12,
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#374151',
-    backgroundColor: '#ffffff',
-  },
-  cancelButtonText: {
-    color: '#4b5563',
-    fontSize: 16,
-    fontWeight: '600',
-  },
+  actions: { flexDirection: 'row', gap: 8, marginTop: spacing.md },
+  actionButton: { flex: 1 },
 });
 

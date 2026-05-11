@@ -1,12 +1,20 @@
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
-import { Redirect } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
+  I18nManager,
   ScrollView,
   StyleSheet,
   Text,
@@ -39,6 +47,9 @@ type QualityFilter = 'all' | 'grounded' | 'weak_grounding' | 'no_sources' | 'fal
 export default function AIDiagnosticsScreen() {
   const { t } = useTranslation();
   const { role, loading: loadingUser } = useUser();
+  const { colors } = useAppTheme();
+  const isRtl = I18nManager.isRTL;
+  const router = useRouter();
   const [traces, setTraces] = useState<TraceDoc[]>([]);
   const [loading, setLoading] = useState(true);
   const [featureFilter, setFeatureFilter] = useState<string>('all');
@@ -96,25 +107,35 @@ export default function AIDiagnosticsScreen() {
   const getQualityBadgeStyle = (quality: QualityFilter) => {
     switch (quality) {
       case 'grounded':
-        return { bg: '#ecfdf5', border: '#86efac', text: '#166534' };
+        return { bg: colors.surfaceMuted, border: colors.success, text: colors.success };
       case 'weak_grounding':
-        return { bg: '#fff7ed', border: '#fdba74', text: '#9a3412' };
+        return { bg: colors.surfaceMuted, border: colors.warning, text: colors.warning };
       case 'no_sources':
-        return { bg: '#fffbeb', border: '#fcd34d', text: '#92400e' };
+        return { bg: colors.surfaceMuted, border: colors.warning, text: colors.warning };
       case 'fallback':
-        return { bg: '#eff6ff', border: '#93c5fd', text: '#1d4ed8' };
+        return { bg: colors.surfaceMuted, border: colors.primary, text: colors.primary };
       case 'error':
-        return { bg: '#fef2f2', border: '#fca5a5', text: '#b91c1c' };
+        return { bg: colors.surfaceMuted, border: colors.danger, text: colors.danger };
       default:
-        return { bg: '#f3f4f6', border: '#d1d5db', text: '#4b5563' };
+        return { bg: colors.surfaceMuted, border: colors.border, text: colors.textSecondary };
     }
   };
 
+  const localizeFeature = (feature: string) => {
+    const normalized = feature.toLowerCase();
+    if (normalized.includes('question')) return t('admin.aiDiagnostics.features.questions');
+    if (normalized.includes('eval')) return t('admin.aiDiagnostics.features.evaluation');
+    return feature;
+  };
+
+  const localizeQuality = (quality: QualityFilter) =>
+    t(`admin.aiDiagnostics.quality.${quality}`);
+
   if (loadingUser) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#047857" />
-      </View>
+      <AppScreen>
+        <LoadingState />
+      </AppScreen>
     );
   }
 
@@ -123,32 +144,41 @@ export default function AIDiagnosticsScreen() {
   }
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={t('admin.aiDiagnostics.title')} onBack={() => router.back()} />
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={styles.title}>{t('admin.aiDiagnostics.title')}</Text>
-          <Text style={styles.subtitle}>{t('admin.aiDiagnostics.subtitle')}</Text>
+        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="analytics-outline" size={14} color={colors.primary} />
+            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.aiDiagnostics.title')}</Text>
+          </View>
+          <SectionTitle title={t('admin.aiDiagnostics.title')} subtitle={t('admin.aiDiagnostics.subtitle')} />
         </View>
 
-        <View style={styles.filtersCard}>
-          <Text style={styles.filtersTitle}>{t('admin.aiDiagnostics.filters')}</Text>
+        <AppCard style={[styles.filtersCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <Text style={[styles.filtersTitle, { color: colors.textPrimary }]}>{t('admin.aiDiagnostics.filters')}</Text>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipsRow}>
             {features.map((feature) => (
               <TouchableOpacity
                 key={feature}
                 style={[
                   styles.chip,
-                  featureFilter === feature && styles.chipActive,
+                  {
+                    backgroundColor: featureFilter === feature ? colors.primary : colors.surfaceMuted,
+                    borderColor: featureFilter === feature ? colors.primary : colors.border,
+                  },
                 ]}
                 onPress={() => setFeatureFilter(feature)}
               >
                 <Text
                   style={[
                     styles.chipText,
-                    featureFilter === feature && styles.chipTextActive,
+                    { color: featureFilter === feature ? colors.textOnPrimary : colors.textPrimary },
                   ]}
                 >
-                  {feature === 'all' ? t('admin.aiDiagnostics.allFeatures') : feature}
+                  {feature === 'all' ? t('admin.aiDiagnostics.allFeatures') : localizeFeature(feature)}
                 </Text>
               </TouchableOpacity>
             ))}
@@ -158,18 +188,24 @@ export default function AIDiagnosticsScreen() {
             value={courseFilter}
             onChangeText={setCourseFilter}
             placeholder={t('admin.aiDiagnostics.coursePlaceholder')}
-            style={styles.input}
-            placeholderTextColor="#9ca3af"
+            style={[styles.input, { borderColor: colors.border, backgroundColor: colors.surfaceMuted, color: colors.textPrimary }]}
+            placeholderTextColor={colors.textSecondary}
           />
 
           <View style={styles.inlineFilters}>
             {(['all', 'yes', 'no'] as ToggleFilter[]).map((value) => (
               <TouchableOpacity
                 key={value}
-                style={[styles.smallChip, fallbackFilter === value && styles.smallChipActive]}
+                style={[
+                  styles.smallChip,
+                  {
+                    backgroundColor: fallbackFilter === value ? colors.primary : colors.surfaceMuted,
+                    borderColor: fallbackFilter === value ? colors.primary : colors.border,
+                  },
+                ]}
                 onPress={() => setFallbackFilter(value)}
               >
-                <Text style={[styles.smallChipText, fallbackFilter === value && styles.smallChipTextActive]}>
+                <Text style={[styles.smallChipText, { color: fallbackFilter === value ? colors.textOnPrimary : colors.textPrimary }]}>
                   {t(`admin.aiDiagnostics.fallback.${value}`)}
                 </Text>
               </TouchableOpacity>
@@ -180,10 +216,16 @@ export default function AIDiagnosticsScreen() {
             {(['all', 'hit', 'miss', 'unknown'] as CacheFilter[]).map((value) => (
               <TouchableOpacity
                 key={value}
-                style={[styles.smallChip, cacheFilter === value && styles.smallChipActive]}
+                style={[
+                  styles.smallChip,
+                  {
+                    backgroundColor: cacheFilter === value ? colors.primary : colors.surfaceMuted,
+                    borderColor: cacheFilter === value ? colors.primary : colors.border,
+                  },
+                ]}
                 onPress={() => setCacheFilter(value)}
               >
-                <Text style={[styles.smallChipText, cacheFilter === value && styles.smallChipTextActive]}>
+                <Text style={[styles.smallChipText, { color: cacheFilter === value ? colors.textOnPrimary : colors.textPrimary }]}>
                   {t(`admin.aiDiagnostics.cache.${value}`)}
                 </Text>
               </TouchableOpacity>
@@ -194,28 +236,31 @@ export default function AIDiagnosticsScreen() {
             {(['all', 'grounded', 'weak_grounding', 'no_sources', 'fallback', 'error', 'unknown'] as QualityFilter[]).map((value) => (
               <TouchableOpacity
                 key={value}
-                style={[styles.smallChip, qualityFilter === value && styles.smallChipActive]}
+                style={[
+                  styles.smallChip,
+                  {
+                    backgroundColor: qualityFilter === value ? colors.primary : colors.surfaceMuted,
+                    borderColor: qualityFilter === value ? colors.primary : colors.border,
+                  },
+                ]}
                 onPress={() => setQualityFilter(value)}
               >
-                <Text style={[styles.smallChipText, qualityFilter === value && styles.smallChipTextActive]}>
-                  {value === 'all' ? 'Quality: all' : `Quality: ${value}`}
+                <Text style={[styles.smallChipText, { color: qualityFilter === value ? colors.textOnPrimary : colors.textPrimary }]}>
+                  {value === 'all'
+                    ? t('admin.aiDiagnostics.quality.all')
+                    : t('admin.aiDiagnostics.quality.labelValue', { value: localizeQuality(value) })}
                 </Text>
               </TouchableOpacity>
             ))}
           </View>
-        </View>
+        </AppCard>
 
         {loading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color="#047857" />
-            <Text style={styles.helperText}>{t('admin.aiDiagnostics.loading')}</Text>
-          </View>
+          <LoadingState label={t('admin.aiDiagnostics.loading')} />
         ) : filteredTraces.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="analytics-outline" size={26} color="#6b7280" />
-            <Text style={styles.emptyTitle}>{t('admin.aiDiagnostics.emptyTitle')}</Text>
-            <Text style={styles.emptySubtitle}>{t('admin.aiDiagnostics.emptySubtitle')}</Text>
-          </View>
+          <AppCard style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <EmptyState title={t('admin.aiDiagnostics.emptyTitle')} subtitle={t('admin.aiDiagnostics.emptySubtitle')} />
+          </AppCard>
         ) : (
           filteredTraces.map((trace) => {
             const cacheState: CacheFilter =
@@ -229,10 +274,12 @@ export default function AIDiagnosticsScreen() {
             const chunks = trace.sourceChunkIds || [];
             const fileRefs = trace.sourceFiles?.length ? trace.sourceFiles : trace.sourceFileIds || [];
             return (
-              <View key={trace.id} style={styles.traceCard}>
-                <View style={styles.rowBetween}>
-                  <Text style={styles.traceFeature}>{trace.traceType || '-'}</Text>
-                  <Text style={styles.traceTime}>{timestamp}</Text>
+              <AppCard key={trace.id} style={[styles.traceCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <View style={[styles.traceHeaderRow, isRtl && styles.rtlRow]}>
+                  <Text style={[styles.traceFeature, { color: colors.textPrimary }, isRtl && styles.rtlText]}>
+                    {trace.traceType ? localizeFeature(trace.traceType) : '-'}
+                  </Text>
+                  <Text style={[styles.traceTime, { color: colors.textSecondary }]}>{timestamp}</Text>
                 </View>
                 <View
                   style={[
@@ -241,65 +288,93 @@ export default function AIDiagnosticsScreen() {
                   ]}
                 >
                   <Text style={[styles.qualityBadgeText, { color: qualityTheme.text }]}>
-                    quality: {qualityState}
+                    {t('admin.aiDiagnostics.quality.labelValue', { value: localizeQuality(qualityState) })}
                   </Text>
                 </View>
-
-                <Text style={styles.lineItem}>userId: {trace.userId || '-'}</Text>
-                <Text style={styles.lineItem}>courseId: {trace.courseId || '-'}</Text>
-                <Text style={styles.lineItem}>latency: {trace.latencyMs ? `${trace.latencyMs}ms` : '-'}</Text>
-                <Text style={styles.lineItem}>cache: {cacheState}</Text>
-                <Text style={styles.lineItem}>fallback: {trace.fallbackUsed ? 'yes' : 'no'}</Text>
-                <Text style={styles.lineItem}>
-                  source chunks: {chunks.length ? chunks.join(', ') : '-'}
-                </Text>
-                <Text style={styles.lineItem}>
-                  file references: {fileRefs.length ? fileRefs.join(', ') : '-'}
-                </Text>
+                <View style={[styles.metaGrid, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                  <Text style={[styles.metaLine, { color: colors.textPrimary }]}>userId: {trace.userId || '-'}</Text>
+                  <Text style={[styles.metaLine, { color: colors.textPrimary }]}>courseId: {trace.courseId || '-'}</Text>
+                  <Text style={[styles.metaLine, { color: colors.textPrimary }]}>latency: {trace.latencyMs ? `${trace.latencyMs}ms` : '-'}</Text>
+                  <Text style={[styles.metaLine, { color: colors.textPrimary }]}>
+                    {t('admin.aiDiagnostics.cacheLabel')}: {t(`admin.aiDiagnostics.cache.${cacheState}`)}
+                  </Text>
+                  <Text style={[styles.metaLine, { color: colors.textPrimary }]}>
+                    {t('admin.aiDiagnostics.fallbackLabel')}: {t(`admin.aiDiagnostics.fallback.${trace.fallbackUsed ? 'yes' : 'no'}`)}
+                  </Text>
+                </View>
+                <View style={[styles.techBlock, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                  <Text style={[styles.techLine, { color: colors.textSecondary }]}>
+                    source chunks: {chunks.length ? chunks.join(', ') : '-'}
+                  </Text>
+                  <Text style={[styles.techLine, { color: colors.textSecondary }]}>
+                    file references: {fileRefs.length ? fileRefs.join(', ') : '-'}
+                  </Text>
+                </View>
                 {(trace.errorCode || trace.fallbackReason) ? (
-                  <Text style={styles.errorLine}>
+                  <Text style={[styles.errorLine, { color: colors.danger }]}>
                     error: {trace.errorCode || trace.fallbackReason}
                   </Text>
                 ) : null}
-              </View>
+              </AppCard>
             );
           })
         )}
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   content: {
-    paddingHorizontal: 20,
-    paddingTop: 24,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
     paddingBottom: 40,
     gap: 12,
   },
-  header: {
-    marginBottom: 2,
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '800',
-    color: '#111827',
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    top: -72,
+    right: -38,
+    opacity: 0.08,
   },
-  subtitle: {
-    marginTop: 4,
-    color: '#6b7280',
-    fontSize: 13,
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    bottom: -52,
+    left: -26,
+    opacity: 0.1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+    marginBottom: spacing.sm,
+  },
+  heroBadgeText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   filtersCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 14,
+    padding: 12,
     gap: 10,
   },
   filtersTitle: {
@@ -313,33 +388,21 @@ const styles = StyleSheet.create({
   },
   chip: {
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-  },
-  chipActive: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#047857',
   },
   chipText: {
     color: '#374151',
     fontSize: 12,
     fontWeight: '600',
   },
-  chipTextActive: {
-    color: '#047857',
-  },
   input: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 10,
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#111827',
+    paddingVertical: 9,
     fontSize: 14,
-    backgroundColor: '#ffffff',
   },
   inlineFilters: {
     flexDirection: 'row',
@@ -351,30 +414,18 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-  },
-  smallChipActive: {
-    borderColor: '#047857',
-    backgroundColor: '#ecfdf5',
   },
   smallChipText: {
     fontSize: 11,
     fontWeight: '700',
-    color: '#4b5563',
-  },
-  smallChipTextActive: {
-    color: '#047857',
   },
   traceCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 14,
+    padding: 12,
     gap: 6,
+    overflow: 'hidden',
   },
-  rowBetween: {
+  traceHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -387,11 +438,24 @@ const styles = StyleSheet.create({
   },
   traceTime: {
     fontSize: 11,
-    color: '#6b7280',
   },
-  lineItem: {
+  metaGrid: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 3,
+  },
+  metaLine: {
     fontSize: 12,
-    color: '#374151',
+  },
+  techBlock: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
+    gap: 4,
+  },
+  techLine: {
+    fontSize: 12,
   },
   qualityBadge: {
     alignSelf: 'flex-start',
@@ -406,38 +470,17 @@ const styles = StyleSheet.create({
   },
   errorLine: {
     marginTop: 4,
-    color: '#b91c1c',
     fontSize: 12,
     fontWeight: '700',
   },
   emptyCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 18,
-    alignItems: 'center',
-    gap: 8,
+    paddingVertical: 6,
   },
-  emptyTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
+  rtlRow: {
+    flexDirection: 'row-reverse',
   },
-  emptySubtitle: {
-    textAlign: 'center',
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  centered: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 26,
-    gap: 8,
-  },
-  helperText: {
-    fontSize: 12,
-    color: '#6b7280',
+  rtlText: {
+    textAlign: 'right',
   },
 });
 

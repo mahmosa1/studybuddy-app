@@ -1,4 +1,11 @@
 // app/practice-results.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { StatCard } from '@/frontend/components/ui/StatCard';
+import { iconContainer, layout, radius, spacing, typography, ThemeColors } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
 import { getPracticeHistory, getProgressDashboard, ProgressDashboard } from '@/lib/practiceService';
 import { Ionicons } from '@expo/vector-icons';
@@ -6,19 +13,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View
-} from 'react-native';
-
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#10b981';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function PracticeResultsScreen() {
   const router = useRouter();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const params = useLocalSearchParams<{
     sessionId?: string;
     courseId?: string;
@@ -36,13 +36,11 @@ export default function PracticeResultsScreen() {
   const incorrectAnswers = totalQuestions - correctAnswers;
   const { i18n } = useTranslation();
   const language: 'hebrew' | 'english' = i18n.language === 'he' ? 'hebrew' : 'english';
-  
+
   const [weakTopics, setWeakTopics] = useState<string[]>([]);
   const [dashboard, setDashboard] = useState<ProgressDashboard | null>(null);
   const [historyScores, setHistoryScores] = useState<number[]>([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Language-specific text
+
   const texts = {
     hebrew: {
       headerTitle: 'תוצאות תרגול',
@@ -79,23 +77,19 @@ export default function PracticeResultsScreen() {
       reviewIncorrect: 'Review the incorrect answers to identify weak areas.',
     },
   };
-  
+
   const t = texts[language];
 
-  // Load language from session and weak topics
   useEffect(() => {
     const loadLanguageAndTopics = async () => {
-      // UI language follows current app language selection.
       const currentLanguage: 'hebrew' | 'english' = language;
-      
-      // Load weak topics
+
       if (!params.sessionId) {
-        // Fallback to mock topics if no session
         const isHebrew = currentLanguage === 'hebrew';
         if (score >= 80) {
           setWeakTopics([isHebrew ? 'כל הנושאים נלמדו! המשך לתרגל כדי לשמור על הידע שלך.' : 'All topics mastered! Keep practicing to maintain your knowledge.']);
         } else if (score >= 60) {
-          setWeakTopics(isHebrew 
+          setWeakTopics(isHebrew
             ? ['אינטגרציה בחלקים', 'ניתוח מורכבות זמן']
             : ['Integration by Parts', 'Time Complexity Analysis']);
         } else {
@@ -115,7 +109,6 @@ export default function PracticeResultsScreen() {
                 'Dynamic Programming',
               ]);
         }
-        setLoading(false);
         return;
       }
 
@@ -129,20 +122,18 @@ export default function PracticeResultsScreen() {
           setHistoryScores(history.slice(0, 6).reverse().map((item) => item.score));
         }
 
-        // Get practice results from Firestore
         const resultsRef = collection(db, 'practiceResults');
         const q = query(
           resultsRef,
           where('sessionId', '==', params.sessionId)
         );
         const snapshot = await getDocs(q);
-        
+
         if (!snapshot.empty) {
           const resultData = snapshot.docs[0].data();
           const topics = resultData.weakTopics || [];
-          
+
           if (topics.length === 0) {
-            // Fallback if no weak topics
             const isHebrew = currentLanguage === 'hebrew';
             if (score >= 80) {
               setWeakTopics([isHebrew ? 'כל הנושאים נלמדו! המשך לתרגל כדי לשמור על הידע שלך.' : 'All topics mastered! Keep practicing to maintain your knowledge.']);
@@ -153,17 +144,13 @@ export default function PracticeResultsScreen() {
             setWeakTopics(topics);
           }
         } else {
-          // Fallback
           const isHebrew = currentLanguage === 'hebrew';
           setWeakTopics([isHebrew ? 'סקור את התשובות הלא נכונות כדי לזהות אזורים חלשים.' : 'Review the incorrect answers to identify weak areas.']);
         }
       } catch (error) {
         console.error('Error loading weak topics:', error);
-        // Fallback
         const isHebrew = currentLanguage === 'hebrew';
         setWeakTopics([isHebrew ? 'סקור את התשובות הלא נכונות כדי לזהות אזורים חלשים.' : 'Review the incorrect answers to identify weak areas.']);
-      } finally {
-        setLoading(false);
       }
     };
 
@@ -171,9 +158,9 @@ export default function PracticeResultsScreen() {
   }, [params.sessionId, score, language]);
 
   const getScoreColor = () => {
-    if (score >= 80) return ACCENT_GREEN;
-    if (score >= 60) return '#f59e0b';
-    return '#ef4444';
+    if (score >= 80) return colors.primary;
+    if (score >= 60) return colors.warning;
+    return colors.danger;
   };
 
   const getScoreMessage = () => {
@@ -182,83 +169,82 @@ export default function PracticeResultsScreen() {
     return t.keepStudying;
   };
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => {
-          // Navigate back to course or courses page, not to review
-          if (params.courseId) {
-            router.replace(`/course/${params.courseId}` as any);
-          } else {
-            router.replace('/(tabs)/courses' as any);
-          }
-        }}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t.headerTitle}</Text>
-        <View style={{ width: 24 }} />
-      </View>
+  const navigateBack = () => {
+    if (params.courseId) {
+      router.replace(`/course/${params.courseId}` as any);
+    } else {
+      router.replace('/(tabs)/courses' as any);
+    }
+  };
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Score Card */}
-        <View style={styles.scoreCard}>
+  return (
+    <AppScreen>
+      <AppHeader title={t.headerTitle} onBack={navigateBack} />
+
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.heroWrap}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowAccent} />
+          <View style={styles.heroBadge}>
+            <Ionicons name="stats-chart-outline" size={14} color={colors.accent} />
+            <Text style={styles.heroBadgeText}>{t.headerTitle}</Text>
+          </View>
+          <Text style={styles.heroCourseName} numberOfLines={2}>
+            {courseName}
+          </Text>
+        </View>
+
+        <AppCard style={styles.scoreCard}>
+          <View style={[styles.accentLine, { backgroundColor: colors.primary }]} />
           <Text style={styles.scoreLabel}>{t.yourScore}</Text>
           <Text style={[styles.scoreValue, { color: getScoreColor() }]}>
             {score}%
           </Text>
           <Text style={styles.scoreMessage}>{getScoreMessage()}</Text>
-        </View>
+        </AppCard>
 
-        {/* Summary Card */}
-        <View style={styles.summaryCard}>
+        <AppCard style={styles.sectionCard}>
+          <View style={[styles.accentLine, { backgroundColor: colors.primary }]} />
           <Text style={styles.cardTitle}>{t.summary}</Text>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Ionicons name="checkmark-circle" size={24} color={ACCENT_GREEN} />
-              <Text style={styles.summaryNumber}>{correctAnswers}</Text>
-              <Text style={styles.summaryLabel}>{t.correct}</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Ionicons name="close-circle" size={24} color="#ef4444" />
-              <Text style={styles.summaryNumber}>{incorrectAnswers}</Text>
-              <Text style={styles.summaryLabel}>{t.incorrect}</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Ionicons name="document-text" size={24} color={PRIMARY_GREEN} />
-              <Text style={styles.summaryNumber}>{totalQuestions}</Text>
-              <Text style={styles.summaryLabel}>{t.total}</Text>
-            </View>
+          <View style={styles.statRow}>
+            <StatCard value={correctAnswers} label={t.correct} style={styles.statCell} />
+            <StatCard value={incorrectAnswers} label={t.incorrect} style={styles.statCell} />
+            <StatCard value={totalQuestions} label={t.total} style={styles.statCell} />
           </View>
-        </View>
+        </AppCard>
 
-        {/* Weak Topics Section */}
-        <View style={styles.weakTopicsCard}>
+        <AppCard style={styles.sectionCard}>
+          <View style={[styles.accentLine, { backgroundColor: colors.warning }]} />
           <View style={styles.sectionHeader}>
-            <Ionicons name="alert-circle" size={24} color="#f59e0b" />
-            <Text style={styles.sectionTitle}>{t.topicsToImprove}</Text>
+            <View style={styles.iconBadge}>
+              <Ionicons name="alert-circle" size={18} color={colors.warning} />
+            </View>
+            <Text style={styles.cardTitleFlat}>{t.topicsToImprove}</Text>
           </View>
-          <Text style={styles.sectionDescription}>
-            {t.topicsDescription}
-          </Text>
+          <Text style={styles.sectionDescription}>{t.topicsDescription}</Text>
           <View style={styles.topicsList}>
             {weakTopics.map((topic, index) => (
               <View key={index} style={styles.topicItem}>
-                <Ionicons name="bookmark-outline" size={18} color={PRIMARY_GREEN} />
+                <View style={styles.topicIconWrap}>
+                  <Ionicons name="bookmark-outline" size={16} color={colors.textSecondary} />
+                </View>
                 <Text style={styles.topicText}>{topic}</Text>
               </View>
             ))}
           </View>
-        </View>
+        </AppCard>
 
-        {/* Real Progress Dashboard */}
         {dashboard && (
-          <View style={styles.summaryCard}>
+          <AppCard style={styles.sectionCard}>
+            <View style={[styles.accentLine, { backgroundColor: colors.accent }]} />
             <Text style={styles.cardTitle}>Progress Dashboard</Text>
 
             <View style={styles.summaryRow}>
               <View style={styles.summaryItem}>
-                <Ionicons name="speedometer-outline" size={22} color={PRIMARY_GREEN} />
+                <Ionicons name="speedometer-outline" size={22} color={colors.primary} />
                 <Text style={styles.summaryNumber}>{dashboard.readinessScore}%</Text>
                 <Text style={styles.summaryLabel}>Exam Readiness</Text>
               </View>
@@ -266,7 +252,7 @@ export default function PracticeResultsScreen() {
                 <Ionicons
                   name={dashboard.trendDelta >= 0 ? 'trending-up-outline' : 'trending-down-outline'}
                   size={22}
-                  color={dashboard.trendDelta >= 0 ? ACCENT_GREEN : '#ef4444'}
+                  color={dashboard.trendDelta >= 0 ? colors.primary : colors.danger}
                 />
                 <Text style={styles.summaryNumber}>
                   {dashboard.trendDelta >= 0 ? '+' : ''}
@@ -275,7 +261,7 @@ export default function PracticeResultsScreen() {
                 <Text style={styles.summaryLabel}>Trend</Text>
               </View>
               <View style={styles.summaryItem}>
-                <Ionicons name="podium-outline" size={22} color="#3b82f6" />
+                <Ionicons name="podium-outline" size={22} color={colors.accent} />
                 <Text style={styles.summaryNumber}>{dashboard.courseRankingPercentile}%</Text>
                 <Text style={styles.summaryLabel}>Course Ranking</Text>
               </View>
@@ -287,7 +273,15 @@ export default function PracticeResultsScreen() {
                 <View style={styles.chartBars}>
                   {historyScores.map((value, idx) => (
                     <View key={`${idx}-${value}`} style={styles.chartBarContainer}>
-                      <View style={[styles.chartBar, { height: Math.max(8, value), backgroundColor: value >= 70 ? ACCENT_GREEN : '#f59e0b' }]} />
+                      <View
+                        style={[
+                          styles.chartBar,
+                          {
+                            height: Math.max(8, value),
+                            backgroundColor: value >= 70 ? colors.primary : colors.warning,
+                          },
+                        ]}
+                      />
                       <Text style={styles.chartLabel}>{value}</Text>
                     </View>
                   ))}
@@ -307,7 +301,7 @@ export default function PracticeResultsScreen() {
                           styles.topicAccuracyFill,
                           {
                             width: `${Math.max(4, topic.accuracy)}%`,
-                            backgroundColor: topic.accuracy >= 70 ? ACCENT_GREEN : '#ef4444',
+                            backgroundColor: topic.accuracy >= 70 ? colors.primary : colors.danger,
                           },
                         ]}
                       />
@@ -317,15 +311,13 @@ export default function PracticeResultsScreen() {
                 ))}
               </View>
             )}
-          </View>
+          </AppCard>
         )}
 
-        {/* Action Buttons */}
         <View style={styles.actionsContainer}>
-          <TouchableOpacity
-            style={styles.primaryButton}
+          <PrimaryButton
+            label={t.practiceAgain}
             onPress={() => {
-              // Mock: navigate to practice these topics
               router.push({
                 pathname: '/ai-practice-setup' as any,
                 params: {
@@ -334,260 +326,270 @@ export default function PracticeResultsScreen() {
                 },
               });
             }}
-          >
-            <Ionicons name="refresh" size={20} color="#ffffff" />
-            <Text style={styles.primaryButtonText}>{t.practiceAgain}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.secondaryButton}
-            onPress={() => {
-              if (params.courseId) {
-                // Use replace to remove practice-results from navigation stack
-                // So when user presses back in course, they go to courses page, not practice-results
-                router.replace(`/course/${params.courseId}` as any);
-              } else {
-                router.replace('/(tabs)/courses' as any);
-              }
-            }}
-          >
-            <Text style={styles.secondaryButtonText}>{t.backToCourse}</Text>
-          </TouchableOpacity>
+          />
+          <PrimaryButton
+            label={t.backToCourse}
+            variant="secondary"
+            onPress={navigateBack}
+          />
         </View>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  content: {
-    flex: 1,
-  },
-  scoreCard: {
-    backgroundColor: '#ffffff',
-    margin: 20,
-    padding: 32,
-    borderRadius: 20,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4,
-  },
-  scoreLabel: {
-    fontSize: 16,
-    color: '#6b7280',
-    marginBottom: 8,
-  },
-  scoreValue: {
-    fontSize: 64,
-    fontWeight: '700',
-    marginBottom: 8,
-  },
-  scoreMessage: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  summaryCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    padding: 20,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  cardTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 16,
-  },
-  summaryRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-  },
-  summaryItem: {
-    alignItems: 'center',
-    gap: 8,
-  },
-  summaryNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  summaryLabel: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
-  weakTopicsCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    marginBottom: 20,
-    padding: 20,
-    borderRadius: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  sectionDescription: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 16,
-    lineHeight: 20,
-  },
-  topicsList: {
-    gap: 12,
-  },
-  topicItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 12,
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    borderLeftWidth: 3,
-    borderLeftColor: PRIMARY_GREEN,
-  },
-  topicText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '500',
-  },
-  actionsContainer: {
-    padding: 20,
-    paddingBottom: 40,
-    gap: 12,
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 16,
-    borderRadius: 12,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  secondaryButton: {
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  trendChartWrap: {
-    marginTop: 16,
-  },
-  chartTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  chartBars: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    justifyContent: 'space-between',
-    height: 120,
-    paddingHorizontal: 4,
-  },
-  chartBarContainer: {
-    alignItems: 'center',
-    width: 28,
-  },
-  chartBar: {
-    width: 20,
-    borderRadius: 8,
-  },
-  chartLabel: {
-    marginTop: 4,
-    fontSize: 11,
-    color: '#6b7280',
-  },
-  topicAccuracyWrap: {
-    marginTop: 16,
-    gap: 8,
-  },
-  topicAccuracyRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  topicAccuracyName: {
-    width: 90,
-    fontSize: 12,
-    color: '#111827',
-  },
-  topicAccuracyTrack: {
-    flex: 1,
-    height: 8,
-    borderRadius: 999,
-    backgroundColor: '#e5e7eb',
-    overflow: 'hidden',
-  },
-  topicAccuracyFill: {
-    height: '100%',
-  },
-  topicAccuracyValue: {
-    width: 34,
-    textAlign: 'right',
-    fontSize: 12,
-    fontWeight: '700',
-    color: '#111827',
-  },
-});
-
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    scrollContent: {
+      paddingHorizontal: layout.screenPadding,
+      paddingTop: spacing.sm,
+      paddingBottom: 40,
+    },
+    heroWrap: {
+      position: 'relative',
+      overflow: 'hidden',
+      padding: spacing.md,
+      marginBottom: spacing.md,
+      borderRadius: 18,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surface,
+    },
+    heroGlowPrimary: {
+      position: 'absolute',
+      width: 160,
+      height: 160,
+      borderRadius: 80,
+      top: -100,
+      right: -50,
+      backgroundColor: colors.primary,
+      opacity: 0.08,
+    },
+    heroGlowAccent: {
+      position: 'absolute',
+      width: 110,
+      height: 110,
+      borderRadius: 55,
+      bottom: -60,
+      left: -30,
+      backgroundColor: colors.accent,
+      opacity: 0.1,
+    },
+    heroBadge: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: 999,
+      borderWidth: 1,
+      borderColor: colors.border,
+      backgroundColor: colors.surfaceElevated,
+      marginBottom: spacing.sm,
+    },
+    heroBadgeText: {
+      color: colors.textSecondary,
+      ...typography.caption,
+      fontWeight: '700',
+    },
+    heroCourseName: {
+      color: colors.textPrimary,
+      fontSize: 18,
+      fontWeight: '700',
+    },
+    accentLine: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 2,
+      opacity: 0.45,
+    },
+    scoreCard: {
+      padding: spacing.lg,
+      marginBottom: spacing.sm,
+      alignItems: 'center',
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    scoreLabel: {
+      fontSize: 14,
+      color: colors.textSecondary,
+      marginBottom: spacing.sm,
+    },
+    scoreValue: {
+      fontSize: 52,
+      fontWeight: '800',
+      marginBottom: spacing.sm,
+    },
+    scoreMessage: {
+      fontSize: 16,
+      fontWeight: '600',
+      color: colors.textPrimary,
+      textAlign: 'center',
+    },
+    sectionCard: {
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+      position: 'relative',
+      overflow: 'hidden',
+    },
+    cardTitle: {
+      ...typography.h3,
+      color: colors.textPrimary,
+      marginBottom: spacing.md,
+    },
+    cardTitleFlat: {
+      ...typography.h3,
+      color: colors.textPrimary,
+      flex: 1,
+    },
+    statRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      justifyContent: 'space-between',
+      gap: spacing.sm,
+    },
+    statCell: {
+      width: '30%',
+      minWidth: 88,
+      flexGrow: 1,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    iconBadge: {
+      width: iconContainer.size,
+      height: iconContainer.size,
+      borderRadius: iconContainer.radius,
+      backgroundColor: colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionDescription: {
+      ...typography.body,
+      color: colors.textSecondary,
+      marginBottom: spacing.md,
+    },
+    topicsList: {
+      gap: spacing.sm,
+    },
+    topicItem: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+      padding: spacing.sm,
+      borderRadius: radius.md,
+      backgroundColor: colors.surfaceMuted,
+      borderWidth: 1,
+      borderColor: colors.border,
+    },
+    topicIconWrap: {
+      width: 28,
+      height: 28,
+      borderRadius: 8,
+      backgroundColor: colors.surfaceElevated,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    topicText: {
+      flex: 1,
+      ...typography.body,
+      color: colors.textPrimary,
+      fontWeight: '500',
+    },
+    summaryRow: {
+      flexDirection: 'row',
+      justifyContent: 'space-around',
+      flexWrap: 'wrap',
+      gap: spacing.md,
+    },
+    summaryItem: {
+      alignItems: 'center',
+      gap: spacing.xs,
+      minWidth: 88,
+    },
+    summaryNumber: {
+      fontSize: 22,
+      fontWeight: '800',
+      color: colors.textPrimary,
+    },
+    summaryLabel: {
+      fontSize: 12,
+      color: colors.textSecondary,
+      fontWeight: '600',
+    },
+    trendChartWrap: {
+      marginTop: spacing.md,
+    },
+    chartTitle: {
+      fontSize: 14,
+      fontWeight: '700',
+      color: colors.textPrimary,
+      marginBottom: spacing.sm,
+    },
+    chartBars: {
+      flexDirection: 'row',
+      alignItems: 'flex-end',
+      justifyContent: 'space-between',
+      height: 120,
+      paddingHorizontal: 4,
+      gap: 4,
+    },
+    chartBarContainer: {
+      alignItems: 'center',
+      flex: 1,
+      maxWidth: 40,
+    },
+    chartBar: {
+      width: '100%',
+      maxWidth: 22,
+      borderRadius: radius.sm,
+    },
+    chartLabel: {
+      marginTop: 4,
+      fontSize: 10,
+      fontWeight: '600',
+      color: colors.textSecondary,
+    },
+    topicAccuracyWrap: {
+      marginTop: spacing.md,
+      gap: spacing.sm,
+    },
+    topicAccuracyRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    topicAccuracyName: {
+      width: 90,
+      fontSize: 12,
+      color: colors.textPrimary,
+    },
+    topicAccuracyTrack: {
+      flex: 1,
+      height: 8,
+      borderRadius: radius.pill,
+      backgroundColor: colors.surfaceElevated,
+      overflow: 'hidden',
+    },
+    topicAccuracyFill: {
+      height: '100%',
+    },
+    topicAccuracyValue: {
+      width: 36,
+      textAlign: 'right',
+      fontSize: 12,
+      fontWeight: '700',
+      color: colors.textPrimary,
+    },
+    actionsContainer: {
+      marginTop: spacing.md,
+      paddingBottom: spacing.lg,
+      gap: spacing.sm,
+    },
+  });

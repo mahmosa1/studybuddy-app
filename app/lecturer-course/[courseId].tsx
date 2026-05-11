@@ -1,14 +1,17 @@
 // app/lecturer-course/[courseId].tsx
-import { db } from '@/lib/firebaseConfig';
+import { getExistingJoinRequest, requestToJoinCourse } from '@/lib/courseJoinRequestService';
+import { auth, db } from '@/lib/firebaseConfig';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
+  doc,
   onSnapshot,
   orderBy,
   query,
   where,
 } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -33,14 +36,9 @@ type CourseFile = {
   url?: string | null;
 };
 
-// Mock lecturer info
-const MOCK_LECTURER = {
-  name: 'Dr. Smith',
-  institution: 'MIT',
-};
-
 export default function StudentLecturerCourseViewScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     courseId?: string | string[];
     name?: string;
@@ -52,14 +50,109 @@ export default function StudentLecturerCourseViewScreen() {
 
   const [files, setFiles] = useState<CourseFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
-  const [hasRequested, setHasRequested] = useState(false);
+  const [requestPending, setRequestPending] = useState(false);
+  const [alreadyParticipating, setAlreadyParticipating] = useState(false);
+  const [requestLoading, setRequestLoading] = useState(false);
+  const [courseOwnerUid, setCourseOwnerUid] = useState('');
+  const [lecturerName, setLecturerName] = useState('');
+  const [lecturerInstitution, setLecturerInstitution] = useState('');
+  /** True once course snapshot (+ join-request check when needed) finished for this viewer. */
+  const [accessResolved, setAccessResolved] = useState(false);
+  /** Owner or approved participant via sharedWithUids or latest approved join request */
+  const [canViewMaterials, setCanViewMaterials] = useState(false);
 
-  // Load files (read-only)
+  // Course doc + participation / request UI state (live updates when lecturer approves)
+  useEffect(() => {
+    if (!courseId) {
+      setAccessResolved(false);
+      setCanViewMaterials(false);
+      return;
+    }
+
+    let cancelled = false;
+    const courseRef = doc(db, 'courses', courseId);
+
+    const unsub = onSnapshot(
+      courseRef,
+      async (courseSnap) => {
+        if (cancelled || !courseSnap.exists()) return;
+
+        const data = courseSnap.data() as any;
+        const ownerUid = String(data?.ownerUid || data?.lecturerUid || '');
+        const sharedList = Array.isArray(data?.sharedWithUids)
+          ? data.sharedWithUids.map((v: any) => String(v))
+          : [];
+
+        setCourseOwnerUid(ownerUid);
+        setLecturerName(String(data?.lecturer || data?.ownerName || ''));
+        setLecturerInstitution(String(data?.institution || ''));
+
+        const user = auth.currentUser;
+
+        if (!user?.uid) {
+          setRequestPending(false);
+          setAlreadyParticipating(false);
+          setCanViewMaterials(false);
+          setAccessResolved(true);
+          return;
+        }
+
+        if (ownerUid && user.uid === ownerUid) {
+          setRequestPending(false);
+          setAlreadyParticipating(false);
+          setCanViewMaterials(true);
+          setAccessResolved(true);
+          return;
+        }
+
+        const inShared = sharedList.includes(user.uid);
+        let approvedFromRequest = false;
+        let pending = false;
+
+        try {
+          const latest = await getExistingJoinRequest({ courseId, studentUid: user.uid });
+          approvedFromRequest = latest?.status === 'approved';
+          pending = latest?.status === 'pending';
+        } catch (err) {
+          console.log('Error loading join request for access:', err);
+        }
+
+        if (cancelled) return;
+
+        const hasApprovedAccess = inShared || approvedFromRequest;
+        setAlreadyParticipating(hasApprovedAccess);
+        setRequestPending(hasApprovedAccess ? false : pending);
+        setCanViewMaterials(hasApprovedAccess);
+        setAccessResolved(true);
+      },
+      (err) => {
+        console.log('Error subscribing to course:', err);
+        setAccessResolved(true);
+        setCanViewMaterials(false);
+      },
+    );
+
+    return () => {
+      cancelled = true;
+      unsub();
+    };
+  }, [courseId]);
+
+  // Load file metadata only when viewer may download (owner or approved participant)
   useEffect(() => {
     if (!courseId) {
       setLoadingFiles(false);
+      setFiles([]);
       return;
     }
+
+    if (!canViewMaterials) {
+      setFiles([]);
+      setLoadingFiles(false);
+      return;
+    }
+
+    setLoadingFiles(true);
 
     const filesRef = collection(db, 'courseFiles');
     const q = query(
@@ -92,9 +185,13 @@ export default function StudentLecturerCourseViewScreen() {
     );
 
     return unsub;
-  }, [courseId]);
+  }, [courseId, canViewMaterials]);
 
   const handleOpenFile = (file: CourseFile) => {
+    if (!canViewMaterials) {
+      Alert.alert(t('common.error'), t('courseJoin.materialsLockedSubtitle'));
+      return;
+    }
     if (!file.url) {
       Alert.alert('Error', 'Missing file URL.');
       return;
@@ -119,13 +216,60 @@ export default function StudentLecturerCourseViewScreen() {
     return 'document-outline';
   };
 
-  const handleRequestJoin = () => {
-    // Mock: show success message
-    setHasRequested(true);
-    Alert.alert(
-      'Request Sent',
-      'Your request to join this course has been sent to the lecturer. You will be notified when they respond.',
-    );
+  const handleRequestJoin = async () => {
+    if (!courseId) return;
+    const user = auth.currentUser;
+    if (!user?.uid) {
+      Alert.alert(t('common.error'), t('courseJoin.notAuthenticated'));
+      return;
+    }
+
+    if (courseOwnerUid && user.uid === courseOwnerUid) {
+      Alert.alert(t('common.error'), t('courseJoin.cannotRequestOwnCourse'));
+      return;
+    }
+
+    setRequestLoading(true);
+    try {
+      const result = await requestToJoinCourse({
+        courseId,
+        courseName: name,
+        lecturerUid: courseOwnerUid,
+      });
+
+      if (!result.ok) {
+        if (result.reason === 'pending_exists') {
+          setRequestPending(true);
+          Alert.alert(t('common.error'), t('courseJoin.requestAlreadyPending'));
+          return;
+        }
+        if (result.reason === 'already_participating') {
+          setAlreadyParticipating(true);
+          setCanViewMaterials(true);
+          setRequestPending(false);
+          Alert.alert(t('common.error'), t('courseJoin.alreadyParticipating'));
+          return;
+        }
+        if (result.reason === 'owner_blocked') {
+          Alert.alert(t('common.error'), t('courseJoin.cannotRequestOwnCourse'));
+          return;
+        }
+        if (result.reason === 'not_authenticated') {
+          Alert.alert(t('common.error'), t('courseJoin.notAuthenticated'));
+          return;
+        }
+        Alert.alert(t('common.error'), t('courseJoin.requestFailed'));
+        return;
+      }
+
+      setRequestPending(true);
+      Alert.alert(t('common.success'), t('courseJoin.requestSent'));
+    } catch (err) {
+      console.log('Request join error:', err);
+      Alert.alert(t('common.error'), t('courseJoin.requestFailed'));
+    } finally {
+      setRequestLoading(false);
+    }
   };
 
   const renderFile = ({ item }: { item: CourseFile }) => {
@@ -168,6 +312,9 @@ export default function StudentLecturerCourseViewScreen() {
     );
   };
 
+  const currentUid = auth.currentUser?.uid ?? '';
+  const isOwnerViewer = !!courseOwnerUid && currentUid === courseOwnerUid;
+
   return (
     <View style={styles.container}>
       <ScrollView
@@ -184,9 +331,13 @@ export default function StudentLecturerCourseViewScreen() {
           </TouchableOpacity>
           <Ionicons name="people" size={32} color="#ffffff" />
           <Text style={styles.headerTitle}>{name}</Text>
-          <Text style={styles.headerSubtitle}>
-            Shared by {MOCK_LECTURER.name} • {MOCK_LECTURER.institution}
-          </Text>
+          {!!lecturerName && (
+            <Text style={styles.headerSubtitle}>
+              {lecturerInstitution
+                ? `${lecturerName} • ${lecturerInstitution}`
+                : lecturerName}
+            </Text>
+          )}
           <View style={styles.readOnlyBadge}>
             <Ionicons name="lock-closed" size={14} color="#ffffff" />
             <Text style={styles.readOnlyBadgeText}>Read-Only</Text>
@@ -194,24 +345,59 @@ export default function StudentLecturerCourseViewScreen() {
         </View>
 
         {/* Request Join Button */}
-        {!hasRequested && (
+        {!isOwnerViewer && !requestPending && !alreadyParticipating && (
           <View style={styles.requestSection}>
             <TouchableOpacity
-              style={styles.requestButton}
+              style={[styles.requestButton, requestLoading && styles.requestButtonDisabled]}
               onPress={handleRequestJoin}
+              disabled={requestLoading}
             >
               <Ionicons name="person-add" size={20} color="#ffffff" />
-              <Text style={styles.requestButtonText}>Request to Join Course</Text>
+              <Text style={styles.requestButtonText}>{t('courseJoin.requestToJoin')}</Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {hasRequested && (
+        {requestPending && (
           <View style={styles.requestedSection}>
             <Ionicons name="checkmark-circle" size={24} color={ACCENT_GREEN} />
             <Text style={styles.requestedText}>
-              Join request sent. Waiting for lecturer approval.
+              {t('courseJoin.requestPending')}
             </Text>
+          </View>
+        )}
+
+        {alreadyParticipating && (
+          <View style={styles.requestedSection}>
+            <Ionicons name="checkmark-done-circle" size={24} color={ACCENT_GREEN} />
+            <Text style={styles.requestedText}>
+              {t('courseJoin.alreadyParticipating')}
+            </Text>
+          </View>
+        )}
+
+        {isOwnerViewer && (
+          <View style={styles.ownerActions}>
+            <View style={[styles.requestedSection, styles.requestedSectionOwner]}>
+              <Ionicons name="information-circle" size={24} color={ACCENT_GREEN} />
+              <Text style={styles.requestedText}>
+                {t('courseJoin.ownerUseLecturerTools')}
+              </Text>
+            </View>
+            {courseId ? (
+              <TouchableOpacity
+                style={styles.ownerToolsButton}
+                onPress={() =>
+                  router.push({
+                    pathname: '/lecturer/course/[courseId]' as any,
+                    params: { courseId, name },
+                  })
+                }
+              >
+                <Ionicons name="construct-outline" size={18} color="#ffffff" />
+                <Text style={styles.ownerToolsButtonText}>{t('courseJoin.openLecturerCourse')}</Text>
+              </TouchableOpacity>
+            ) : null}
           </View>
         )}
 
@@ -219,11 +405,24 @@ export default function StudentLecturerCourseViewScreen() {
         <View style={styles.filesCard}>
           <View style={styles.sectionHeader}>
             <Ionicons name="document-text" size={22} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>Teaching Materials</Text>
-            <Text style={styles.sectionSubtitle}>(Download Only)</Text>
+            <Text style={styles.sectionTitle}>{t('courseJoin.teachingMaterials')}</Text>
+            <Text style={styles.sectionSubtitle}>{t('courseJoin.downloadOnly')}</Text>
           </View>
 
-          {loadingFiles ? (
+          {!accessResolved ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator color={PRIMARY_GREEN} size="large" />
+              <Text style={styles.loadingText}>{t('common.loading')}</Text>
+            </View>
+          ) : !canViewMaterials ? (
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIconContainer}>
+                <Ionicons name="lock-closed-outline" size={64} color="#6b7280" />
+              </View>
+              <Text style={styles.emptyTitle}>{t('courseJoin.materialsLockedTitle')}</Text>
+              <Text style={styles.emptyText}>{t('courseJoin.materialsLockedSubtitle')}</Text>
+            </View>
+          ) : loadingFiles ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator color={PRIMARY_GREEN} size="large" />
               <Text style={styles.loadingText}>Loading files...</Text>
@@ -328,6 +527,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 4,
   },
+  requestButtonDisabled: {
+    opacity: 0.7,
+  },
   requestButtonText: {
     fontSize: 16,
     fontWeight: '600',
@@ -351,6 +553,30 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#111827',
     fontWeight: '500',
+  },
+  ownerActions: {
+    paddingHorizontal: 20,
+    paddingTop: 40,
+    paddingBottom: 12,
+    gap: 12,
+  },
+  requestedSectionOwner: {
+    marginHorizontal: 0,
+  },
+  ownerToolsButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: PRIMARY_GREEN,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+  },
+  ownerToolsButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#ffffff',
   },
   filesCard: {
     backgroundColor: '#ffffff',

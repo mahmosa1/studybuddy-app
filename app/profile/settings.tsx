@@ -1,22 +1,23 @@
 // app/profile/settings.tsx — Full-screen settings hub (opens from profile gear)
 import { auth } from '@/lib/firebaseConfig';
 import { useUser } from '@/lib/UserContext';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { signOut } from 'firebase/auth';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const ACCENT = '#047857';
-const LOGOUT_RED = '#ef4444';
 
 export default function ProfileSettingsScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const insets = useSafeAreaInsets();
   const { role } = useUser();
+  const { colors } = useAppTheme();
   const isHebrewUi = i18n.language === 'he';
   const currentLangLabel = i18n.language === 'he' ? t('profile.hebrew') : t('profile.english');
 
@@ -38,136 +39,171 @@ export default function ProfileSettingsScreen() {
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.back')}
-        >
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={[styles.title, isHebrewUi && styles.rtlText]}>{t('profile.settingsTitle')}</Text>
-        <View style={{ width: 40 }} />
+    <AppScreen>
+      <AppHeader title={t('profile.settingsTitle')} onBack={() => router.back()} />
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
       </View>
 
       <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity
-          style={[styles.row, isHebrewUi && styles.rtlRow]}
-          onPress={() => router.push('/profile/account-settings')}
-        >
-          <Ionicons name="person-circle-outline" size={22} color={ACCENT} />
-          <Text style={[styles.rowText, isHebrewUi && styles.rtlText]}>{t('accountSettingsScreen.menuTitle')}</Text>
-        </TouchableOpacity>
-
-        {role === 'student' && (
+        <AppCard style={[styles.menuCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <TouchableOpacity
-            style={[styles.row, isHebrewUi && styles.rtlRow]}
-            onPress={() => router.push('/profile/study-buddy-preferences')}
+            style={[styles.row, isHebrewUi && styles.rtlRow, { borderBottomColor: colors.border }]}
+            onPress={() => router.push('/profile/account-settings')}
           >
-            <Ionicons name="people-circle-outline" size={22} color={ACCENT} />
-            <Text style={[styles.rowText, isHebrewUi && styles.rtlText]}>{t('profile.studyBuddyPreferences')}</Text>
+            <View style={[styles.rowIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
+            </View>
+            <Text style={[styles.rowText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('accountSettingsScreen.menuTitle')}</Text>
+            <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textSecondary} />
           </TouchableOpacity>
-        )}
 
-        {role === 'student' && (
+          {role === 'student' && (
+            <TouchableOpacity
+              style={[styles.row, isHebrewUi && styles.rtlRow, { borderBottomColor: colors.border }]}
+              onPress={() => router.push('/profile/study-buddy-preferences')}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="people-circle-outline" size={20} color={colors.primary} />
+              </View>
+              <Text style={[styles.rowText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.studyBuddyPreferences')}</Text>
+              <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
-            style={[styles.row, isHebrewUi && styles.rtlRow]}
-            onPress={() => router.push('/tutor/apply')}
+            style={[styles.row, isHebrewUi && styles.rtlRow, { borderBottomColor: colors.border }]}
+            onPress={() => router.push('/profile/language')}
           >
-            <Ionicons name="school-outline" size={22} color={ACCENT} />
-            <Text style={[styles.rowText, isHebrewUi && styles.rtlText]}>{t('profile.tutorApplyButton')}</Text>
+            <View style={[styles.rowIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="language-outline" size={20} color={colors.primary} />
+            </View>
+            <View style={styles.rowBody}>
+              <Text style={[styles.rowText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.selectLanguage')}</Text>
+              <Text style={[styles.rowHint, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                {t('profile.settingsMenuLanguageHint', { lang: currentLangLabel })}
+              </Text>
+            </View>
+            <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textSecondary} />
           </TouchableOpacity>
-        )}
 
-        <View style={styles.divider} />
+          <TouchableOpacity
+            style={[styles.row, isHebrewUi && styles.rtlRow, { borderBottomColor: colors.border }]}
+            onPress={() => router.push('/feed/saved')}
+          >
+            <View style={[styles.rowIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="bookmark-outline" size={20} color={colors.primary} />
+            </View>
+            <Text style={[styles.rowText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('feed.savedPosts')}</Text>
+            <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textSecondary} />
+          </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.row, isHebrewUi && styles.rtlRow]}
-          onPress={() => router.push('/profile/language')}
-        >
-          <Ionicons name="language-outline" size={22} color={ACCENT} />
-          <View style={styles.rowBody}>
-            <Text style={[styles.rowText, isHebrewUi && styles.rtlText]}>{t('profile.selectLanguage')}</Text>
-            <Text style={[styles.rowHint, isHebrewUi && styles.rtlText]}>
-              {t('profile.settingsMenuLanguageHint', { lang: currentLangLabel })}
-            </Text>
-          </View>
-        </TouchableOpacity>
+          {role === 'student' && (
+            <TouchableOpacity
+              style={[styles.row, styles.lastRow, isHebrewUi && styles.rtlRow]}
+              onPress={() => router.push('/tutor/apply')}
+            >
+              <View style={[styles.rowIconWrap, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="school-outline" size={20} color={colors.primary} />
+              </View>
+              <Text style={[styles.rowText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.tutorApplyButton')}</Text>
+              <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={16} color={colors.textSecondary} />
+            </TouchableOpacity>
+          )}
+        </AppCard>
 
-        <TouchableOpacity
-          style={[styles.row, isHebrewUi && styles.rtlRow]}
-          onPress={() => router.push('/feed/saved')}
-        >
-          <Ionicons name="bookmark-outline" size={22} color={ACCENT} />
-          <Text style={[styles.rowText, isHebrewUi && styles.rtlText]}>{t('feed.savedPosts')}</Text>
-        </TouchableOpacity>
-
-        <View style={styles.divider} />
-
-        <TouchableOpacity
-          style={[styles.row, styles.logoutRow, isHebrewUi && styles.rtlRow]}
-          onPress={handleLogout}
-        >
-          <Ionicons name="log-out-outline" size={22} color={LOGOUT_RED} />
-          <Text style={[styles.logoutText, isHebrewUi && styles.rtlText]}>{t('auth.logout')}</Text>
-        </TouchableOpacity>
+        <AppCard style={[styles.logoutCard, { backgroundColor: colors.surface, borderColor: colors.dangerBorder }]}>
+          <TouchableOpacity
+            style={[styles.logoutRow, isHebrewUi && styles.rtlRow, { backgroundColor: colors.dangerSurface }]}
+            onPress={handleLogout}
+          >
+            <Ionicons name="log-out-outline" size={20} color={colors.danger} />
+            <Text style={[styles.logoutText, { color: colors.danger }, isHebrewUi && styles.rtlText]}>{t('auth.logout')}</Text>
+          </TouchableOpacity>
+        </AppCard>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f9fafb' },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#fff',
-  },
+  screen: { flex: 1 },
   rtlRow: { flexDirection: 'row-reverse' },
   rtlText: { textAlign: 'right', writingDirection: 'rtl' },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  list: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 2,
+    gap: spacing.sm,
+    paddingBottom: 40,
   },
-  title: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    textAlign: 'center',
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
   },
-  list: { paddingVertical: 8 },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  menuCard: {
+    padding: 0,
+    overflow: 'hidden',
+  },
   row: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 14,
+    gap: 12,
     paddingVertical: 16,
-    paddingHorizontal: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#f3f4f6',
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+  },
+  rowIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lastRow: {
+    borderBottomWidth: 0,
+  },
+  rowBody: { flex: 1 },
+  rowText: { fontSize: 15, fontWeight: '600', flex: 1 },
+  rowHint: { fontSize: 12, marginTop: 3, fontWeight: '500' },
+  logoutCard: {
+    padding: 10,
   },
   logoutRow: {
     borderBottomWidth: 0,
-    marginBottom: 24,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  rowBody: { flex: 1 },
-  rowText: { fontSize: 16, fontWeight: '600', color: '#111827', flex: 1 },
-  rowHint: { fontSize: 13, color: '#6b7280', marginTop: 4, fontWeight: '500' },
   logoutText: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: LOGOUT_RED,
     flex: 1,
   },
-  divider: { height: 10, backgroundColor: '#f9fafb' },
 });

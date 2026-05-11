@@ -1,4 +1,11 @@
 // app/admin/courses.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,6 +21,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
+  I18nManager,
   ScrollView,
   StyleSheet,
   Text,
@@ -29,14 +37,20 @@ type CourseItem = {
   institution?: string;
   ownerUid: string;
   ownerName?: string;
+  createdAt?: any;
 };
+
+type LocalCourseFilter = 'all' | 'withOwner' | 'withoutOwner' | 'withInstitution' | 'withoutInstitution';
 
 export default function AdminCoursesManagementScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const isRtl = I18nManager.isRTL;
   const [courses, setCourses] = useState<CourseItem[]>([]);
   const [filteredCourses, setFilteredCourses] = useState<CourseItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState<LocalCourseFilter>('all');
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -45,18 +59,35 @@ export default function AdminCoursesManagementScreen() {
   }, []);
 
   useEffect(() => {
-    if (searchQuery.trim()) {
-      const filtered = courses.filter(
+    const searchMatched = searchQuery.trim()
+      ? courses.filter(
         (course) =>
           course.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (course.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-          (course.ownerName || '').toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredCourses(filtered);
-    } else {
-      setFilteredCourses(courses);
-    }
-  }, [searchQuery, courses]);
+          (course.ownerName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (course.institution || '').toLowerCase().includes(searchQuery.toLowerCase())
+      )
+      : courses;
+
+    const filterMatched = searchMatched.filter((course) => {
+      const hasOwner = Boolean((course.ownerName || '').trim());
+      const hasInstitution = Boolean((course.institution || '').trim());
+      switch (selectedFilter) {
+        case 'withOwner':
+          return hasOwner;
+        case 'withoutOwner':
+          return !hasOwner;
+        case 'withInstitution':
+          return hasInstitution;
+        case 'withoutInstitution':
+          return !hasInstitution;
+        default:
+          return true;
+      }
+    });
+
+    setFilteredCourses(filterMatched);
+  }, [searchQuery, selectedFilter, courses]);
 
   const loadCourses = async () => {
     try {
@@ -87,6 +118,7 @@ export default function AdminCoursesManagementScreen() {
           institution: data.institution,
           ownerUid: data.ownerUid,
           ownerName,
+          createdAt: data.createdAt,
         });
       }
 
@@ -127,94 +159,140 @@ export default function AdminCoursesManagementScreen() {
   };
 
   const renderCourse = ({ item }: { item: CourseItem }) => (
-    <View style={styles.card}>
-      <View style={styles.courseHeader}>
-        <View style={styles.courseIconContainer}>
-          <Ionicons name="book" size={24} color={ACCENT_GREEN} />
+    <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={[styles.cardAccentLine, { backgroundColor: colors.primary }]} />
+      <View style={[styles.courseHeader, isRtl && styles.rtlRow]}>
+        <View style={[styles.courseIconContainer, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+          <Ionicons name="book" size={22} color={colors.primary} />
         </View>
         <View style={styles.courseInfo}>
-          <Text style={styles.courseName}>{item.name}</Text>
+          <Text style={[styles.courseName, { color: colors.textPrimary }, isRtl && styles.rtlText]}>{item.name}</Text>
           {item.description && (
-            <Text style={styles.courseDescription} numberOfLines={2}>
+            <Text style={[styles.courseDescription, { color: colors.textSecondary }, isRtl && styles.rtlText]} numberOfLines={2}>
               {item.description}
             </Text>
           )}
         </View>
       </View>
 
-      <View style={styles.courseMetaContainer}>
+      <View style={[styles.courseMetaContainer, { borderTopColor: colors.border }, isRtl && styles.rtlRow]}>
         {item.institution && (
-          <View style={styles.metaTag}>
-            <Ionicons name="business-outline" size={12} color="#6b7280" />
-            <Text style={styles.metaTagText}>{item.institution}</Text>
+          <View style={[styles.metaTag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="business-outline" size={12} color={colors.textSecondary} />
+            <Text style={[styles.metaTagText, { color: colors.textSecondary }]}>{item.institution}</Text>
           </View>
         )}
-        <View style={styles.metaTag}>
-          <Ionicons name="person-outline" size={12} color="#6b7280" />
-          <Text style={styles.metaTagText}>{item.ownerName}</Text>
+        <View style={[styles.metaTag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+          <Ionicons name="person-outline" size={12} color={colors.textSecondary} />
+          <Text style={[styles.metaTagText, { color: colors.textSecondary }]}>{item.ownerName}</Text>
         </View>
+        {item.createdAt?.toDate?.() instanceof Date && (
+          <View style={[styles.metaTag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="calendar-outline" size={12} color={colors.textSecondary} />
+            <Text style={[styles.metaTagText, { color: colors.textSecondary }]}>
+              {item.createdAt.toDate().toLocaleDateString()}
+            </Text>
+          </View>
+        )}
       </View>
 
       <TouchableOpacity
-        style={[styles.deleteButton, deletingId === item.id && styles.deleteButtonDisabled]}
+        style={[
+          styles.deleteButton,
+          {
+            backgroundColor: colors.surfaceMuted,
+            borderColor: colors.danger,
+          },
+          deletingId === item.id && styles.deleteButtonDisabled,
+        ]}
         onPress={() => handleDeleteCourse(item.id, item.name)}
         disabled={deletingId === item.id}
       >
         {deletingId === item.id ? (
-          <ActivityIndicator color="#ffffff" />
+          <ActivityIndicator color={colors.danger} />
         ) : (
           <>
-            <Ionicons name="trash-outline" size={18} color="#ffffff" />
-            <Text style={styles.deleteButtonText}>{t('admin.deleteCourse')}</Text>
+            <Ionicons name="trash-outline" size={15} color={colors.danger} />
+            <Text style={[styles.deleteButtonText, { color: colors.danger }]}>{t('admin.deleteCourse')}</Text>
           </>
         )}
       </TouchableOpacity>
-    </View>
+    </AppCard>
   );
 
+  const filterOptions: Array<{ key: LocalCourseFilter; label: string }> = [
+    { key: 'all', label: t('admin.courseFilters.all') },
+    { key: 'withOwner', label: t('admin.courseFilters.withOwner') },
+    { key: 'withoutOwner', label: t('admin.courseFilters.withoutOwner') },
+    { key: 'withInstitution', label: t('admin.courseFilters.withInstitution') },
+    { key: 'withoutInstitution', label: t('admin.courseFilters.withoutInstitution') },
+  ];
+
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={t('admin.courseManagement')} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonHeader}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <Ionicons name="library" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{t('admin.courseManagement')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('admin.courseManagementDescription')}
-          </Text>
+        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="library-outline" size={14} color={colors.primary} />
+            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.courseManagement')}</Text>
+          </View>
+          <SectionTitle title={t('admin.courseManagement')} subtitle={t('admin.courseManagementDescription')} />
         </View>
 
-        {/* Search Box */}
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBox}>
-            <Ionicons name="search-outline" size={20} color="#6b7280" style={styles.searchIcon} />
+        <AppCard style={[styles.searchPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.searchBox, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="search-outline" size={18} color={colors.textSecondary} style={[styles.searchIcon, isRtl && styles.rtlSearchIcon]} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, { color: colors.textPrimary, textAlign: isRtl ? 'right' : 'left' }]}
               placeholder={t('admin.searchCoursesPlaceholder')}
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textSecondary}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={20} color="#6b7280" />
+                <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
-        </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.filterRow, isRtl && styles.rtlRow]}
+            style={styles.filterScroll}
+          >
+            {filterOptions.map((option) => {
+              const selected = option.key === selectedFilter;
+              return (
+                <TouchableOpacity
+                  key={option.key}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: selected ? colors.primary : colors.surfaceMuted,
+                      borderColor: selected ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={() => setSelectedFilter(option.key)}
+                >
+                  <Text style={[styles.filterChipText, { color: selected ? colors.textOnPrimary : colors.textPrimary }]}>
+                    {option.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </AppCard>
 
         {/* Results Count */}
         {!loading && filteredCourses.length > 0 && (
-          <Text style={styles.resultsCount}>
+          <Text style={[styles.resultsCount, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
             {filteredCourses.length === 1
               ? t('admin.courseFound', { count: filteredCourses.length })
               : t('admin.coursesFound', { count: filteredCourses.length })}
@@ -223,25 +301,16 @@ export default function AdminCoursesManagementScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={PRIMARY_GREEN} />
-            <Text style={styles.loadingText}>{t('admin.loadingCourses')}</Text>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('admin.loadingCourses')}</Text>
           </View>
         ) : filteredCourses.length === 0 ? (
-          <View style={styles.emptyState}>
-            <Ionicons
-              name={searchQuery ? "search-outline" : "book-outline"}
-              size={64}
-              color="#6b7280"
+          <AppCard style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <EmptyState
+              title={(searchQuery.trim() || selectedFilter !== 'all') ? t('admin.noCoursesFound') : t('admin.noCoursesInSystem')}
+              subtitle={(searchQuery.trim() || selectedFilter !== 'all') ? t('admin.tryAdjustingSearch') : t('admin.coursesWillAppear')}
             />
-            <Text style={styles.emptyTitle}>
-              {searchQuery ? t('admin.noCoursesFound') : t('admin.noCoursesInSystem')}
-            </Text>
-            <Text style={styles.emptyText}>
-              {searchQuery
-                ? t('admin.tryAdjustingSearch')
-                : t('admin.coursesWillAppear')}
-            </Text>
-          </View>
+          </AppCard>
         ) : (
           <View style={styles.coursesList}>
             {filteredCourses.map((item) => (
@@ -250,143 +319,127 @@ export default function AdminCoursesManagementScreen() {
           </View>
         )}
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   scrollContent: {
-    paddingBottom: 40,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
-  backButtonHeader: {
+  heroGlowPrimary: {
     position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    top: -72,
+    right: -38,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    bottom: -52,
+    left: -26,
+    opacity: 0.1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+    marginBottom: spacing.sm,
   },
-  headerTitle: {
-    fontSize: 28,
+  heroBadgeText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#ffffff',
+  },
+  searchPanel: {
+    marginBottom: spacing.sm,
+  },
+  filterScroll: {
     marginTop: 10,
-    marginBottom: 5,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    textAlign: 'center',
-    paddingHorizontal: 20,
+  filterRow: {
+    gap: 8,
+    paddingHorizontal: 2,
   },
-  searchContainer: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 16,
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    paddingHorizontal: 12,
+    minHeight: 46,
   },
   searchIcon: {
-    marginRight: 10,
+    marginRight: 8,
+  },
+  rtlSearchIcon: {
+    marginRight: 0,
+    marginLeft: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#111827',
   },
   resultsCount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#6b7280',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: spacing.sm,
+    paddingHorizontal: 4,
   },
   loadingContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
-    marginTop: 20,
+    paddingVertical: 42,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 14,
-    color: '#6b7280',
   },
   emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    marginTop: 20,
-    marginHorizontal: 20,
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#374151',
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    marginTop: spacing.sm,
   },
   coursesList: {
-    paddingHorizontal: 20,
+    gap: 10,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    overflow: 'hidden',
+  },
+  cardAccentLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    opacity: 0.65,
   },
   courseHeader: {
     flexDirection: 'row',
@@ -394,25 +447,23 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   courseIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#dbeafe',
+    width: 50,
+    height: 50,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    borderWidth: 1,
   },
   courseInfo: {
     flex: 1,
   },
   courseName: {
-    color: '#111827',
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     marginBottom: 6,
   },
   courseDescription: {
-    color: '#6b7280',
     fontSize: 13,
     lineHeight: 18,
   },
@@ -421,45 +472,45 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 8,
     marginBottom: 16,
-    paddingTop: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#374151',
   },
   metaTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#374151',
-    borderRadius: 8,
-    paddingVertical: 6,
+    borderRadius: 999,
+    paddingVertical: 5,
     paddingHorizontal: 10,
+    borderWidth: 1,
   },
   metaTagText: {
     fontSize: 12,
-    color: '#6b7280',
     marginLeft: 6,
     fontWeight: '500',
   },
   deleteButton: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ef4444',
-    paddingVertical: 14,
-    borderRadius: 12,
-    gap: 8,
-    shadowColor: '#ef4444',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    gap: 6,
+    borderWidth: 1,
   },
   deleteButtonDisabled: {
     opacity: 0.7,
   },
   deleteButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
   },
 });
 

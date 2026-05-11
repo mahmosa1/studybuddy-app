@@ -6,6 +6,11 @@ service cloud.firestore {
     function isAuthenticated() {
       return request.auth != null;
     }
+
+    function isProtectedPath() {
+      return request.path.matches('/databases/.*/documents/courseJoinRequests/.*') ||
+        request.path.matches('/databases/.*/documents/courses/.*');
+    }
     
     // Users collection - CRITICAL for login flow
     match /users/{userId} {
@@ -32,10 +37,82 @@ service cloud.firestore {
       // Users can create courses
       allow create: if isAuthenticated() && request.resource.data.ownerUid == request.auth.uid;
       
-      // Only course owner can update/delete
+      // Only course owner/lecturer can update/delete
       allow update, delete: if isAuthenticated() && 
-        (resource.data.ownerUid == request.auth.uid || 
-         request.resource.data.ownerUid == request.auth.uid);
+        (resource.data.ownerUid == request.auth.uid ||
+         (resource.data.lecturerUid is string && resource.data.lecturerUid == request.auth.uid));
+    }
+
+    // Course join requests
+    match /courseJoinRequests/{requestId} {
+      function hasRequiredCreateFields() {
+        return request.resource.data.keys().hasAll([
+          'courseId',
+          'courseName',
+          'lecturerUid',
+          'studentUid',
+          'studentName',
+          'studentEmail',
+          'status',
+          'createdAt',
+          'updatedAt',
+          'approvedAt',
+          'rejectedAt',
+          'reviewedByUid'
+        ]);
+      }
+
+      function isStudentCreateValid() {
+        return isAuthenticated() &&
+          hasRequiredCreateFields() &&
+          request.resource.data.studentUid == request.auth.uid &&
+          request.resource.data.lecturerUid != request.auth.uid &&
+          request.resource.data.status == 'pending' &&
+          request.resource.data.approvedAt == null &&
+          request.resource.data.rejectedAt == null &&
+          request.resource.data.reviewedByUid == null;
+      }
+
+      function canReadRequest() {
+        return isAuthenticated() && (
+          resource.data.studentUid == request.auth.uid ||
+          resource.data.lecturerUid == request.auth.uid
+        );
+      }
+
+      function immutableCoreFieldsUnchanged() {
+        return request.resource.data.courseId == resource.data.courseId &&
+          request.resource.data.courseName == resource.data.courseName &&
+          request.resource.data.lecturerUid == resource.data.lecturerUid &&
+          request.resource.data.studentUid == resource.data.studentUid &&
+          request.resource.data.studentName == resource.data.studentName &&
+          request.resource.data.studentEmail == resource.data.studentEmail &&
+          request.resource.data.createdAt == resource.data.createdAt;
+      }
+
+      function isLecturerReviewTransitionAllowed() {
+        return isAuthenticated() &&
+          resource.data.lecturerUid == request.auth.uid &&
+          resource.data.status == 'pending' &&
+          immutableCoreFieldsUnchanged() &&
+          request.resource.data.updatedAt != resource.data.updatedAt &&
+          request.resource.data.reviewedByUid == request.auth.uid &&
+          (
+            (
+              request.resource.data.status == 'approved' &&
+              request.resource.data.approvedAt != null
+            ) ||
+            (
+              request.resource.data.status == 'rejected' &&
+              request.resource.data.rejectedAt != null
+            )
+          );
+      }
+
+      allow create: if isStudentCreateValid();
+      allow read: if canReadRequest();
+      allow update: if isLecturerReviewTransitionAllowed();
+      allow delete: if false;
     }
     
     // Course files collection
@@ -168,7 +245,7 @@ service cloud.firestore {
     
     // Allow all other collections for authenticated users (for future features)
     match /{document=**} {
-      allow read, write: if isAuthenticated();
+      allow read, write: if isAuthenticated() && !isProtectedPath();
     }
   }
 }

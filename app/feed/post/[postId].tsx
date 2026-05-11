@@ -1,4 +1,9 @@
 // app/feed/post/[postId].tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
 import { createActivityNotification } from '@/lib/notificationService';
@@ -22,6 +27,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Linking,
@@ -32,8 +38,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-
-const PRIMARY_GREEN = '#047857';
 
 type StudyPost = {
   id: string;
@@ -60,6 +64,14 @@ type StudyPost = {
   isSaved: boolean;
 };
 
+const attachmentLooksLikeImage = (file: { name: string; url: string; mimeType?: string | null }) => {
+  const mime = String(file.mimeType || '').toLowerCase();
+  if (mime.startsWith('image/')) return true;
+  const u = String(file.url || '').toLowerCase();
+  const n = String(file.name || '').toLowerCase();
+  return /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/.test(u) || /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/.test(n);
+};
+
 type PostComment = {
   id: string;
   authorName: string;
@@ -69,13 +81,6 @@ type PostComment = {
   createdAtLabel: string;
   likesCount: number;
   isLiked: boolean;
-};
-
-const TYPE_COLORS: Record<StudyPost['type'], string> = {
-  Summary: '#3b82f6',
-  Tip: '#f59e0b',
-  Question: '#8b5cf6',
-  'Exam Info': '#ef4444',
 };
 
 const relativeTime = (date: Date): string => {
@@ -90,7 +95,9 @@ const relativeTime = (date: Date): string => {
 
 export default function StudyPostDetailsScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const isHebrewUi = i18n.language === 'he';
   const { firebaseUser } = useUser();
   const { postId } = useLocalSearchParams<{ postId: string | string[] }>();
   const [post, setPost] = useState<StudyPost | null>(null);
@@ -100,6 +107,21 @@ export default function StudyPostDetailsScreen() {
   const [commentText, setCommentText] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
   const commentInputRef = useRef<TextInput | null>(null);
+
+  const typeBadgeBorder = (type: StudyPost['type']) => {
+    switch (type) {
+      case 'Summary':
+        return colors.primary;
+      case 'Tip':
+        return colors.warning;
+      case 'Question':
+        return colors.accent;
+      case 'Exam Info':
+        return colors.danger;
+      default:
+        return colors.border;
+    }
+  };
 
   const resolvedPostId = useMemo(
     () => (Array.isArray(postId) ? postId[0] : postId),
@@ -404,512 +426,686 @@ export default function StudyPostDetailsScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.stateText}>{t('common.loading')}</Text>
-      </View>
+      <AppScreen>
+        <AppHeader title={t('feed.postDetailsTitle')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+        </View>
+        <View style={[styles.center, { flex: 1 }]}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={[styles.stateText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+            {t('common.loading')}
+          </Text>
+        </View>
+      </AppScreen>
     );
   }
 
   if (!post) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.stateText}>{t('feed.noPosts')}</Text>
-      </View>
+      <AppScreen>
+        <AppHeader title={t('feed.postDetailsTitle')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+        </View>
+        <View style={[styles.center, { flex: 1, paddingHorizontal: layout.screenPadding }]}>
+          <AppCard style={{ borderColor: colors.border, paddingVertical: spacing.xl, paddingHorizontal: spacing.lg }}>
+            <Text style={[styles.stateText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('feed.noPosts')}
+            </Text>
+          </AppCard>
+        </View>
+      </AppScreen>
     );
   }
 
+  const typeLabel = t(`feed.postType.${post.type.toLowerCase().replace(' ', '')}` as any);
+
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Post Details</Text>
-        <View style={styles.headerActions}>
-          <TouchableOpacity onPress={handleReport}>
-            <Ionicons name="flag-outline" size={24} color="#6b7280" />
+    <AppScreen>
+      <AppHeader
+        title={t('feed.postDetailsTitle')}
+        onBack={() => router.back()}
+        rightSlot={
+          <TouchableOpacity onPress={handleReport} accessibilityRole="button" hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+            <Ionicons name="flag-outline" size={22} color={colors.textSecondary} />
           </TouchableOpacity>
-        </View>
+        }
+      />
+
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Author Info */}
-        <View style={styles.authorSection}>
-          <TouchableOpacity
-            style={styles.authorPressable}
-            onPress={() => {
-              if (!post.authorUid) return;
-              router.push(`/user-profile/${post.authorUid}` as any);
-            }}
-            activeOpacity={0.75}
-          >
-            <View style={styles.avatar}>
-              {post.authorAvatarUrl ? (
-                <Image source={{ uri: post.authorAvatarUrl }} style={styles.avatarImage} />
-              ) : (
-                <Ionicons name="person" size={24} color={PRIMARY_GREEN} />
-              )}
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
+      >
+        <AppCard style={[styles.postCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={[styles.postTopRow, isHebrewUi && styles.rtlRow]}>
+            <TouchableOpacity
+              style={[styles.authorBlock, isHebrewUi && styles.rtlRow]}
+              onPress={() => {
+                if (!post.authorUid) return;
+                router.push(`/user-profile/${post.authorUid}` as any);
+              }}
+              activeOpacity={0.75}
+            >
+              <View style={[styles.avatar, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                {post.authorAvatarUrl ? (
+                  <Image source={{ uri: post.authorAvatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Ionicons name="person" size={22} color={colors.primary} />
+                )}
+              </View>
+              <View style={[styles.authorTextStack, isHebrewUi && styles.rtlTextBlock]}>
+                <Text style={[styles.authorName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {post.authorName}
+                </Text>
+                {!!post.authorInstitution ? (
+                  <Text style={[styles.authorInstitution, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                    {post.authorInstitution}
+                  </Text>
+                ) : null}
+              </View>
+            </TouchableOpacity>
+            <View
+              style={[
+                styles.typeBadge,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: typeBadgeBorder(post.type),
+                },
+              ]}
+            >
+              <Text style={[styles.typeBadgeText, { color: colors.textPrimary }]} numberOfLines={1}>
+                {typeLabel}
+              </Text>
             </View>
-            <View style={styles.authorInfo}>
-              <Text style={styles.authorName}>{post.authorName}</Text>
-              <Text style={styles.authorInstitution}>{post.authorInstitution}</Text>
+          </View>
+
+          {post.courseName ? (
+            <View style={[styles.courseTag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="book-outline" size={14} color={colors.primary} />
+              <Text style={[styles.courseTagText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                {post.courseName}
+              </Text>
             </View>
-          </TouchableOpacity>
-          <View style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[post.type] }]}>
-            <Text style={styles.typeBadgeText}>{post.type}</Text>
-          </View>
-        </View>
+          ) : null}
 
-        {/* Course Name */}
-        {post.courseName && (
-          <View style={styles.courseTag}>
-            <Ionicons name="book" size={16} color={PRIMARY_GREEN} />
-            <Text style={styles.courseTagText}>{post.courseName}</Text>
-          </View>
-        )}
+          <Text style={[styles.title, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{post.title}</Text>
+          <Text style={[styles.contentText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{post.content}</Text>
 
-        {/* Title */}
-        <Text style={styles.title}>{post.title}</Text>
-
-        {/* Full Content */}
-        <Text style={styles.contentText}>{post.content}</Text>
-
-        {/* Tags */}
-        {post.tags.length > 0 && (
-          <View style={styles.tagsSection}>
-            <Text style={styles.sectionTitle}>Tags</Text>
-            <View style={styles.tagsContainer}>
+          {post.tags.length > 0 ? (
+            <View style={[styles.tagsContainer, isHebrewUi && styles.rtlRow]}>
               {post.tags.map((tag, idx) => (
-                <View key={idx} style={styles.tag}>
-                  <Text style={styles.tagText}>#{tag}</Text>
+                <View key={idx} style={[styles.tag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                  <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{tag}</Text>
                 </View>
               ))}
             </View>
-          </View>
-        )}
+          ) : null}
 
-        {/* Attachments */}
-        {post.attachments && post.attachments.length > 0 && (
-          <View style={styles.attachmentsSection}>
-            <Text style={styles.sectionTitle}>Attachments</Text>
-            {post.attachments.map((file, idx) => (
-              <TouchableOpacity
-                key={idx}
-                style={styles.attachmentItem}
-                onPress={() => {
-                  if (!file?.url) return;
-                  Linking.openURL(file.url).catch(() => {
-                    Alert.alert(t('common.error'), 'Could not open attachment.');
-                  });
-                }}
-              >
-                <Ionicons name="document" size={20} color={PRIMARY_GREEN} />
-                <Text style={styles.attachmentText}>{file?.name || 'attachment'}</Text>
-                <Ionicons name="download-outline" size={20} color="#6b7280" />
+          {post.attachments && post.attachments.length > 0 ? (
+            <View style={styles.attachmentsBlock}>
+              {post.attachments.map((file, idx) =>
+                attachmentLooksLikeImage(file) ? (
+                  <TouchableOpacity
+                    key={idx}
+                    activeOpacity={0.9}
+                    onPress={() => {
+                      if (!file?.url) return;
+                      Linking.openURL(file.url).catch(() => {
+                        Alert.alert(t('common.error'), 'Could not open attachment.');
+                      });
+                    }}
+                  >
+                    <View style={[styles.attachmentImageWrap, { borderColor: colors.border }]}>
+                      <Image source={{ uri: file.url }} style={styles.attachmentImage} resizeMode="cover" />
+                    </View>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    key={idx}
+                    style={[
+                      styles.attachmentItem,
+                      { borderColor: colors.border, backgroundColor: colors.surfaceMuted },
+                      isHebrewUi && styles.rtlRow,
+                    ]}
+                    onPress={() => {
+                      if (!file?.url) return;
+                      Linking.openURL(file.url).catch(() => {
+                        Alert.alert(t('common.error'), 'Could not open attachment.');
+                      });
+                    }}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+                    <Text style={[styles.attachmentText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                      {file?.name || 'attachment'}
+                    </Text>
+                    <Ionicons name="open-outline" size={18} color={colors.textSecondary} />
+                  </TouchableOpacity>
+                )
+              )}
+            </View>
+          ) : null}
+
+          <View style={[styles.postFooter, { borderTopColor: colors.border }, isHebrewUi && styles.rtlRow]}>
+            <Text style={[styles.footerTime, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{post.createdAt}</Text>
+            <View style={styles.footerStatsRow}>
+              <TouchableOpacity style={styles.statItem} onPress={handleLike} activeOpacity={0.75} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
+                <Ionicons
+                  name={post.isLiked ? 'heart' : 'heart-outline'}
+                  size={18}
+                  color={post.isLiked ? colors.danger : colors.textSecondary}
+                />
+                <Text style={[styles.statLine, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {post.likesCount} {t('feed.likesLabel')}
+                </Text>
               </TouchableOpacity>
-            ))}
+              <TouchableOpacity
+                style={styles.statItem}
+                onPress={() => commentInputRef.current?.focus()}
+                activeOpacity={0.75}
+                hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}
+              >
+                <Ionicons name="chatbubble-outline" size={17} color={colors.textSecondary} />
+                <Text style={[styles.statLine, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {post.commentsCount} {t('feed.commentsLabel')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.statItem} onPress={handleSave} activeOpacity={0.75} hitSlop={{ top: 6, bottom: 6, left: 4, right: 4 }}>
+                <Ionicons
+                  name={post.isSaved ? 'bookmark' : 'bookmark-outline'}
+                  size={18}
+                  color={post.isSaved ? colors.warning : colors.textSecondary}
+                />
+                <Text style={[styles.statLine, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {post.savesCount} {t('feed.savesLabel')}
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
-        )}
+        </AppCard>
 
-        {/* Stats */}
-        <View style={styles.statsSection}>
-          <TouchableOpacity style={styles.statItem} onPress={handleLike} activeOpacity={0.75}>
-            <Ionicons
-              name={post.isLiked ? 'heart' : 'heart-outline'}
-              size={20}
-              color={post.isLiked ? '#ef4444' : '#6b7280'}
-            />
-            <Text style={styles.statText}>{post.likesCount} likes</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.statItem}
-            onPress={() => commentInputRef.current?.focus()}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name="chatbubble-outline"
-              size={20}
-              color="#6b7280"
-            />
-            <Text style={styles.statText}>{post.commentsCount} comments</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.statItem} onPress={handleSave} activeOpacity={0.75}>
-            <Ionicons
-              name={post.isSaved ? 'bookmark' : 'bookmark-outline'}
-              size={20}
-              color={post.isSaved ? PRIMARY_GREEN : '#6b7280'}
-            />
-            <Text style={styles.statText}>{post.savesCount} saves</Text>
-          </TouchableOpacity>
-          <Text style={styles.timeText}>{post.createdAt}</Text>
-        </View>
+        <Text style={[styles.commentsSectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+          {t('feed.commentsSection')}
+        </Text>
 
-        <View style={styles.commentsSection}>
-          <Text style={styles.sectionTitle}>Comments</Text>
+        <AppCard style={[styles.composerCard, { borderColor: colors.border }]}>
           <View style={styles.commentInputRow}>
             <TextInput
               ref={commentInputRef}
-              style={styles.commentInput}
+              style={[
+                styles.commentInput,
+                { color: colors.textPrimary, backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                isHebrewUi ? styles.commentInputRtl : styles.commentInputLtr,
+              ]}
               value={commentText}
               onChangeText={setCommentText}
-              placeholder="Write a comment..."
-              placeholderTextColor="#9ca3af"
+              placeholder={t('feed.writeCommentPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
               multiline
             />
             <TouchableOpacity
-              style={[styles.commentSendButton, (!commentText.trim() || sendingComment) && styles.commentSendButtonDisabled]}
+              style={[
+                styles.commentSendButton,
+                { backgroundColor: colors.primary },
+                (!commentText.trim() || sendingComment) && styles.commentSendButtonDisabled,
+              ]}
               onPress={handleAddComment}
               disabled={!commentText.trim() || sendingComment}
+              activeOpacity={0.85}
             >
-              <Ionicons name="send" size={16} color="#ffffff" />
+              {sendingComment ? (
+                <ActivityIndicator size="small" color={colors.textOnPrimary} />
+              ) : (
+                <Ionicons name="send" size={16} color={colors.textOnPrimary} />
+              )}
             </TouchableOpacity>
           </View>
+        </AppCard>
 
-          {loadingComments ? (
-            <Text style={styles.commentsStateText}>Loading comments...</Text>
-          ) : comments.length ? (
-            <View style={styles.commentsList}>
-              {comments.map((comment) => (
-                <TouchableOpacity
-                  key={comment.id}
-                  style={styles.commentItem}
-                  activeOpacity={0.92}
-                  onLongPress={() => handleDeleteComment(comment)}
-                  delayLongPress={300}
-                >
-                  <View style={styles.commentAvatar}>
-                    {comment.authorAvatarUrl ? (
-                      <Image source={{ uri: comment.authorAvatarUrl }} style={styles.commentAvatarImage} />
-                    ) : (
-                      <Ionicons name="person" size={14} color={PRIMARY_GREEN} />
-                    )}
-                  </View>
-                  <View style={styles.commentBody}>
-                    <View style={styles.commentHeader}>
-                      <Text style={styles.commentAuthor}>{comment.authorName}</Text>
-                      <Text style={styles.commentTime}>{comment.createdAtLabel}</Text>
+        {loadingComments ? (
+          <View style={styles.commentsLoading}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={[styles.commentsStateText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+              {t('feed.loadingComments')}
+            </Text>
+          </View>
+        ) : comments.length ? (
+          <View style={styles.commentsList}>
+            {comments.map((comment) => (
+              <TouchableOpacity
+                key={comment.id}
+                activeOpacity={0.92}
+                onLongPress={() => handleDeleteComment(comment)}
+                delayLongPress={300}
+                style={styles.commentCardWrap}
+              >
+                <AppCard style={[styles.commentCard, { borderColor: colors.border }]}>
+                  <View style={styles.commentRow}>
+                    <View style={[styles.commentAvatar, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                      {comment.authorAvatarUrl ? (
+                        <Image source={{ uri: comment.authorAvatarUrl }} style={styles.commentAvatarImage} />
+                      ) : (
+                        <Ionicons name="person" size={14} color={colors.primary} />
+                      )}
                     </View>
-                    <Text style={styles.commentText}>{comment.text}</Text>
+                    <View style={styles.commentMain}>
+                      <View style={[styles.commentHeader, isHebrewUi && styles.rtlRow]}>
+                        <Text style={[styles.commentAuthor, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                          {comment.authorName}
+                        </Text>
+                        <Text style={[styles.commentTime, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                          {comment.createdAtLabel}
+                        </Text>
+                      </View>
+                      <Text style={[styles.commentText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{comment.text}</Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.commentLikeButton}
+                      onPress={() => handleToggleCommentLike(comment)}
+                      activeOpacity={0.75}
+                      hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+                    >
+                      <Ionicons
+                        name={comment.isLiked ? 'heart' : 'heart-outline'}
+                        size={16}
+                        color={comment.isLiked ? colors.danger : colors.textSecondary}
+                      />
+                      <Text style={[styles.commentLikeText, { color: colors.textSecondary }, comment.isLiked && { color: colors.danger }]}>
+                        {comment.likesCount}
+                      </Text>
+                    </TouchableOpacity>
                   </View>
-                  <TouchableOpacity
-                    style={styles.commentLikeButton}
-                    onPress={() => handleToggleCommentLike(comment)}
-                    activeOpacity={0.75}
-                  >
-                    <Ionicons
-                      name={comment.isLiked ? 'heart' : 'heart-outline'}
-                      size={16}
-                      color={comment.isLiked ? '#ef4444' : '#6b7280'}
-                    />
-                    <Text style={[styles.commentLikeText, comment.isLiked && styles.commentLikeTextActive]}>
-                      {comment.likesCount}
-                    </Text>
-                  </TouchableOpacity>
-                </TouchableOpacity>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.commentsStateText}>No comments yet.</Text>
-          )}
-        </View>
+                </AppCard>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <AppCard style={[styles.emptyCommentsCard, { borderColor: colors.border }]}>
+            <Ionicons name="chatbubble-ellipses-outline" size={28} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+            <Text style={[styles.emptyCommentsTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('feed.noCommentsYet')}
+            </Text>
+            <Text style={[styles.emptyCommentsSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+              {t('feed.beFirstToComment')}
+            </Text>
+          </AppCard>
+        )}
       </ScrollView>
-
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   center: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
+    paddingHorizontal: layout.screenPadding,
+    gap: spacing.sm,
   },
   stateText: {
-    color: '#374151',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
+    textAlign: 'center',
   },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+  },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  scroll: {
+    flex: 1,
+  },
+  scrollContent: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
+  },
+  postCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  postTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    marginBottom: spacing.sm,
+    gap: spacing.sm,
   },
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-  },
-  headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  content: {
-    flex: 1,
-  },
-  authorSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#ffffff',
-    marginBottom: 12,
-  },
-  authorPressable: {
+  authorBlock: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    minWidth: 0,
+    gap: 10,
+  },
+  authorTextStack: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
   },
   avatar: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     overflow: 'hidden',
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 25,
-  },
-  authorInfo: {
-    flex: 1,
+    borderRadius: 22,
   },
   authorName: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 4,
+    fontWeight: '800',
+    marginBottom: 2,
   },
   authorInstitution: {
-    fontSize: 13,
-    color: '#6b7280',
-  },
-  typeBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  typeBadgeText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#ffffff',
+    lineHeight: 16,
+  },
+  typeBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    maxWidth: '42%',
+    flexShrink: 0,
+  },
+  typeBadgeText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   courseTag: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
-    marginHorizontal: 20,
-    marginBottom: 16,
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: spacing.sm,
   },
   courseTagText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: PRIMARY_GREEN,
-    marginLeft: 6,
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginHorizontal: 20,
-    marginBottom: 16,
+    fontSize: 22,
+    fontWeight: '800',
+    lineHeight: 28,
+    marginBottom: spacing.sm,
   },
   contentText: {
     fontSize: 15,
-    color: '#4b5563',
-    lineHeight: 24,
-    marginHorizontal: 20,
-    marginBottom: 24,
-  },
-  tagsSection: {
-    marginHorizontal: 20,
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 12,
+    lineHeight: 23,
+    fontWeight: '500',
+    marginBottom: spacing.md,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 6,
+    marginBottom: spacing.md,
   },
   tag: {
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
   tagText: {
-    fontSize: 13,
-    color: '#6b7280',
+    fontSize: 11,
+    fontWeight: '700',
   },
-  attachmentsSection: {
-    marginHorizontal: 20,
-    marginBottom: 24,
+  attachmentsBlock: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  attachmentImageWrap: {
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    maxHeight: 220,
+  },
+  attachmentImage: {
+    width: '100%',
+    height: 200,
+    backgroundColor: 'transparent',
   },
   attachmentItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
-    padding: 12,
-    borderRadius: 12,
-    marginBottom: 8,
+    gap: 10,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    flexWrap: 'nowrap',
   },
   attachmentText: {
     flex: 1,
     fontSize: 14,
-    color: '#111827',
-    marginLeft: 12,
+    fontWeight: '600',
+    minWidth: 0,
   },
-  statsSection: {
+  postFooter: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    backgroundColor: '#ffffff',
-    borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
-    gap: 20,
+    justifyContent: 'space-between',
+    paddingTop: spacing.sm,
+    marginTop: spacing.xs,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: spacing.sm,
+  },
+  footerTime: {
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 0,
+  },
+  footerStatsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flexShrink: 0,
+    flexWrap: 'wrap',
   },
   statItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
-  statText: {
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '500',
+  statLine: {
+    fontSize: 11,
+    fontWeight: '700',
   },
-  timeText: {
-    fontSize: 13,
-    color: '#9ca3af',
-    marginLeft: 'auto',
+  commentsSectionTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: spacing.sm,
   },
-  commentsSection: {
-    marginHorizontal: 20,
-    marginBottom: 28,
+  composerCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.md,
   },
   commentInputRow: {
     flexDirection: 'row',
     alignItems: 'flex-end',
-    gap: 10,
-    marginBottom: 14,
+    gap: spacing.sm,
   },
   commentInput: {
     flex: 1,
     minHeight: 44,
-    maxHeight: 96,
-    backgroundColor: '#ffffff',
+    maxHeight: 110,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: '#111827',
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     fontSize: 14,
+    fontWeight: '600',
+  },
+  commentInputLtr: {
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
+  commentInputRtl: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
   commentSendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: PRIMARY_GREEN,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     justifyContent: 'center',
     alignItems: 'center',
   },
   commentSendButtonDisabled: {
     opacity: 0.45,
   },
+  commentsLoading: {
+    alignItems: 'center',
+    gap: spacing.sm,
+    paddingVertical: spacing.lg,
+  },
   commentsStateText: {
-    color: '#6b7280',
     fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   commentsList: {
-    gap: 10,
+    gap: spacing.sm,
   },
-  commentItem: {
+  commentCardWrap: {
+    marginBottom: 0,
+  },
+  commentCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  commentRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    padding: 10,
   },
   commentAvatar: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     overflow: 'hidden',
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   commentAvatarImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 14,
+    borderRadius: 16,
   },
-  commentBody: {
+  commentMain: {
     flex: 1,
+    minWidth: 0,
   },
   commentHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'space-between',
+    width: '100%',
     marginBottom: 4,
-    gap: 6,
+    gap: spacing.sm,
   },
   commentAuthor: {
-    color: '#111827',
     fontSize: 13,
-    fontWeight: '700',
+    fontWeight: '800',
+    flex: 1,
+    minWidth: 0,
+    marginEnd: spacing.xs,
   },
   commentTime: {
-    color: '#9ca3af',
     fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 0,
   },
   commentText: {
-    color: '#374151',
     fontSize: 13,
-    lineHeight: 18,
+    lineHeight: 19,
+    fontWeight: '500',
   },
   commentLikeButton: {
-    marginLeft: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 22,
+    minWidth: 28,
     gap: 2,
+    paddingTop: 2,
   },
   commentLikeText: {
-    color: '#6b7280',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  emptyCommentsCard: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+  },
+  emptyCommentsTitle: {
+    marginTop: spacing.sm,
+    fontSize: 14,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  emptyCommentsSubtitle: {
+    marginTop: spacing.xs,
     fontSize: 12,
     fontWeight: '600',
+    textAlign: 'center',
   },
-  commentLikeTextActive: {
-    color: '#ef4444',
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  rtlTextBlock: {
+    alignItems: 'flex-end',
   },
 });
 

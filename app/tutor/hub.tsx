@@ -1,110 +1,169 @@
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { iconContainer, layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const ACCENT = '#047857';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function TutorHubScreen() {
   const router = useRouter();
   const { t } = useTranslation();
-  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
 
   const showComingSoon = () => {
     Alert.alert(t('tutor.hub.title'), t('tutor.hub.comingSoon'));
   };
 
   return (
-    <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.back')}
-        >
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.title}>{t('tutor.hub.title')}</Text>
-        <View style={{ width: 40 }} />
-      </View>
+    <AppScreen>
+      <AppHeader title={t('tutor.hub.title')} onBack={() => router.back()} />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <TouchableOpacity style={styles.card} onPress={() => router.push('/tutor/participants' as any)}>
-          <View style={styles.cardIconWrap}>
-            <Ionicons name="people-outline" size={20} color={ACCENT} />
+        <View style={styles.heroWrap}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowAccent} />
+          <View style={styles.heroBadge}>
+            <Ionicons name="ribbon-outline" size={14} color={colors.primary} />
+            <Text style={styles.heroBadgeText}>{t('tutor.hub.title')}</Text>
           </View>
-          <Text style={styles.cardTitle}>{t('tutor.hub.participantsTitle')}</Text>
-          <Text style={styles.cardSubtitle}>{t('tutor.hub.participantsSubtitle')}</Text>
-        </TouchableOpacity>
+          <SectionTitle title={t('tutor.hub.title')} subtitle={t('tutor.hub.participantsSubtitle')} />
+        </View>
 
-        <TouchableOpacity style={styles.card} onPress={showComingSoon}>
-          <View style={styles.cardIconWrap}>
-            <Ionicons name="document-text-outline" size={20} color={ACCENT} />
-          </View>
-          <Text style={styles.cardTitle}>{t('tutor.hub.exercisesTitle')}</Text>
-          <Text style={styles.cardSubtitle}>{t('tutor.hub.exercisesSubtitle')}</Text>
-        </TouchableOpacity>
+        <View style={styles.grid}>
+          <Pressable style={({ pressed }) => pressed ? styles.cardPress : null} onPress={() => router.push('/tutor/participants' as any)}>
+            <AppCard style={styles.card}>
+              <View style={styles.cardAccentBar} />
+              <View style={styles.cardIconWrap}>
+                <Ionicons name="people-outline" size={20} color={colors.textPrimary} />
+              </View>
+              <View style={styles.cardTextWrap}>
+                <Text style={styles.cardTitle}>{t('tutor.hub.participantsTitle')}</Text>
+                <Text style={styles.cardSubtitle}>{t('tutor.hub.participantsSubtitle')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </AppCard>
+          </Pressable>
+
+          <Pressable style={({ pressed }) => pressed ? styles.cardPress : null} onPress={showComingSoon}>
+            <AppCard style={styles.card}>
+              <View style={styles.cardAccentBar} />
+              <View style={styles.cardIconWrap}>
+                <Ionicons name="document-text-outline" size={20} color={colors.textPrimary} />
+              </View>
+              <View style={styles.cardTextWrap}>
+                <Text style={styles.cardTitle}>{t('tutor.hub.exercisesTitle')}</Text>
+                <Text style={styles.cardSubtitle}>{t('tutor.hub.exercisesSubtitle')}</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+            </AppCard>
+          </Pressable>
+        </View>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  screen: { flex: 1, backgroundColor: '#f9fafb' },
-  topBar: {
+const makeStyles = (colors: any) => StyleSheet.create({
+  content: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: 28,
+  },
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    top: -110,
+    right: -60,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: -70,
+    left: -30,
+    backgroundColor: colors.accent,
+    opacity: 0.08,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#fff',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    marginBottom: spacing.sm,
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  heroBadgeText: {
+    color: colors.textSecondary,
+    ...typography.caption,
+    fontWeight: '700',
   },
-  title: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 19,
-    fontWeight: '800',
-    color: '#111827',
+  grid: {
+    gap: spacing.sm,
   },
-  content: {
-    padding: 18,
-    gap: 12,
+  cardPress: {
+    opacity: 0.88,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.primary,
+    opacity: 0.35,
   },
   cardIconWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#ecfdf5',
+    width: iconContainer.size,
+    height: iconContainer.size,
+    borderRadius: iconContainer.radius,
+    backgroundColor: colors.surfaceElevated,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 10,
+  },
+  cardTextWrap: {
+    flex: 1,
   },
   cardTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
+    ...typography.h3,
   },
   cardSubtitle: {
-    marginTop: 6,
-    color: '#6b7280',
+    marginTop: spacing.xs,
+    color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,
   },

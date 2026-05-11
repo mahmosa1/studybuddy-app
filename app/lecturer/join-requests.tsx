@@ -1,287 +1,287 @@
 // app/lecturer/join-requests.tsx
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   Alert,
-  FlatList,
+  ScrollView,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from 'react-native';
-
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#10b981';
-
-type JoinRequest = {
-  id: string;
-  studentName: string;
-  studentEmail: string;
-  courseName: string;
-  status: 'Pending' | 'Approved' | 'Rejected';
-  requestDate: string;
-};
-
-// Mock join requests
-const MOCK_JOIN_REQUESTS: JoinRequest[] = [
-  {
-    id: '1',
-    studentName: 'John Doe',
-    studentEmail: 'john@example.com',
-    courseName: 'Advanced Algorithms',
-    status: 'Pending',
-    requestDate: '2 days ago',
-  },
-  {
-    id: '2',
-    studentName: 'Jane Smith',
-    studentEmail: 'jane@example.com',
-    courseName: 'Database Systems',
-    status: 'Pending',
-    requestDate: '1 day ago',
-  },
-  {
-    id: '3',
-    studentName: 'Bob Johnson',
-    studentEmail: 'bob@example.com',
-    courseName: 'Advanced Algorithms',
-    status: 'Approved',
-    requestDate: '1 week ago',
-  },
-];
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { layout, spacing, ThemeColors } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
+import { Text } from 'react-native';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import {
+  CourseJoinRequest,
+  approveJoinRequest,
+  rejectJoinRequest,
+  subscribeLecturerPendingRequests,
+} from '@/lib/courseJoinRequestService';
+import { auth } from '@/lib/firebaseConfig';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import {
+  formatEnglishJoinRequestWhen,
+  formatHebrewJoinRequestDate,
+  formatHebrewJoinRequestTime,
+  isHebrewUiLanguage,
+} from '@/frontend/utils/format';
 
 export default function LecturerJoinRequestsScreen() {
   const router = useRouter();
-  const [requests, setRequests] = useState<JoinRequest[]>(MOCK_JOIN_REQUESTS);
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
+  const [loading, setLoading] = useState(true);
+  const [requests, setRequests] = useState<CourseJoinRequest[]>([]);
+  const [loadError, setLoadError] = useState(false);
+  const [actingRequestId, setActingRequestId] = useState<string | null>(null);
 
-  const handleApprove = (requestId: string) => {
-    setRequests((prev) =>
-      prev.map((r) => (r.id === requestId ? { ...r, status: 'Approved' as const } : r))
+  useEffect(() => {
+    const user = auth.currentUser;
+    if (!user?.uid) {
+      setRequests([]);
+      setLoading(false);
+      return;
+    }
+
+    const unsub = subscribeLecturerPendingRequests(
+      { lecturerUid: user.uid },
+      (list) => {
+        setRequests(list);
+        setLoadError(false);
+        setLoading(false);
+      },
+      (err) => {
+        console.log('Failed to subscribe lecturer pending requests:', err);
+        setLoadError(true);
+        setLoading(false);
+      },
     );
-    Alert.alert('Success', 'Join request approved.');
+    return unsub;
+  }, []);
+
+  const formatRequestWhen = (request: CourseJoinRequest) => {
+    const ts = request.createdAt;
+    if (!ts?.toDate) return t('common.loading');
+    const d = ts.toDate();
+    if (isHebrewUiLanguage(i18n.language)) {
+      return t('lecturer.requestedAt', {
+        date: formatHebrewJoinRequestDate(d),
+        time: formatHebrewJoinRequestTime(d),
+      });
+    }
+    return t('lecturer.requestedAt', {
+      when: formatEnglishJoinRequestWhen(d),
+    });
   };
 
-  const handleReject = (requestId: string) => {
-    Alert.alert(
-      'Reject Request',
-      'Are you sure you want to reject this join request?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reject',
-          style: 'destructive',
-          onPress: () => {
-            setRequests((prev) =>
-              prev.map((r) => (r.id === requestId ? { ...r, status: 'Rejected' as const } : r))
-            );
-            Alert.alert('Request Rejected', 'The student has been notified.');
-          },
-        },
-      ]
-    );
+  const showActionError = (reason?: string) => {
+    if (reason === 'already_handled') {
+      Alert.alert(t('common.error'), t('lecturer.joinRequestAlreadyHandled'));
+      return;
+    }
+    if (reason === 'not_authorized') {
+      Alert.alert(t('common.error'), t('lecturer.joinRequestNotAuthorized'));
+      return;
+    }
+    if (reason === 'request_not_found') {
+      Alert.alert(t('common.error'), t('lecturer.joinRequestNotFound'));
+      return;
+    }
+    Alert.alert(t('common.error'), t('lecturer.joinRequestActionFailed'));
   };
 
-  const pendingRequests = requests.filter((r) => r.status === 'Pending');
+  const handleApprove = async (requestId: string) => {
+    if (actingRequestId) return;
+    setActingRequestId(requestId);
+    try {
+      const result = await approveJoinRequest({ requestId });
+      if (!result.ok) {
+        showActionError(result.reason);
+        return;
+      }
+      Alert.alert(t('common.success'), t('lecturer.joinRequestApproved'));
+    } catch (err) {
+      console.log('Approve join request failed:', err);
+      Alert.alert(t('common.error'), t('lecturer.joinRequestActionFailed'));
+    } finally {
+      setActingRequestId(null);
+    }
+  };
 
-  const renderRequest = ({ item }: { item: JoinRequest }) => (
-    <View style={styles.requestCard}>
-      <View style={styles.requestHeader}>
-        <View style={styles.studentInfo}>
-          <Text style={styles.studentName}>{item.studentName}</Text>
-          <Text style={styles.studentEmail}>{item.studentEmail}</Text>
-        </View>
-        <View style={[styles.statusBadge, { backgroundColor: item.status === 'Pending' ? '#f59e0b' : item.status === 'Approved' ? ACCENT_GREEN : '#ef4444' }]}>
-          <Text style={styles.statusText}>{item.status}</Text>
-        </View>
-      </View>
-      <Text style={styles.courseName}>Course: {item.courseName}</Text>
-      <View style={styles.requestFooter}>
-        <View style={styles.dateInfo}>
-          <Ionicons name="calendar-outline" size={14} color="#6b7280" />
-          <Text style={styles.dateText}>Requested {item.requestDate}</Text>
-        </View>
-        {item.status === 'Pending' && (
-          <View style={styles.actions}>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.approveButton]}
-              onPress={() => handleApprove(item.id)}
-            >
-              <Ionicons name="checkmark-circle" size={16} color="#ffffff" />
-              <Text style={styles.actionButtonText}>Approve</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.actionButton, styles.rejectButton]}
-              onPress={() => handleReject(item.id)}
-            >
-              <Ionicons name="close-circle" size={16} color="#ffffff" />
-              <Text style={styles.actionButtonText}>Reject</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-      </View>
-    </View>
-  );
+  const handleReject = async (requestId: string) => {
+    if (actingRequestId) return;
+    setActingRequestId(requestId);
+    try {
+      const result = await rejectJoinRequest({ requestId });
+      if (!result.ok) {
+        showActionError(result.reason);
+        return;
+      }
+      Alert.alert(t('common.success'), t('lecturer.joinRequestRejected'));
+    } catch (err) {
+      console.log('Reject join request failed:', err);
+      Alert.alert(t('common.error'), t('lecturer.joinRequestActionFailed'));
+    } finally {
+      setActingRequestId(null);
+    }
+  };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
+    <AppScreen>
+      <AppHeader title={t('lecturer.joinRequests')} onBack={() => router.back()} />
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {loading ? (
+          <LoadingState label={t('common.loading')} />
+        ) : loadError ? (
+          <AppCard style={styles.emptyCard}>
+            <EmptyState title={t('common.error')} subtitle={t('lecturer.joinRequestsLoadError')} />
+          </AppCard>
+        ) : requests.length === 0 ? (
+          <AppCard style={styles.emptyCard}>
+            <EmptyState
+              title={t('lecturer.noPendingRequests')}
+              subtitle={t('lecturer.noPendingRequestsSubtitle')}
+            />
+          </AppCard>
+        ) : (
+          requests.map((request) => (
+            <AppCard key={request.id} style={styles.requestCard}>
+              <View style={styles.requestHeader}>
+                <View style={styles.requestMeta}>
+                  <Text style={styles.studentName}>{request.studentName || '-'}</Text>
+                  <Text style={styles.studentEmail}>{request.studentEmail || '-'}</Text>
+                </View>
+                <View style={styles.pendingBadge}>
+                  <Text style={styles.pendingBadgeText}>{t('lecturer.statusPending')}</Text>
+                </View>
+              </View>
+              <Text style={styles.courseText}>{t('lecturer.course')}: {request.courseName || '-'}</Text>
+              <Text style={styles.requestedText}>
+                {formatRequestWhen(request)}
+              </Text>
+              <View style={styles.actionsRow}>
+                <PrimaryButton
+                  label={t('lecturer.approve')}
+                  onPress={() => handleApprove(request.id)}
+                  loading={actingRequestId === request.id}
+                  disabled={!!actingRequestId}
+                  style={styles.actionBtn}
+                />
+                <PrimaryButton
+                  label={t('lecturer.reject')}
+                  variant="secondary"
+                  onPress={() => handleReject(request.id)}
+                  disabled={!!actingRequestId}
+                  style={[styles.actionBtn, styles.rejectActionBtn]}
+                />
+              </View>
+            </AppCard>
+          ))
+        )}
+        <TouchableOpacity style={styles.secondaryAction} onPress={() => router.push('/courses/my' as any)}>
+          <Ionicons name="book-outline" size={16} color={colors.textPrimary} />
+          <Text style={styles.secondaryActionText}>{t('lecturer.manageCourses')}</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Join Requests</Text>
-        <View style={{ width: 24 }} />
-      </View>
-
-      {pendingRequests.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Ionicons name="checkmark-circle" size={64} color={ACCENT_GREEN} />
-          <Text style={styles.emptyTitle}>No Pending Requests</Text>
-          <Text style={styles.emptyText}>
-            All join requests have been processed.
-          </Text>
-        </View>
-      ) : (
-        <FlatList
-          data={pendingRequests}
-          renderItem={renderRequest}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-        />
-      )}
-    </View>
+      </ScrollView>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  content: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  listContent: {
-    padding: 16,
-    paddingBottom: 100,
+  emptyCard: {
+    paddingVertical: spacing.lg,
   },
   requestCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    marginBottom: spacing.sm,
+    padding: spacing.md,
   },
   requestHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    justifyContent: 'space-between',
   },
-  studentInfo: {
+  requestMeta: {
     flex: 1,
+    marginRight: spacing.sm,
   },
   studentName: {
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '700',
-    color: '#111827',
-    marginBottom: 4,
   },
   studentEmail: {
+    marginTop: 2,
+    color: colors.textSecondary,
     fontSize: 13,
-    color: '#6b7280',
   },
-  courseName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: PRIMARY_GREEN,
-    marginBottom: 12,
+  pendingBadge: {
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
-  statusBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  requestFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-  },
-  dateInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  dateText: {
-    fontSize: 12,
-    color: '#6b7280',
-  },
-  actions: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  actionButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  approveButton: {
-    backgroundColor: ACCENT_GREEN,
-  },
-  rejectButton: {
-    backgroundColor: '#ef4444',
-  },
-  actionButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  emptyState: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 40,
-  },
-  emptyTitle: {
-    fontSize: 20,
+  pendingBadgeText: {
+    color: colors.textPrimary,
+    fontSize: 11,
     fontWeight: '700',
-    color: '#111827',
-    marginTop: 16,
-    marginBottom: 8,
   },
-  emptyText: {
+  courseText: {
+    marginTop: spacing.sm,
+    color: colors.textPrimary,
     fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
+    fontWeight: '600',
+  },
+  requestedText: {
+    marginTop: 4,
+    color: colors.textSecondary,
+    fontSize: 12,
+  },
+  actionsRow: {
+    marginTop: spacing.sm,
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  actionBtn: {
+    flex: 1,
+  },
+  rejectActionBtn: {
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.dangerSurface,
+  },
+  secondaryAction: {
+    marginTop: spacing.sm,
+    height: 38,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 6,
+    alignSelf: 'center',
+  },
+  secondaryActionText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

@@ -1,23 +1,31 @@
 // app/feed/saved.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
+import { auth, db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { auth, db } from '@/lib/firebaseConfig';
-import { arrayRemove, collection, doc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import { arrayRemove, collection, doc, getDoc, onSnapshot, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   FlatList,
+  I18nManager,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
+  Image,
 } from 'react-native';
-
-const PRIMARY_GREEN = '#047857';
 
 type StudyPost = {
   id: string;
+  authorUid?: string;
   authorName: string;
   authorInstitution: string;
+  authorAvatarUrl?: string;
   courseName?: string;
   type: 'Summary' | 'Tip' | 'Question' | 'Exam Info';
   title: string;
@@ -39,8 +47,12 @@ const TYPE_COLORS: Record<StudyPost['type'], string> = {
 
 export default function SavedPostsScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const isRtl = I18nManager.isRTL;
   const [savedPosts, setSavedPosts] = useState<StudyPost[]>([]);
   const [loading, setLoading] = useState(true);
+  const [authorAvatarMap, setAuthorAvatarMap] = useState<Record<string, string>>({});
 
   const relativeTime = (date: Date): string => {
     const diff = Date.now() - date.getTime();
@@ -65,16 +77,31 @@ export default function SavedPostsScreen() {
     );
     const unsub = onSnapshot(
       q,
-      (snap) => {
+      async (snap) => {
         const list: StudyPost[] = [];
+        const missingAvatarAuthorUids = new Set<string>();
         snap.forEach((d) => {
           const data = d.data() as any;
           const likedBy: string[] = data.likedBy || [];
           const savedBy: string[] = data.savedBy || [];
+          const authorUid = String(data.authorUid || data.userId || '');
+          const directAvatar = String(
+            data.authorAvatarUrl ||
+              data.avatarUrl ||
+              data.photoURL ||
+              data.profileImage ||
+              data.userAvatarUrl ||
+              ''
+          );
+          if (authorUid && !directAvatar) {
+            missingAvatarAuthorUids.add(authorUid);
+          }
           list.push({
             id: d.id,
+            authorUid,
             authorName: data.authorName || 'User',
             authorInstitution: data.authorInstitution || '',
+            authorAvatarUrl: directAvatar || undefined,
             courseName: data.courseName || '',
             type: (data.type || 'Summary') as StudyPost['type'],
             title: data.title || '',
@@ -87,6 +114,37 @@ export default function SavedPostsScreen() {
             isSaved: savedBy.includes(currentUser.uid),
           });
         });
+        if (missingAvatarAuthorUids.size > 0) {
+          const fetchedEntries = await Promise.all(
+            Array.from(missingAvatarAuthorUids).map(async (uid) => {
+              if (authorAvatarMap[uid]) return [uid, authorAvatarMap[uid]] as const;
+              try {
+                const userSnap = await getDoc(doc(db, 'users', uid));
+                if (!userSnap.exists()) return [uid, ''] as const;
+                const userData = userSnap.data() as any;
+                const avatar = String(
+                  userData.profilePictureUrl ||
+                    userData.authorAvatarUrl ||
+                    userData.avatarUrl ||
+                    userData.photoURL ||
+                    userData.profileImage ||
+                    userData.userAvatarUrl ||
+                    ''
+                );
+                return [uid, avatar] as const;
+              } catch {
+                return [uid, ''] as const;
+              }
+            })
+          );
+          const updates: Record<string, string> = {};
+          fetchedEntries.forEach(([uid, avatar]) => {
+            if (avatar) updates[uid] = avatar;
+          });
+          if (Object.keys(updates).length > 0) {
+            setAuthorAvatarMap((prev) => ({ ...prev, ...updates }));
+          }
+        }
         setSavedPosts(list);
         setLoading(false);
       },
@@ -105,18 +163,31 @@ export default function SavedPostsScreen() {
 
   const renderPost = ({ item }: { item: StudyPost }) => (
     <TouchableOpacity
-      style={styles.postCard}
+      style={[
+        styles.postCard,
+        {
+          backgroundColor: colors.surface,
+          borderColor: colors.border,
+        },
+      ]}
       onPress={() => router.push(`/feed/post/${item.id}` as any)}
       activeOpacity={0.7}
     >
       <View style={styles.postHeader}>
         <View style={styles.authorInfo}>
-          <View style={styles.avatar}>
-            <Ionicons name="person" size={20} color={PRIMARY_GREEN} />
+          <View style={[styles.avatar, { backgroundColor: colors.surfaceElevated }]}>
+            {item.authorAvatarUrl || (item.authorUid ? authorAvatarMap[item.authorUid] : '') ? (
+              <Image
+                source={{ uri: item.authorAvatarUrl || (item.authorUid ? authorAvatarMap[item.authorUid] : '') }}
+                style={styles.avatarImage}
+              />
+            ) : (
+              <Ionicons name="person" size={20} color={colors.primary} />
+            )}
           </View>
           <View style={styles.authorDetails}>
-            <Text style={styles.authorName}>{item.authorName}</Text>
-            <Text style={styles.authorInstitution}>{item.authorInstitution}</Text>
+            <Text style={[styles.authorName, { color: colors.textPrimary }]}>{item.authorName}</Text>
+            <Text style={[styles.authorInstitution, { color: colors.textSecondary }]}>{item.authorInstitution}</Text>
           </View>
         </View>
         <View style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[item.type] }]}>
@@ -125,28 +196,28 @@ export default function SavedPostsScreen() {
       </View>
 
       {item.courseName && (
-        <View style={styles.courseTag}>
-          <Ionicons name="book" size={14} color={PRIMARY_GREEN} />
-          <Text style={styles.courseTagText}>{item.courseName}</Text>
+        <View style={[styles.courseTag, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+          <Ionicons name="book" size={14} color={colors.primary} />
+          <Text style={[styles.courseTagText, { color: colors.primary }]}>{item.courseName}</Text>
         </View>
       )}
 
-      <Text style={styles.postTitle}>{item.title}</Text>
-      <Text style={styles.postContent} numberOfLines={3}>
+      <Text style={[styles.postTitle, { color: colors.textPrimary }]}>{item.title}</Text>
+      <Text style={[styles.postContent, { color: colors.textSecondary }]} numberOfLines={3}>
         {item.content}
       </Text>
 
       {item.tags.length > 0 && (
         <View style={styles.tagsContainer}>
           {item.tags.slice(0, 3).map((tag, idx) => (
-            <View key={idx} style={styles.tag}>
-              <Text style={styles.tagText}>#{tag}</Text>
+            <View key={idx} style={[styles.tag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{tag}</Text>
             </View>
           ))}
         </View>
       )}
 
-      <View style={styles.postFooter}>
+      <View style={[styles.postFooter, { borderTopColor: colors.border }]}>
         <View style={styles.stats}>
           <View style={styles.statItem}>
             <Ionicons
@@ -154,48 +225,46 @@ export default function SavedPostsScreen() {
               size={18}
               color={item.isLiked ? '#ef4444' : '#6b7280'}
             />
-            <Text style={styles.statText}>{item.likesCount}</Text>
+            <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.likesCount}</Text>
           </View>
           <View style={styles.statItem}>
-            <Ionicons name="bookmark" size={18} color={PRIMARY_GREEN} />
-            <Text style={styles.statText}>{item.savesCount}</Text>
+            <Ionicons name="bookmark" size={18} color={colors.primary} />
+            <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.savesCount}</Text>
           </View>
-          <Text style={styles.timeText}>{item.createdAt}</Text>
+          <Text style={[styles.timeText, { color: colors.textSecondary }]}>{item.createdAt}</Text>
         </View>
         <TouchableOpacity
-          style={styles.unsaveButton}
+          style={[styles.unsaveButton, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
           onPress={(e) => {
             e.stopPropagation();
             handleUnsave(item.id);
           }}
         >
-          <Ionicons name="bookmark" size={20} color={PRIMARY_GREEN} />
+          <Ionicons name="bookmark" size={18} color={colors.primary} />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Saved Posts</Text>
-        <View style={{ width: 24 }} />
+    <AppScreen>
+      <AppHeader title={t('feed.savedPosts')} onBack={() => router.back()} />
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
       </View>
 
       {loading ? (
         <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>Loading...</Text>
+          <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>{t('common.loading')}</Text>
         </View>
       ) : savedPosts.length === 0 ? (
         <View style={styles.emptyState}>
-          <Ionicons name="bookmark-outline" size={64} color="#9ca3af" />
-          <Text style={styles.emptyStateTitle}>No Saved Posts</Text>
-          <Text style={styles.emptyStateText}>
-            Posts you save will appear here
-          </Text>
+          <AppCard style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Ionicons name="bookmark-outline" size={56} color={colors.textSecondary} />
+            <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }]}>{t('search.noResults')}</Text>
+            <Text style={[styles.emptyStateText, { color: colors.textSecondary }]}>{t('feed.savedPosts')}</Text>
+          </AppCard>
         </View>
       ) : (
         <FlatList
@@ -206,40 +275,51 @@ export default function SavedPostsScreen() {
           showsVerticalScrollIndicator={false}
         />
       )}
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
     borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
   },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
   },
   feedContent: {
-    padding: 16,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
     paddingBottom: 100,
+    gap: spacing.sm,
   },
   postCard: {
-    backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
-    marginBottom: 16,
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
@@ -250,7 +330,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 12,
+    gap: 10,
+    marginBottom: 10,
   },
   authorInfo: {
     flexDirection: 'row',
@@ -261,10 +342,14 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#f3f4f6',
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    overflow: 'hidden',
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
   authorDetails: {
     flex: 1,
@@ -272,12 +357,10 @@ const styles = StyleSheet.create({
   authorName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
     marginBottom: 2,
   },
   authorInstitution: {
     fontSize: 12,
-    color: '#6b7280',
   },
   typeBadge: {
     paddingHorizontal: 10,
@@ -293,7 +376,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
@@ -302,18 +385,15 @@ const styles = StyleSheet.create({
   courseTagText: {
     fontSize: 12,
     fontWeight: '500',
-    color: PRIMARY_GREEN,
     marginLeft: 4,
   },
   postTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#111827',
     marginBottom: 8,
   },
   postContent: {
     fontSize: 14,
-    color: '#4b5563',
     lineHeight: 20,
     marginBottom: 12,
   },
@@ -324,14 +404,13 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   tag: {
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
     paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 6,
   },
   tagText: {
     fontSize: 11,
-    color: '#6b7280',
   },
   postFooter: {
     flexDirection: 'row',
@@ -339,7 +418,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
   },
   stats: {
     flexDirection: 'row',
@@ -353,32 +431,35 @@ const styles = StyleSheet.create({
   },
   statText: {
     fontSize: 13,
-    color: '#6b7280',
     fontWeight: '500',
   },
   timeText: {
     fontSize: 12,
-    color: '#9ca3af',
   },
   unsaveButton: {
-    padding: 4,
+    padding: 6,
+    borderWidth: 1,
+    borderRadius: 10,
   },
   emptyState: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 40,
+    padding: layout.screenPadding,
+  },
+  emptyCard: {
+    width: '100%',
+    alignItems: 'center',
+    paddingVertical: 24,
   },
   emptyStateTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
     marginTop: 16,
     marginBottom: 8,
   },
   emptyStateText: {
     fontSize: 14,
-    color: '#6b7280',
     textAlign: 'center',
   },
 });

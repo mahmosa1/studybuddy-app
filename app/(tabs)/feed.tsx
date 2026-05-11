@@ -1,4 +1,10 @@
 // app/(tabs)/feed.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
 import { createActivityNotification } from '@/lib/notificationService';
@@ -29,6 +35,8 @@ import {
     FlatList,
     Image,
     Modal,
+    Platform,
+    Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -36,9 +44,6 @@ import {
     TouchableOpacity,
     View
 } from 'react-native';
-
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#10b981';
 
 type StudyPost = {
   id: string;
@@ -90,16 +95,11 @@ type ActivityNotificationItem = {
   read: boolean;
 };
 
-const TYPE_COLORS: Record<StudyPost['type'], string> = {
-  Summary: '#3b82f6',
-  Tip: '#f59e0b',
-  Question: '#8b5cf6',
-  'Exam Info': '#ef4444',
-};
-
 export default function StudentFeedScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const isHebrewUi = i18n.language === 'he';
   const { role, firebaseUser } = useUser();
   const [posts, setPosts] = useState<StudyPost[]>([]);
   const [loadingPosts, setLoadingPosts] = useState(true);
@@ -376,6 +376,43 @@ export default function StudentFeedScreen() {
     }).catch((err) => console.log('report error', err));
   };
 
+  const getPostFirstImageUrl = (post: StudyPost) =>
+    post.attachments?.find((a) => {
+      const mime = String(a?.mimeType || '').toLowerCase();
+      const url = String(a?.url || '').toLowerCase();
+      return mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|heic)(\?|$)/i.test(url);
+    })?.url;
+
+  const typeBadgeBorder = (type: StudyPost['type']) => {
+    switch (type) {
+      case 'Summary':
+        return colors.primary;
+      case 'Tip':
+        return colors.warning;
+      case 'Question':
+        return colors.accent;
+      case 'Exam Info':
+        return colors.danger;
+      default:
+        return colors.border;
+    }
+  };
+
+  const notificationRowTypeIcon = (n: ActivityNotificationItem): keyof typeof Ionicons.glyphMap => {
+    switch (n.type) {
+      case 'follow':
+        return 'person-add-outline';
+      case 'post_like':
+        return 'heart-outline';
+      case 'post_comment':
+        return 'chatbubble-ellipses-outline';
+      case 'comment_like':
+        return 'heart-outline';
+      default:
+        return 'notifications-outline';
+    }
+  };
+
   const handleOpenNotifications = async () => {
     setShowNotificationsModal(true);
     if (!firebaseUser) return;
@@ -482,169 +519,248 @@ export default function StudentFeedScreen() {
     }
   };
 
-  const renderPost = ({ item }: { item: StudyPost }) => (
-    <TouchableOpacity
-      style={styles.postCard}
-      onPress={() => router.push(`/feed/post/${item.id}` as any)}
-      activeOpacity={0.7}
-    >
-      {/* Header */}
-      <View style={styles.postHeader}>
-        <TouchableOpacity
-          style={styles.authorInfo}
-          onPress={(e) => {
-            e.stopPropagation();
-            if (!item.authorUid) return;
-            router.push(`/user-profile/${item.authorUid}` as any);
-          }}
-          activeOpacity={0.7}
+  const renderPost = ({ item }: { item: StudyPost }) => {
+    const imageUrl = getPostFirstImageUrl(item);
+    const cardShadow =
+      Platform.OS === 'ios'
+        ? {
+            shadowColor: '#0F172A',
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.07,
+            shadowRadius: 10,
+          }
+        : { elevation: 2 };
+
+    return (
+      <Pressable
+        onPress={() => router.push(`/feed/post/${item.id}` as any)}
+        style={({ pressed }) => [styles.postCardOuter, pressed && styles.postCardOuterPressed]}
+        android_ripple={{ color: `${colors.primary}18` }}
+      >
+        <AppCard
+          style={[
+            styles.postCardInner,
+            {
+              backgroundColor: colors.surface,
+              borderColor: colors.border,
+              borderWidth: 1,
+              ...cardShadow,
+            },
+          ]}
         >
-          <View style={styles.avatar}>
-            {item.authorAvatarUrl ? (
-              <Image source={{ uri: item.authorAvatarUrl }} style={styles.avatarImage} />
-            ) : (
-              <Ionicons name="person" size={20} color={PRIMARY_GREEN} />
-            )}
-          </View>
-          <View style={styles.authorDetails}>
-            <Text style={styles.authorName}>{item.authorName}</Text>
-            <Text style={styles.authorInstitution}>{item.authorInstitution}</Text>
-          </View>
-        </TouchableOpacity>
-        <View style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[item.type] }]}>
-          <Text style={styles.typeBadgeText}>{t(`feed.postType.${item.type.toLowerCase().replace(' ', '')}`)}</Text>
-        </View>
-      </View>
-
-      {/* Course Name */}
-      {item.courseName && (
-        <View style={styles.courseTag}>
-          <Ionicons name="book" size={14} color={PRIMARY_GREEN} />
-          <Text style={styles.courseTagText}>{item.courseName}</Text>
-        </View>
-      )}
-
-      {/* Title */}
-      <Text style={styles.postTitle}>{item.title}</Text>
-
-      {/* Content Preview */}
-      <Text style={styles.postContent} numberOfLines={3}>
-        {item.content}
-      </Text>
-
-      {/* Tags */}
-      {item.tags.length > 0 && (
-        <View style={styles.tagsContainer}>
-          {item.tags.slice(0, 3).map((tag, idx) => (
-            <View key={idx} style={styles.tag}>
-              <Text style={styles.tagText}>#{tag}</Text>
+          <View style={[styles.postTopRow, isHebrewUi && styles.rtlRow]}>
+            <Pressable
+              style={({ pressed }) => [
+                styles.authorBlock,
+                isHebrewUi && styles.rtlRow,
+                pressed && styles.authorBlockPressed,
+              ]}
+              onPress={(e) => {
+                e.stopPropagation();
+                if (!item.authorUid) return;
+                router.push(`/user-profile/${item.authorUid}` as any);
+              }}
+              android_ripple={{ color: `${colors.primary}14`, borderless: false }}
+            >
+              <View style={[styles.avatar, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                {item.authorAvatarUrl ? (
+                  <Image source={{ uri: item.authorAvatarUrl }} style={styles.avatarImage} />
+                ) : (
+                  <Ionicons name="person" size={18} color={colors.primary} />
+                )}
+              </View>
+              <View style={[styles.authorTextStack, isHebrewUi && styles.rtlTextBlock]}>
+                <Text style={[styles.authorName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {item.authorName}
+                </Text>
+                {!!item.authorInstitution ? (
+                  <Text style={[styles.authorInstitution, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                    {item.authorInstitution}
+                  </Text>
+                ) : null}
+              </View>
+            </Pressable>
+            <View
+              style={[
+                styles.typeBadge,
+                {
+                  backgroundColor: colors.surfaceMuted,
+                  borderColor: typeBadgeBorder(item.type),
+                },
+              ]}
+            >
+              <Text style={[styles.typeBadgeText, { color: colors.textPrimary }]} numberOfLines={1}>
+                {t(`feed.postType.${item.type.toLowerCase().replace(' ', '')}`)}
+              </Text>
             </View>
-          ))}
-        </View>
-      )}
-
-      {/* Stats and Actions */}
-      <View style={styles.postFooter}>
-        <View style={styles.stats}>
-          <TouchableOpacity
-            style={styles.statItem}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleLike(item.id);
-            }}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name={item.isLiked ? 'heart' : 'heart-outline'}
-              size={18}
-              color={item.isLiked ? '#ef4444' : '#6b7280'}
-            />
-            <Text style={styles.statText}>{item.likesCount}</Text>
-          </TouchableOpacity>
-          <View style={styles.statItem}>
-            <Ionicons
-              name="chatbubble-outline"
-              size={17}
-              color="#6b7280"
-            />
-            <Text style={styles.statText}>{item.commentsCount}</Text>
           </View>
-          <TouchableOpacity
-            style={styles.statItem}
-            onPress={(e) => {
-              e.stopPropagation();
-              handleSave(item.id);
-            }}
-            activeOpacity={0.75}
-          >
-            <Ionicons
-              name={item.isSaved ? 'bookmark' : 'bookmark-outline'}
-              size={18}
-              color={item.isSaved ? '#fbbf24' : '#6b7280'}
-            />
-            <Text style={styles.statText}>{item.savesCount}</Text>
-          </TouchableOpacity>
-          <Text style={styles.timeText}>{item.createdAt}</Text>
-        </View>
-      </View>
-    </TouchableOpacity>
-  );
+
+          {item.courseName ? (
+            <View style={[styles.courseTag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="book-outline" size={13} color={colors.primary} />
+              <Text style={[styles.courseTagText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                {item.courseName}
+              </Text>
+            </View>
+          ) : null}
+
+          <Text style={[styles.postTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+            {item.title}
+          </Text>
+
+          <Text style={[styles.postContent, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={3}>
+            {item.content}
+          </Text>
+
+          {imageUrl ? (
+            <View style={[styles.postImageWrap, { borderColor: colors.border }]}>
+              <Image source={{ uri: imageUrl }} style={styles.postImage} resizeMode="cover" />
+            </View>
+          ) : null}
+
+          {item.tags.length > 0 ? (
+            <View style={[styles.tagsContainer, isHebrewUi && styles.rtlRow]}>
+              {item.tags.slice(0, 4).map((tag, idx) => (
+                <View key={idx} style={[styles.tag, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                  <Text style={[styles.tagText, { color: colors.textSecondary }]}>#{tag}</Text>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <View style={[styles.postFooter, { borderTopColor: colors.border }, isHebrewUi && styles.rtlRow]}>
+            <Text style={[styles.footerTime, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{item.createdAt}</Text>
+            <View style={styles.footerStatsRow}>
+              <TouchableOpacity
+                style={styles.statItem}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleLike(item.id);
+                }}
+                activeOpacity={0.75}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Ionicons
+                  name={item.isLiked ? 'heart' : 'heart-outline'}
+                  size={17}
+                  color={item.isLiked ? colors.danger : colors.textSecondary}
+                />
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.likesCount}</Text>
+              </TouchableOpacity>
+              <View style={styles.statItem}>
+                <Ionicons name="chatbubble-outline" size={16} color={colors.textSecondary} />
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.commentsCount}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.statItem}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleSave(item.id);
+                }}
+                activeOpacity={0.75}
+                hitSlop={{ top: 8, bottom: 8, left: 6, right: 6 }}
+              >
+                <Ionicons
+                  name={item.isSaved ? 'bookmark' : 'bookmark-outline'}
+                  size={17}
+                  color={item.isSaved ? colors.warning : colors.textSecondary}
+                />
+                <Text style={[styles.statText, { color: colors.textSecondary }]}>{item.savesCount}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </AppCard>
+      </Pressable>
+    );
+  };
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
+    <AppScreen>
+      <View style={[styles.feedHeader, { borderBottomColor: colors.border }]}>
         <View style={styles.headerSide}>
           <TouchableOpacity
-            style={styles.headerButton}
+            style={[styles.headerIconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
             onPress={() => setShowCreateModal(true)}
+            accessibilityRole="button"
           >
-            <Ionicons name="add-circle" size={24} color={PRIMARY_GREEN} />
+            <Ionicons name="add" size={22} color={colors.primary} />
           </TouchableOpacity>
+          {/* invisible placeholder to visually balance the second button on the right */}
+          <View style={styles.headerIconPlaceholder} />
         </View>
-        <Text style={styles.headerTitle}>StudyFeed</Text>
-        <View style={[styles.headerSide, styles.headerSideRight]}>
-          <View style={styles.headerActions}>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={handleOpenNotifications}
-            >
-              <Ionicons name="notifications-outline" size={24} color={PRIMARY_GREEN} />
-              {notificationsUnreadCount > 0 && <View style={styles.headerNotificationDot} />}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={() => router.push('/chat' as any)}
-            >
-              <Ionicons name="chatbubble-ellipses-outline" size={24} color={PRIMARY_GREEN} />
-              {chatUnreadCount > 0 && (
-                <View style={styles.chatUnreadBadge}>
-                  <Text style={styles.chatUnreadBadgeText}>
-                    {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-          </View>
+        <View style={styles.headerTitleWrap}>
+          <Text
+            style={[
+              styles.headerTitle,
+              { color: colors.textPrimary },
+              isHebrewUi && styles.rtlText,
+            ]}
+            numberOfLines={1}
+          >
+            StudyFeed
+          </Text>
+        </View>
+        <View style={[styles.headerSide, styles.headerActions, isHebrewUi && styles.rtlRow]}>
+          <TouchableOpacity
+            style={[styles.headerIconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+            onPress={handleOpenNotifications}
+            accessibilityRole="button"
+          >
+            <Ionicons name="notifications-outline" size={22} color={colors.primary} />
+            {notificationsUnreadCount > 0 ? <View style={styles.headerNotificationDot} /> : null}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.headerIconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
+            onPress={() => router.push('/chat' as any)}
+            accessibilityRole="button"
+          >
+            <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.primary} />
+            {chatUnreadCount > 0 ? (
+              <View style={styles.chatUnreadBadge}>
+                <Text style={styles.chatUnreadBadgeText}>
+                  {chatUnreadCount > 9 ? '9+' : chatUnreadCount}
+                </Text>
+              </View>
+            ) : null}
+          </TouchableOpacity>
         </View>
       </View>
 
-      {/* Feed */}
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+      </View>
+
       {loadingPosts ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyStateTitle}>{t('common.loading')}</Text>
+        <View style={styles.feedBody}>
+          <AppCard style={[styles.emptyCard, { borderColor: colors.border }]}>
+            <ActivityIndicator color={colors.primary} style={{ marginBottom: spacing.sm }} />
+            <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('common.loading')}
+            </Text>
+            <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+              {t('feed.title')}
+            </Text>
+          </AppCard>
         </View>
       ) : (
         <FlatList
+          style={{ flex: 1 }}
           data={posts}
           renderItem={renderPost}
           keyExtractor={(item) => item.id}
           contentContainerStyle={styles.feedContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateTitle}>{t('feed.noPosts')}</Text>
-            </View>
+            <AppCard style={[styles.emptyCard, { borderColor: colors.border }]}>
+              <Ionicons name="newspaper-outline" size={40} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+              <Text style={[styles.emptyStateTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.noPosts')}
+              </Text>
+              <Text style={[styles.emptyStateSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.createPost')}
+              </Text>
+            </AppCard>
           }
         />
       )}
@@ -655,95 +771,109 @@ export default function StudentFeedScreen() {
         transparent={false}
         onRequestClose={() => setShowNotificationsModal(false)}
       >
-        <View style={styles.notificationsScreen}>
-          <View style={styles.notificationsHeader}>
-            <TouchableOpacity onPress={() => setShowNotificationsModal(false)}>
-              <Ionicons name="arrow-back" size={22} color="#111827" />
-            </TouchableOpacity>
-            <Text style={styles.notificationsTitle}>{t('feed.notifications.title')}</Text>
-            <View style={styles.notificationsHeaderSpacer} />
+        <AppScreen>
+          <AppHeader
+            title={t('feed.notifications.title')}
+            onBack={() => setShowNotificationsModal(false)}
+          />
+          <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+            <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+            <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
           </View>
 
-          <View style={styles.notificationsTabsRow}>
-            <TouchableOpacity
-              style={[styles.notificationTab, notificationsFilter === 'all' && styles.notificationTabActive]}
-              onPress={() => setNotificationsFilter('all')}
-            >
-              <Text style={[styles.notificationTabText, notificationsFilter === 'all' && styles.notificationTabTextActive]}>
-                {t('feed.notifications.filters.all')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.notificationTab, notificationsFilter === 'follows' && styles.notificationTabActive]}
-              onPress={() => setNotificationsFilter('follows')}
-            >
-              <Text style={[styles.notificationTabText, notificationsFilter === 'follows' && styles.notificationTabTextActive]}>
-                {t('feed.notifications.filters.follows')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.notificationTab, notificationsFilter === 'comments' && styles.notificationTabActive]}
-              onPress={() => setNotificationsFilter('comments')}
-            >
-              <Text style={[styles.notificationTabText, notificationsFilter === 'comments' && styles.notificationTabTextActive]}>
-                {t('feed.notifications.filters.comments')}
-              </Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.notificationTab, notificationsFilter === 'likes' && styles.notificationTabActive]}
-              onPress={() => setNotificationsFilter('likes')}
-            >
-              <Text style={[styles.notificationTabText, notificationsFilter === 'likes' && styles.notificationTabTextActive]}>
-                {t('feed.notifications.filters.likes')}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          <AppCard
+            style={[
+              styles.notificationsFilterShell,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+            ]}
+          >
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notificationsTabsRow}>
+              {(['all', 'follows', 'comments', 'likes'] as const).map((filter) => {
+                const active = notificationsFilter === filter;
+                return (
+                  <TouchableOpacity
+                    key={filter}
+                    style={[
+                      styles.notificationTab,
+                      active
+                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                        : { backgroundColor: colors.surface, borderColor: colors.border },
+                    ]}
+                    onPress={() => setNotificationsFilter(filter)}
+                  >
+                    <Text
+                      style={[
+                        styles.notificationTabText,
+                        { color: active ? colors.textOnPrimary : colors.textSecondary },
+                      ]}
+                    >
+                      {t(`feed.notifications.filters.${filter}`)}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </AppCard>
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsBody}>
             {groupedNotifications.length ? (
               groupedNotifications.map((section) => (
                 <View key={section.title}>
-                  <Text style={styles.notificationsSectionTitle}>{section.title}</Text>
+                  <Text style={[styles.notificationsSectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                    {section.title}
+                  </Text>
                   {section.data.map((item) => (
                     <TouchableOpacity
                       key={item.id}
-                      style={styles.notificationRow}
+                      activeOpacity={0.78}
+                      style={styles.notificationCardWrap}
                       onPress={() => {
                         setShowNotificationsModal(false);
                         if (item.postId) router.push(`/feed/post/${item.postId}` as any);
                       }}
-                      activeOpacity={0.78}
                     >
-                      <View style={styles.notificationAvatarWrap}>
-                        {item.actorAvatarUrl ? (
-                          <Image source={{ uri: item.actorAvatarUrl }} style={styles.notificationAvatar} />
-                        ) : (
-                          <Ionicons name="person" size={14} color={PRIMARY_GREEN} />
-                        )}
-                      </View>
-                      <View style={styles.notificationTextWrap}>
-                        <Text style={styles.notificationText} numberOfLines={2}>
-                          {notificationText(item)}
-                        </Text>
-                        {!!item.text && item.type === 'post_comment' && (
-                          <Text style={styles.notificationSubText} numberOfLines={1}>
-                            &quot;{item.text}&quot;
-                          </Text>
-                        )}
-                      </View>
-                      <View style={styles.notificationMeta}>
-                        <Text style={styles.notificationTime}>{item.createdAtLabel}</Text>
-                        {!item.read && <View style={styles.notificationUnreadDot} />}
-                      </View>
+                      <AppCard style={[styles.notificationCard, { borderColor: colors.border }]}>
+                        <View style={[styles.notificationRowInner, isHebrewUi && styles.rtlRow]}>
+                          <View style={[styles.notificationTypeIconWrap, { backgroundColor: colors.surfaceMuted }]}>
+                            <Ionicons name={notificationRowTypeIcon(item)} size={15} color={colors.primary} />
+                          </View>
+                          <View style={[styles.notificationAvatarWrap, { borderColor: colors.border }]}>
+                            {item.actorAvatarUrl ? (
+                              <Image source={{ uri: item.actorAvatarUrl }} style={styles.notificationAvatar} />
+                            ) : (
+                              <Ionicons name="person" size={14} color={colors.primary} />
+                            )}
+                          </View>
+                          <View style={[styles.notificationTextWrap, isHebrewUi && styles.rtlTextBlock]}>
+                            <Text style={[styles.notificationText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                              {notificationText(item)}
+                            </Text>
+                            {!!item.text && item.type === 'post_comment' ? (
+                              <Text style={[styles.notificationSubText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                                &quot;{item.text}&quot;
+                              </Text>
+                            ) : null}
+                          </View>
+                          <View style={[styles.notificationMeta, isHebrewUi && styles.rtlRow]}>
+                            <Text style={[styles.notificationTime, { color: colors.textSecondary }]}>{item.createdAtLabel}</Text>
+                            {!item.read ? <View style={[styles.notificationUnreadDot, { backgroundColor: colors.danger }]} /> : null}
+                          </View>
+                        </View>
+                      </AppCard>
                     </TouchableOpacity>
                   ))}
                 </View>
               ))
             ) : (
-              <Text style={styles.notificationsEmpty}>{t('feed.notifications.empty')}</Text>
+              <AppCard style={[styles.notificationsEmptyCard, { borderColor: colors.border }]}>
+                <Ionicons name="notifications-off-outline" size={36} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+                <Text style={[styles.notificationsEmptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                  {t('feed.notifications.empty')}
+                </Text>
+              </AppCard>
             )}
           </ScrollView>
-        </View>
+        </AppScreen>
       </Modal>
 
       {/* Create Post Modal */}
@@ -753,131 +883,209 @@ export default function StudentFeedScreen() {
         transparent={true}
         onRequestClose={() => setShowCreateModal(false)}
       >
-        <View style={styles.modalBackdrop}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('feed.createPost')}</Text>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)}>
-                <Ionicons name="close" size={24} color="#111827" />
+        <View style={[styles.modalBackdrop, { backgroundColor: 'rgba(15, 23, 42, 0.45)' }]}>
+          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
+            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+              <Text style={[styles.modalTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.createPost')}
+              </Text>
+              <TouchableOpacity onPress={() => setShowCreateModal(false)} accessibilityRole="button">
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalBody}>
-              <Text style={styles.label}>{t('feed.course')} ({t('common.optional')})</Text>
+            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.course')} ({t('common.optional')})
+              </Text>
               <TouchableOpacity
-                style={styles.input}
+                style={[
+                  styles.input,
+                  { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                ]}
                 onPress={() => setShowCoursePicker((prev) => !prev)}
                 activeOpacity={0.8}
               >
-                <Text style={selectedCourse ? styles.inputValue : styles.inputPlaceholder}>
+                <Text
+                  style={
+                    selectedCourse
+                      ? [styles.inputValue, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]
+                      : [styles.inputPlaceholder, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]
+                  }
+                >
                   {selectedCourse?.name || t('feed.selectCourse')}
                 </Text>
-                <Ionicons name="chevron-down" size={20} color="#6b7280" />
+                <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
               </TouchableOpacity>
-              {showCoursePicker && (
-                <View style={styles.pickerList}>
+              {showCoursePicker ? (
+                <View style={[styles.pickerList, { borderColor: colors.border, backgroundColor: colors.surface }]}>
                   <TouchableOpacity
-                    style={styles.pickerItem}
+                    style={[styles.pickerItem, { borderBottomColor: colors.border }]}
                     onPress={() => {
                       setSelectedCourse(null);
                       setShowCoursePicker(false);
                     }}
                   >
-                    <Text style={styles.pickerItemText}>{t('feed.selectCourse')}</Text>
+                    <Text style={[styles.pickerItemText, { color: colors.textPrimary }]}>{t('feed.selectCourse')}</Text>
                   </TouchableOpacity>
                   {courses.map((course) => (
                     <TouchableOpacity
                       key={course.id}
-                      style={styles.pickerItem}
+                      style={[styles.pickerItem, { borderBottomColor: colors.border }]}
                       onPress={() => {
                         setSelectedCourse(course);
                         setShowCoursePicker(false);
                       }}
                     >
-                      <Text style={styles.pickerItemText}>{course.name}</Text>
+                      <Text style={[styles.pickerItemText, { color: colors.textPrimary }]}>{course.name}</Text>
                     </TouchableOpacity>
                   ))}
                 </View>
-              )}
+              ) : null}
 
-              <Text style={styles.label}>{t('feed.titleLabel')} *</Text>
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.titleLabel')} *
+              </Text>
               <TextInput
-                style={styles.textInput}
+                style={[
+                  styles.textInput,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                    color: colors.textPrimary,
+                  },
+                ]}
                 placeholder={t('feed.titlePlaceholder')}
-                placeholderTextColor="#9ca3af"
-                selectionColor={PRIMARY_GREEN}
-                cursorColor={PRIMARY_GREEN}
+                placeholderTextColor={colors.textSecondary}
+                selectionColor={colors.primary}
+                cursorColor={colors.primary}
                 value={newTitle}
                 onChangeText={setNewTitle}
+                textAlign={isHebrewUi ? 'right' : 'left'}
               />
 
-              <Text style={styles.label}>{t('feed.contentLabel')} *</Text>
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.contentLabel')} *
+              </Text>
               <TextInput
-                style={[styles.textInput, styles.textArea]}
+                style={[
+                  styles.textInput,
+                  styles.textArea,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                    color: colors.textPrimary,
+                  },
+                ]}
                 placeholder={t('feed.contentPlaceholder')}
-                placeholderTextColor="#9ca3af"
-                selectionColor={PRIMARY_GREEN}
-                cursorColor={PRIMARY_GREEN}
+                placeholderTextColor={colors.textSecondary}
+                selectionColor={colors.primary}
+                cursorColor={colors.primary}
                 multiline
                 numberOfLines={6}
                 value={newContent}
                 onChangeText={setNewContent}
+                textAlign={isHebrewUi ? 'right' : 'left'}
               />
 
-              <Text style={styles.label}>{t('feed.postTypeLabel')} *</Text>
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.postTypeLabel')} *
+              </Text>
               <View style={styles.typeOptions}>
-                {(['Summary', 'Tip', 'Question', 'Exam Info'] as StudyPost['type'][]).map((type) => (
-                  <TouchableOpacity
-                    key={type}
-                    style={[styles.typeOption, selectedType === type && styles.typeOptionActive]}
-                    onPress={() => setSelectedType(type)}
-                  >
-                    <Text style={[styles.typeOptionText, selectedType === type && styles.typeOptionTextActive]}>
-                      {t(`feed.postType.${type.toLowerCase().replace(' ', '')}`)}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {(['Summary', 'Tip', 'Question', 'Exam Info'] as StudyPost['type'][]).map((type) => {
+                  const active = selectedType === type;
+                  return (
+                    <TouchableOpacity
+                      key={type}
+                      style={[
+                        styles.typeOption,
+                        {
+                          backgroundColor: active ? colors.surfaceElevated : colors.surfaceMuted,
+                          borderColor: active ? colors.primary : colors.border,
+                        },
+                      ]}
+                      onPress={() => setSelectedType(type)}
+                    >
+                      <Text
+                        style={[
+                          styles.typeOptionText,
+                          { color: active ? colors.primary : colors.textSecondary, fontWeight: active ? '700' : '500' },
+                          isHebrewUi && styles.rtlText,
+                        ]}
+                      >
+                        {t(`feed.postType.${type.toLowerCase().replace(' ', '')}`)}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
               </View>
 
-              <Text style={styles.label}>{t('feed.tags')} ({t('common.optional')})</Text>
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.tags')} ({t('common.optional')})
+              </Text>
               <TextInput
-                style={styles.textInput}
+                style={[
+                  styles.textInput,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                    color: colors.textPrimary,
+                  },
+                ]}
                 placeholder={t('feed.tagsPlaceholder')}
-                placeholderTextColor="#9ca3af"
-                selectionColor={PRIMARY_GREEN}
-                cursorColor={PRIMARY_GREEN}
+                placeholderTextColor={colors.textSecondary}
+                selectionColor={colors.primary}
+                cursorColor={colors.primary}
                 value={newTags}
                 onChangeText={setNewTags}
               />
 
-              <Text style={styles.label}>{t('feed.visibility')}</Text>
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('feed.visibility')}
+              </Text>
               <View style={styles.visibilityOptions}>
                 <TouchableOpacity
-                  style={[styles.visibilityOption, visibility === 'public' && styles.visibilityOptionActive]}
+                  style={[
+                    styles.visibilityOption,
+                    {
+                      backgroundColor: visibility === 'public' ? colors.surfaceElevated : colors.surfaceMuted,
+                      borderColor: visibility === 'public' ? colors.primary : colors.border,
+                    },
+                  ]}
                   onPress={() => setVisibility('public')}
                 >
-                  <Ionicons name="globe" size={20} color={visibility === 'public' ? PRIMARY_GREEN : '#6b7280'} />
+                  <Ionicons
+                    name="globe"
+                    size={20}
+                    color={visibility === 'public' ? colors.primary : colors.textSecondary}
+                  />
                   <Text
                     style={[
                       styles.visibilityOptionText,
-                      visibility !== 'public' && styles.visibilityOptionTextInactive
+                      { color: visibility === 'public' ? colors.primary : colors.textSecondary },
                     ]}
                   >
                     {t('feed.public')}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
-                  style={[styles.visibilityOption, visibility === 'institution' && styles.visibilityOptionActive]}
+                  style={[
+                    styles.visibilityOption,
+                    {
+                      backgroundColor: visibility === 'institution' ? colors.surfaceElevated : colors.surfaceMuted,
+                      borderColor: visibility === 'institution' ? colors.primary : colors.border,
+                    },
+                  ]}
                   onPress={() => setVisibility('institution')}
                 >
                   <Ionicons
                     name="school"
                     size={20}
-                    color={visibility === 'institution' ? PRIMARY_GREEN : '#6b7280'}
+                    color={visibility === 'institution' ? colors.primary : colors.textSecondary}
                   />
                   <Text
                     style={[
                       styles.visibilityOptionText,
-                      visibility !== 'institution' && styles.visibilityOptionTextInactive
+                      { color: visibility === 'institution' ? colors.primary : colors.textSecondary },
                     ]}
                   >
                     {t('feed.institutionOnly')}
@@ -885,26 +1093,37 @@ export default function StudentFeedScreen() {
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.label}>Attachments ({t('common.optional')})</Text>
+              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                Attachments ({t('common.optional')})
+              </Text>
               <TouchableOpacity
-                style={styles.attachButton}
+                style={[
+                  styles.attachButton,
+                  {
+                    borderColor: colors.primary,
+                    backgroundColor: colors.surfaceElevated,
+                  },
+                ]}
                 onPress={handlePickAttachment}
                 disabled={uploadingAttachment}
               >
                 {uploadingAttachment ? (
-                  <ActivityIndicator size="small" color={PRIMARY_GREEN} />
+                  <ActivityIndicator size="small" color={colors.primary} />
                 ) : (
-                  <Ionicons name="attach" size={18} color={PRIMARY_GREEN} />
+                  <Ionicons name="attach" size={18} color={colors.accent} />
                 )}
-                <Text style={styles.attachButtonText}>
-                  {uploadingAttachment ? 'Uploading...' : 'Add Attachment'}
+                <Text style={[styles.attachButtonText, { color: colors.primary }]}>
+                  {uploadingAttachment ? t('common.uploading') : t('profile.addAttachment')}
                 </Text>
               </TouchableOpacity>
-              {attachments.length > 0 && (
+              {attachments.length > 0 ? (
                 <View style={styles.attachmentsList}>
                   {attachments.map((file, idx) => (
-                    <View key={`${file.url}-${idx}`} style={styles.attachmentChip}>
-                      <Text style={styles.attachmentChipText} numberOfLines={1}>
+                    <View
+                      key={`${file.url}-${idx}`}
+                      style={[styles.attachmentChip, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                    >
+                      <Text style={[styles.attachmentChipText, { color: colors.textPrimary }]} numberOfLines={1}>
                         {file.name}
                       </Text>
                       <TouchableOpacity
@@ -912,80 +1131,117 @@ export default function StudentFeedScreen() {
                           setAttachments((prev) => prev.filter((_, i) => i !== idx))
                         }
                       >
-                        <Ionicons name="close-circle" size={18} color="#ef4444" />
+                        <Ionicons name="close-circle" size={18} color={colors.danger} />
                       </TouchableOpacity>
                     </View>
                   ))}
                 </View>
-              )}
+              ) : null}
 
-              <TouchableOpacity
-                style={[styles.publishButton, publishing && styles.publishButtonDisabled]}
+              <PrimaryButton
+                label={t('feed.publishPost')}
                 onPress={handlePublishPost}
                 disabled={publishing}
-              >
-                <Text style={styles.publishButtonText}>{t('feed.publishPost')}</Text>
-              </TouchableOpacity>
+                loading={publishing}
+                style={styles.publishButtonPrimary}
+              />
             </ScrollView>
           </View>
         </View>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
+  feedHeader: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'stretch',
+    paddingHorizontal: layout.screenPadding,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  headerIconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerSide: {
-    width: 108,
-  },
-  headerSideRight: {
-    alignItems: 'flex-end',
+    justifyContent: 'center',
+    position: 'relative',
   },
   headerTitle: {
-    flex: 1,
-    textAlign: 'center',
-    fontSize: 22,
-    fontWeight: '700',
-    fontStyle: 'italic',
+    fontSize: 19,
+    fontWeight: '800',
     letterSpacing: 0.2,
-    color: '#111827',
+    textAlign: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  headerTitleWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerSide: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: 100,
   },
   headerActions: {
-    flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
-  headerButton: {
-    padding: 4,
+  headerIconPlaceholder: {
+    width: 44,
+    height: 44,
+  },
+  topDecorWrap: {
     position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+  },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  feedBody: {
+    flex: 1,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.md,
   },
   headerNotificationDot: {
     position: 'absolute',
-    top: 2,
-    right: 2,
+    top: 8,
+    right: 8,
     width: 9,
     height: 9,
-    borderRadius: 4.5,
+    borderRadius: 5,
     backgroundColor: '#ef4444',
+    borderWidth: 1.5,
+    borderColor: '#ffffff',
   },
   chatUnreadBadge: {
     position: 'absolute',
-    top: -4,
-    right: -6,
+    top: -2,
+    right: -2,
     minWidth: 16,
     height: 16,
     borderRadius: 8,
@@ -1000,339 +1256,364 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   feedContent: {
-    padding: 16,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
     paddingBottom: 100,
   },
-  postCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  postCardOuter: {
+    marginBottom: spacing.sm,
+    borderRadius: radius.lg,
+    overflow: 'hidden',
   },
-  postHeader: {
+  postCardOuterPressed: {
+    opacity: 0.94,
+  },
+  postCardInner: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  postTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: 12,
+    alignItems: 'center',
+    marginBottom: 6,
+    gap: 8,
   },
-  authorInfo: {
+  authorBlock: {
     flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
+    minWidth: 0,
+    gap: 8,
+    paddingVertical: 2,
+    paddingHorizontal: 2,
+    borderRadius: radius.md,
+  },
+  authorBlockPressed: {
+    opacity: 0.88,
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
     overflow: 'hidden',
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
   },
   avatarImage: {
     width: '100%',
     height: '100%',
     borderRadius: 20,
   },
-  authorDetails: {
+  authorTextStack: {
     flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
   },
   authorName: {
     fontSize: 15,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 2,
+    fontWeight: '700',
+    marginBottom: 1,
   },
   authorInstitution: {
     fontSize: 12,
-    color: '#6b7280',
+    fontWeight: '500',
+    lineHeight: 16,
   },
   typeBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    maxWidth: '40%',
+    flexShrink: 0,
+    alignSelf: 'center',
   },
   typeBadgeText: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#ffffff',
+    fontWeight: '700',
   },
   courseTag: {
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    backgroundColor: '#f3f4f6',
-    paddingHorizontal: 10,
+    gap: 5,
+    paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 8,
-    marginBottom: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: 6,
   },
   courseTagText: {
     fontSize: 12,
-    fontWeight: '500',
-    color: PRIMARY_GREEN,
-    marginLeft: 4,
+    fontWeight: '600',
+    flexShrink: 1,
   },
   postTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
+    fontSize: 17,
+    fontWeight: '800',
+    marginBottom: 4,
+    lineHeight: 22,
   },
   postContent: {
     fontSize: 14,
-    color: '#4b5563',
-    lineHeight: 20,
-    marginBottom: 12,
+    lineHeight: 19,
+    marginBottom: 6,
+  },
+  postImageWrap: {
+    borderRadius: radius.md,
+    overflow: 'hidden',
+    borderWidth: 1,
+    marginBottom: 6,
+    maxHeight: 200,
+  },
+  postImage: {
+    width: '100%',
+    height: 180,
   },
   tagsContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginBottom: 12,
+    gap: 5,
+    marginBottom: 6,
   },
   tag: {
-    backgroundColor: '#f3f4f6',
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
   tagText: {
     fontSize: 11,
-    color: '#6b7280',
+    fontWeight: '600',
   },
   postFooter: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
+    justifyContent: 'space-between',
+    paddingTop: 6,
+    marginTop: 2,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 10,
   },
-  stats: {
+  footerTime: {
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 0,
+  },
+  footerStatsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 16,
+    gap: 12,
+    flexShrink: 0,
   },
   statItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 5,
   },
   statText: {
-    fontSize: 13,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  timeText: {
     fontSize: 12,
-    color: '#9ca3af',
+    fontWeight: '600',
   },
-  notificationsScreen: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    paddingTop: 58,
+  emptyCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+  },
+  emptyStateTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
+  emptyStateSubtitle: {
+    fontSize: 13,
+    fontWeight: '500',
+    marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  notificationsFilterShell: {
+    marginHorizontal: layout.screenPadding,
+    marginTop: spacing.xs,
+    padding: 4,
   },
   notificationsTabsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-    gap: 10,
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 4,
   },
   notificationTab: {
-    backgroundColor: '#f3f4f6',
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  notificationTabActive: {
-    backgroundColor: '#dbeafe',
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
   },
   notificationTabText: {
-    color: '#374151',
-    fontSize: 14,
-    fontWeight: '600',
-  },
-  notificationTabTextActive: {
-    color: '#1d4ed8',
+    fontSize: 13,
+    fontWeight: '700',
   },
   notificationsBody: {
-    paddingHorizontal: 16,
-    paddingBottom: 18,
-  },
-  notificationsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-    marginBottom: 10,
-  },
-  notificationsHeaderSpacer: {
-    width: 22,
-  },
-  notificationsTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
   notificationsSectionTitle: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 14,
-    marginBottom: 8,
-  },
-  notificationsEmpty: {
-    color: '#6b7280',
     fontSize: 14,
-    textAlign: 'center',
-    paddingVertical: 28,
+    fontWeight: '800',
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
   },
-  notificationRow: {
+  notificationCardWrap: {
+    marginBottom: spacing.sm,
+  },
+  notificationCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  notificationRowInner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    gap: 10,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f9fafb',
+    gap: 8,
+  },
+  notificationTypeIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 4,
   },
   notificationAvatarWrap: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#f3f4f6',
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     overflow: 'hidden',
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   notificationAvatar: {
     width: '100%',
     height: '100%',
-    borderRadius: 17,
+    borderRadius: 18,
   },
   notificationTextWrap: {
     flex: 1,
+    minWidth: 0,
   },
   notificationText: {
-    color: '#111827',
     fontSize: 13,
     fontWeight: '600',
+    lineHeight: 18,
   },
   notificationSubText: {
-    marginTop: 2,
-    color: '#6b7280',
+    marginTop: 3,
     fontSize: 12,
+    fontStyle: 'italic',
   },
   notificationMeta: {
     alignItems: 'flex-end',
-    minWidth: 40,
-    gap: 5,
+    justifyContent: 'flex-start',
+    minWidth: 44,
+    gap: 4,
   },
   notificationTime: {
-    color: '#9ca3af',
     fontSize: 11,
+    fontWeight: '500',
   },
   notificationUnreadDot: {
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: '#ef4444',
   },
-  // Modal Styles
+  notificationsEmptyCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.xl,
+    marginTop: spacing.md,
+  },
+  notificationsEmptyTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: spacing.sm,
+    textAlign: 'center',
+  },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'flex-end',
   },
   modalContent: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: radius.lg,
+    borderTopRightRadius: radius.lg,
+    borderTopWidth: 1,
     maxHeight: '90%',
-    paddingTop: 20,
+    paddingTop: spacing.md,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    paddingHorizontal: layout.screenPadding,
+    paddingBottom: spacing.sm,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    fontSize: 18,
+    fontWeight: '800',
+    flex: 1,
+    marginEnd: spacing.sm,
   },
   modalBody: {
-    padding: 20,
+    paddingHorizontal: layout.screenPadding,
+    paddingBottom: spacing.xxl,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
-    marginTop: 16,
+    fontSize: 13,
+    fontWeight: '700',
+    marginBottom: 6,
+    marginTop: spacing.md,
   },
   input: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     paddingVertical: 12,
   },
   inputPlaceholder: {
     fontSize: 14,
-    color: '#9ca3af',
+    flex: 1,
   },
   inputValue: {
     fontSize: 14,
-    color: '#111827',
-    fontWeight: '500',
+    flex: 1,
+    fontWeight: '600',
   },
   pickerList: {
     marginTop: 8,
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#ffffff',
     overflow: 'hidden',
   },
   pickerItem: {
     paddingHorizontal: 14,
     paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   pickerItemText: {
     fontSize: 14,
-    color: '#111827',
   },
   textInput: {
-    backgroundColor: '#f9fafb',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingHorizontal: 16,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
     paddingVertical: 12,
     fontSize: 14,
-    color: '#111827',
   },
   textArea: {
     minHeight: 120,
@@ -1344,29 +1625,17 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   typeOption: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  typeOptionActive: {
-    backgroundColor: '#ecfdf5',
-    borderColor: PRIMARY_GREEN,
   },
   typeOptionText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  typeOptionTextActive: {
-    color: PRIMARY_GREEN,
-    fontWeight: '700',
+    fontSize: 12,
   },
   visibilityOptions: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 10,
   },
   visibilityOption: {
     flex: 1,
@@ -1375,22 +1644,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 12,
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  visibilityOptionActive: {
-    backgroundColor: '#f0fdf4',
-    borderColor: PRIMARY_GREEN,
   },
   visibilityOptionText: {
     fontSize: 13,
-    fontWeight: '600',
-    color: PRIMARY_GREEN,
-  },
-  visibilityOptionTextInactive: {
-    color: '#6b7280',
+    fontWeight: '700',
   },
   attachButton: {
     marginTop: 8,
@@ -1399,15 +1658,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     borderWidth: 1,
-    borderColor: '#d1fae5',
-    backgroundColor: '#f0fdf4',
-    borderRadius: 12,
+    borderRadius: radius.md,
     paddingVertical: 12,
   },
   attachButtonText: {
-    color: PRIMARY_GREEN,
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   attachmentsList: {
     marginTop: 10,
@@ -1418,33 +1674,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 10,
+    borderRadius: radius.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    backgroundColor: '#ffffff',
     gap: 8,
   },
   attachmentChipText: {
     flex: 1,
-    color: '#374151',
     fontSize: 13,
   },
-  publishButton: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 20,
+  publishButtonPrimary: {
+    marginTop: spacing.lg,
+    marginBottom: spacing.lg,
   },
-  publishButtonDisabled: {
-    opacity: 0.6,
+  rtlRow: {
+    flexDirection: 'row-reverse',
   },
-  publishButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#ffffff',
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  rtlTextBlock: {
+    alignItems: 'flex-end',
   },
 });
 

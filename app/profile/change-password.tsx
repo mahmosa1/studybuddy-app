@@ -1,5 +1,11 @@
 // app/profile/change-password.tsx — Firebase email/password update
 import { auth } from '@/lib/firebaseConfig';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, useRouter } from 'expo-router';
 import {
@@ -18,12 +24,9 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-
-const ACCENT = '#047857';
 
 function mapAuthError(t: (k: string) => string, code: string | undefined): string {
   switch (code) {
@@ -42,6 +45,7 @@ export default function ChangePasswordScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const isHebrewUi = i18n.language === 'he';
 
   const [currentPassword, setCurrentPassword] = useState('');
@@ -104,23 +108,20 @@ export default function ChangePasswordScreen() {
 
   if (!hasPasswordProvider()) {
     return (
-      <View style={[styles.screen, { paddingTop: insets.top }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.back')}
-          >
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </TouchableOpacity>
-          <Text style={[styles.title, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.title')}</Text>
-          <View style={{ width: 40 }} />
+      <AppScreen>
+        <AppHeader title={t('changePasswordScreen.title')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
         </View>
-        <View style={styles.scroll}>
-          <Text style={[styles.warn, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.noPasswordProvider')}</Text>
+        <View style={styles.content}>
+          <AppCard style={[styles.noticeCard, { backgroundColor: colors.surface, borderColor: colors.warning }]}>
+            <Text style={[styles.warn, { color: colors.warning }, isHebrewUi && styles.rtlText]}>
+              {t('changePasswordScreen.noPasswordProvider')}
+            </Text>
+          </AppCard>
         </View>
-      </View>
+      </AppScreen>
     );
   }
 
@@ -130,18 +131,11 @@ export default function ChangePasswordScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
     >
-      <View style={[styles.screen, { paddingTop: insets.top }]}>
-        <View style={styles.topBar}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            accessibilityRole="button"
-            accessibilityLabel={t('common.back')}
-          >
-            <Ionicons name="arrow-back" size={24} color="#111827" />
-          </TouchableOpacity>
-          <Text style={[styles.title, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.title')}</Text>
-          <View style={{ width: 40 }} />
+      <AppScreen>
+        <AppHeader title={t('changePasswordScreen.title')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
         </View>
 
         <ScrollView
@@ -149,97 +143,113 @@ export default function ChangePasswordScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[styles.label, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.currentPassword')}</Text>
-          <TextInput
-            style={[styles.input, inputExtra]}
-            secureTextEntry
-            textContentType="password"
-            autoCapitalize="none"
-            value={currentPassword}
-            onChangeText={setCurrentPassword}
-            placeholder={t('changePasswordScreen.currentPassword')}
-            placeholderTextColor="#9ca3af"
-            textAlign={rtlAlign}
-          />
+          <AppCard style={[styles.formCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.currentPassword')}</Text>
+            <TextInput
+              style={[styles.input, inputExtra, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              secureTextEntry
+              textContentType="password"
+              autoCapitalize="none"
+              value={currentPassword}
+              onChangeText={setCurrentPassword}
+              placeholder={t('changePasswordScreen.currentPassword')}
+              placeholderTextColor={colors.textSecondary}
+              textAlign={rtlAlign}
+            />
 
-          <Text style={[styles.label, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.newPassword')}</Text>
-          <TextInput
-            style={[styles.input, inputExtra]}
-            secureTextEntry
-            textContentType="newPassword"
-            autoCapitalize="none"
-            value={newPassword}
-            onChangeText={setNewPassword}
-            placeholder={t('changePasswordScreen.newPassword')}
-            placeholderTextColor="#9ca3af"
-            textAlign={rtlAlign}
-          />
+            <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.newPassword')}</Text>
+            <TextInput
+              style={[styles.input, inputExtra, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              secureTextEntry
+              textContentType="newPassword"
+              autoCapitalize="none"
+              value={newPassword}
+              onChangeText={setNewPassword}
+              placeholder={t('changePasswordScreen.newPassword')}
+              placeholderTextColor={colors.textSecondary}
+              textAlign={rtlAlign}
+            />
 
-          <Text style={[styles.label, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.confirmPassword')}</Text>
-          <TextInput
-            style={[styles.input, inputExtra]}
-            secureTextEntry
-            textContentType="newPassword"
-            autoCapitalize="none"
-            value={confirmPassword}
-            onChangeText={setConfirmPassword}
-            placeholder={t('changePasswordScreen.confirmPassword')}
-            placeholderTextColor="#9ca3af"
-            textAlign={rtlAlign}
-          />
+            <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('changePasswordScreen.confirmPassword')}</Text>
+            <TextInput
+              style={[styles.input, inputExtra, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              secureTextEntry
+              textContentType="newPassword"
+              autoCapitalize="none"
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              placeholder={t('changePasswordScreen.confirmPassword')}
+              placeholderTextColor={colors.textSecondary}
+              textAlign={rtlAlign}
+            />
 
-          <TouchableOpacity
-            style={[styles.submitBtn, submitting && styles.submitDisabled]}
-            onPress={handleSubmit}
-            disabled={submitting}
-          >
-            {submitting ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.submitText}>{t('changePasswordScreen.submit')}</Text>
-            )}
-          </TouchableOpacity>
+            <PrimaryButton
+              label={t('changePasswordScreen.submit')}
+              onPress={handleSubmit}
+              loading={submitting}
+              disabled={submitting}
+              style={styles.submitBtn}
+            />
+          </AppCard>
         </ScrollView>
-      </View>
+      </AppScreen>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  screen: { flex: 1, backgroundColor: '#f9fafb' },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#fff',
+  content: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 2,
   },
-  backBtn: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
-  title: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    textAlign: 'center',
-  },
+  noticeCard: { padding: spacing.lg },
   rtlText: { textAlign: 'right', writingDirection: 'rtl' },
-  scroll: { padding: 20, paddingBottom: 40 },
-  warn: { fontSize: 14, color: '#b45309', marginBottom: 16, lineHeight: 20 },
+  scroll: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 2,
+    paddingBottom: 40,
+    gap: spacing.sm,
+  },
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+  },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  formCard: {
+    padding: spacing.lg,
+  },
+  warn: { fontSize: 14, marginBottom: 2, lineHeight: 20 },
   label: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#374151',
     marginBottom: 8,
     marginTop: 12,
   },
   input: {
-    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 12,
     paddingHorizontal: 14,
     paddingVertical: 12,
@@ -249,11 +259,5 @@ const styles = StyleSheet.create({
   inputRtl: { writingDirection: 'rtl' },
   submitBtn: {
     marginTop: 28,
-    backgroundColor: ACCENT,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
   },
-  submitDisabled: { opacity: 0.6 },
-  submitText: { color: '#fff', fontSize: 16, fontWeight: '700' },
 });

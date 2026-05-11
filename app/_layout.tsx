@@ -1,5 +1,6 @@
 // app/_layout.tsx
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { getTheme } from '@/frontend/styles/designSystem';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
@@ -18,12 +19,13 @@ export const unstable_settings = {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const mode = colorScheme === 'dark' ? 'dark' : 'light';
+  const activeTheme = getTheme(mode);
 
   useEffect(() => {
-    // Align root window with light surfaces (tabs, feed, chat) so edge-to-edge Android
-    // does not leave a mismatched strip behind the status bar.
-    void SystemUI.setBackgroundColorAsync('#f9fafb');
-  }, []);
+    // Keep OS window/safe area aligned with active app theme.
+    void SystemUI.setBackgroundColorAsync(activeTheme.colors.bg);
+  }, [activeTheme.colors.bg]);
 
   return (
     <UserProvider>
@@ -61,7 +63,10 @@ export default function RootLayout() {
           />
         </Stack>
         {/* "auto" follows system dark mode → light icons on our light screens = invisible with edge-to-edge */}
-        <StatusBar style="dark" backgroundColor={Platform.OS === 'android' ? '#f9fafb' : undefined} />
+        <StatusBar
+          style={activeTheme.colors.statusBar}
+          backgroundColor={Platform.OS === 'android' ? activeTheme.colors.bg : undefined}
+        />
       </ThemeProvider>
     </UserProvider>
   );

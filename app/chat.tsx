@@ -1,5 +1,11 @@
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { useTranslation } from 'react-i18next';
@@ -33,8 +39,6 @@ import {
   View,
 } from 'react-native';
 
-const PRIMARY_GREEN = '#047857';
-
 type ChatThread = {
   id: string;
   title: string;
@@ -58,7 +62,9 @@ type UserOption = {
 
 export default function ChatScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const isHebrewUi = i18n.language === 'he';
   const { firebaseUser } = useUser();
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [loading, setLoading] = useState(true);
@@ -308,13 +314,17 @@ export default function ChatScreen() {
 
   const emptyState = useMemo(
     () => (
-      <View style={styles.emptyState}>
-        <Ionicons name="chatbubbles-outline" size={48} color="#9ca3af" />
-        <Text style={styles.emptyStateTitle}>{t('chat.empty.title')}</Text>
-        <Text style={styles.emptyStateSubtitle}>{t('chat.empty.subtitle')}</Text>
-      </View>
+      <AppCard style={[styles.emptyCard, { borderColor: colors.border }]}>
+        <Ionicons name="chatbubbles-outline" size={42} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+        <Text style={[styles.emptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+          {t('chat.empty.title')}
+        </Text>
+        <Text style={[styles.emptySubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+          {t('chat.empty.subtitle')}
+        </Text>
+      </AppCard>
     ),
-    [t]
+    [colors.border, colors.textPrimary, colors.textSecondary, isHebrewUi, t]
   );
 
   const filteredFollowedUsers = useMemo(() => {
@@ -378,20 +388,28 @@ export default function ChatScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('chat.title')}</Text>
-        <TouchableOpacity onPress={openNewChatModal}>
-          <Ionicons name="add-circle" size={24} color={PRIMARY_GREEN} />
-        </TouchableOpacity>
-      </View>
+    <AppScreen>
+      <AppHeader
+        title={t('chat.title')}
+        onBack={() => router.back()}
+        rightSlot={
+          <TouchableOpacity
+            onPress={openNewChatModal}
+            accessibilityRole="button"
+            style={[
+              styles.headerActionBtn,
+              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+            ]}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="add" size={20} color={colors.primary} />
+          </TouchableOpacity>
+        }
+      />
 
       {loading ? (
         <View style={styles.loadingWrap}>
-          <ActivityIndicator color={PRIMARY_GREEN} />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
         <FlatList
@@ -401,57 +419,76 @@ export default function ChatScreen() {
           ListEmptyComponent={emptyState}
           renderItem={({ item }) => (
             <TouchableOpacity
-              style={styles.threadItem}
+              style={styles.threadItemWrap}
               onPress={() => openThread(item)}
               onLongPress={() => handleThreadLongPress(item)}
               delayLongPress={260}
+              activeOpacity={0.88}
             >
-              <View style={styles.threadIconWrap}>
-                {item.type === 'group' ? (
-                  <Ionicons
-                    name="people-outline"
-                    size={18}
-                    color={PRIMARY_GREEN}
-                  />
-                ) : item.avatarUrl ? (
-                  <Image source={{ uri: item.avatarUrl }} style={styles.threadAvatar} />
-                ) : (
-                  <Ionicons
-                    name={item.type === 'course' ? 'people-outline' : 'person-outline'}
-                    size={18}
-                    color={PRIMARY_GREEN}
-                  />
-                )}
-              </View>
-              <View style={styles.threadMain}>
-                <View style={styles.threadTitleRow}>
-                  <Text style={styles.threadTitle} numberOfLines={1}>
-                    {item.title}
-                  </Text>
-                  {item.isPinned && <Ionicons name="pin" size={12} color="#f59e0b" />}
-                  {item.isMuted && <Ionicons name="volume-mute" size={12} color="#9ca3af" />}
+              <AppCard
+                style={[
+                  styles.threadCard,
+                  { borderColor: colors.border, backgroundColor: colors.surface },
+                ]}
+              >
+                <View style={[styles.threadRow, isHebrewUi && styles.rtlRow]}>
+                  <View style={[styles.threadIconWrap, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                    {item.type === 'group' ? (
+                      <Ionicons name="people-outline" size={18} color={colors.primary} />
+                    ) : item.avatarUrl ? (
+                      <Image source={{ uri: item.avatarUrl }} style={styles.threadAvatar} />
+                    ) : (
+                      <Ionicons name={item.type === 'course' ? 'school-outline' : 'person-outline'} size={18} color={colors.primary} />
+                    )}
+                  </View>
+
+                  <View style={styles.threadMain}>
+                    <View style={[styles.threadTitleRow, isHebrewUi && styles.rtlRow]}>
+                      <Text
+                        style={[styles.threadTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                        numberOfLines={1}
+                      >
+                        {item.title}
+                      </Text>
+                      {item.isPinned ? <Ionicons name="pin" size={12} color={colors.warning} /> : null}
+                      {item.isMuted ? <Ionicons name="volume-mute" size={12} color={colors.textSecondary} /> : null}
+                    </View>
+
+                    {item.unreadCount && item.unreadCount > 0 ? (
+                      item.unreadCount === 1 ? (
+                        <Text
+                          style={[styles.threadLastUnreadSingle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                          numberOfLines={1}
+                        >
+                          {item.lastMessage || t('chat.newMessage')}
+                        </Text>
+                      ) : (
+                        <Text style={[styles.unreadText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                          {item.unreadCount > 4
+                            ? t('chat.unread.many')
+                            : t('chat.unread.count', { count: item.unreadCount })}
+                        </Text>
+                      )
+                    ) : (
+                      <Text style={[styles.threadLast, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                        {item.lastMessage || t('chat.noMessagesYet')}
+                      </Text>
+                    )}
+                  </View>
+
+                  <View style={styles.threadMeta}>
+                    {!!item.unreadCount && item.unreadCount > 0 ? (
+                      <View style={[styles.unreadBadge, { backgroundColor: colors.primary }]}>
+                        <Text style={[styles.unreadBadgeText, { color: colors.textOnPrimary }]}>
+                          {item.unreadCount > 99 ? '99+' : String(item.unreadCount)}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={[styles.threadTime, { color: colors.textSecondary }]}>{item.updatedLabel}</Text>
+                    )}
+                  </View>
                 </View>
-                {item.unreadCount && item.unreadCount > 0 ? (
-                  item.unreadCount === 1 ? (
-                    <Text style={styles.threadLastUnreadSingle} numberOfLines={1}>
-                      {item.lastMessage || t('chat.newMessage')}
-                    </Text>
-                  ) : (
-                    <Text style={styles.unreadText} numberOfLines={1}>
-                      {item.unreadCount > 4 ? t('chat.unread.many') : t('chat.unread.count', { count: item.unreadCount })}
-                    </Text>
-                  )
-                ) : (
-                  <Text style={styles.threadLast} numberOfLines={1}>
-                    {item.lastMessage || t('chat.noMessagesYet')}
-                  </Text>
-                )}
-              </View>
-              {!!item.unreadCount && item.unreadCount > 0 ? (
-                <View style={styles.unreadDot} />
-              ) : (
-                <Text style={styles.threadTime}>{item.updatedLabel}</Text>
-              )}
+              </AppCard>
             </TouchableOpacity>
           )}
         />
@@ -463,201 +500,212 @@ export default function ChatScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={0}
         >
-          <View style={styles.newMessageHeader}>
-            <TouchableOpacity
-              onPress={() => {
+          <AppScreen>
+            <AppHeader
+              title={newChatStep === 'main' ? t('chat.newMessage') : t('chat.newGroup')}
+              onBack={() => {
                 if (newChatStep === 'group') {
                   setNewChatStep('main');
                   return;
                 }
                 setShowNewChatModal(false);
               }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#111827" />
-            </TouchableOpacity>
-            <Text style={styles.newMessageHeaderTitle}>
-              {newChatStep === 'main' ? t('chat.newMessage') : t('chat.newGroup')}
-            </Text>
-            <View style={{ width: 24 }} />
-          </View>
+            />
 
-          {creating && <ActivityIndicator color={PRIMARY_GREEN} style={{ marginTop: 10 }} />}
+            {creating ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.sm }} /> : null}
 
-          {newChatStep === 'main' ? (
-            <>
-              <View style={styles.toSearchRow}>
-                <Text style={styles.toSearchLabel}>{t('chat.to')}:</Text>
-                <TextInput
-                  style={styles.toSearchInput}
-                  value={searchQuery}
-                  onChangeText={setSearchQuery}
-                  placeholder={t('chat.searchUsers')}
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
+            {newChatStep === 'main' ? (
+              <>
+                <AppCard style={[styles.searchCard, { borderColor: colors.border }]}>
+                  <View style={[styles.searchRow, isHebrewUi && styles.rtlRow]}>
+                    <Ionicons name="search" size={16} color={colors.textSecondary} />
+                    <TextInput
+                      style={[styles.searchInput, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                      value={searchQuery}
+                      onChangeText={setSearchQuery}
+                      placeholder={t('chat.searchUsers')}
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
+                </AppCard>
 
-              <TouchableOpacity style={styles.newMessageGroupRow} onPress={() => setNewChatStep('group')}>
-                <View style={styles.createGroupIcon}>
-                  <Ionicons name="people" size={16} color={PRIMARY_GREEN} />
-                </View>
-                <Text style={styles.createGroupText}>{t('chat.groupChat')}</Text>
-                <Ionicons name="chevron-forward" size={18} color="#6b7280" style={{ marginLeft: 'auto' }} />
-              </TouchableOpacity>
-
-              <Text style={styles.newMessageSectionTitle}>
-                {searchQuery.trim() ? t('chat.results') : t('chat.suggested')}
-              </Text>
-              {searchingUsers && searchQuery.trim() ? (
-                <ActivityIndicator color={PRIMARY_GREEN} style={{ marginBottom: 8 }} />
-              ) : null}
-              <FlatList
-                data={searchableUsers}
-                keyExtractor={(item) => item.uid}
-                style={styles.newMessageList}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                ListEmptyComponent={<Text style={styles.emptyOptionText}>{t('search.noResults')}</Text>}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.newMessageUserRow} onPress={() => createDirectChat(item)}>
-                    <View style={styles.optionAvatarWrap}>
-                      {item.avatarUrl ? (
-                        <Image source={{ uri: item.avatarUrl }} style={styles.optionAvatar} />
-                      ) : (
-                        <Ionicons name="person" size={14} color={PRIMARY_GREEN} />
-                      )}
-                    </View>
-                    <Text style={styles.optionText}>{item.name}</Text>
-                  </TouchableOpacity>
-                )}
-              />
-            </>
-          ) : (
-            <>
-              <View style={styles.toSearchRow}>
-                <Text style={styles.toSearchLabel}>{t('chat.to')}:</Text>
-                <TextInput
-                  style={styles.toSearchInput}
-                  value={groupSearchQuery}
-                  onChangeText={setGroupSearchQuery}
-                  placeholder={t('chat.searchUsers')}
-                  placeholderTextColor="#9ca3af"
-                />
-              </View>
-
-              <View style={styles.groupNameRow}>
-                <Text style={styles.groupNameLabel}>{t('chat.groupName')}:</Text>
-                <TextInput
-                  style={styles.groupNameInput}
-                  value={groupName}
-                  onChangeText={setGroupName}
-                  placeholder={t('chat.groupNamePlaceholder')}
-                  placeholderTextColor="#9ca3af"
-                  maxLength={60}
-                />
-              </View>
-
-              {!!selectedGroupUsers.length && (
-                <View style={styles.chipsWrap}>
-                  {selectedGroupUsers.map((user) => (
-                    <View key={user.uid} style={styles.userChip}>
-                      <Text style={styles.userChipText} numberOfLines={1}>
-                        {user.name}
-                      </Text>
-                      <TouchableOpacity onPress={() => toggleSelectGroupUser(user.uid)}>
-                        <Ionicons name="close" size={14} color="#374151" />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              <Text style={styles.newMessageSectionTitle}>{t('chat.suggested')}</Text>
-              {searchingUsers && groupSearchQuery.trim() ? (
-                <ActivityIndicator color={PRIMARY_GREEN} style={{ marginBottom: 8 }} />
-              ) : null}
-              <FlatList
-                data={filteredGroupUsers}
-                keyExtractor={(item) => item.uid}
-                style={styles.newMessageList}
-                keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="interactive"
-                ListEmptyComponent={<Text style={styles.emptyOptionText}>{t('search.noResults')}</Text>}
-                renderItem={({ item }) => {
-                  const selected = selectedGroupUserIds.includes(item.uid);
-                  return (
-                    <TouchableOpacity style={styles.newMessageUserRow} onPress={() => toggleSelectGroupUser(item.uid)}>
-                      <View style={styles.optionAvatarWrap}>
-                        {item.avatarUrl ? (
-                          <Image source={{ uri: item.avatarUrl }} style={styles.optionAvatar} />
-                        ) : (
-                          <Ionicons name="person" size={14} color={PRIMARY_GREEN} />
-                        )}
+                <TouchableOpacity activeOpacity={0.9} onPress={() => setNewChatStep('group')}>
+                  <AppCard style={[styles.actionCard, { borderColor: colors.border }]}>
+                    <View style={[styles.actionRow, isHebrewUi && styles.rtlRow]}>
+                      <View style={[styles.actionIcon, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                        <Ionicons name="people-outline" size={18} color={colors.primary} />
                       </View>
-                      <Text style={styles.optionText}>{item.name}</Text>
-                      <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                        {selected && <Ionicons name="checkmark" size={12} color="#fff" />}
+                      <View style={styles.actionTextWrap}>
+                        <Text style={[styles.actionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                          {t('chat.groupChat')}
+                        </Text>
+                        <Text style={[styles.actionSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                          {t('chat.newGroup')}
+                        </Text>
                       </View>
+                      <Ionicons
+                        name={isHebrewUi ? 'chevron-back' : 'chevron-forward'}
+                        size={18}
+                        color={colors.textSecondary}
+                        style={styles.actionChevron}
+                      />
+                    </View>
+                  </AppCard>
+                </TouchableOpacity>
+
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                  {searchQuery.trim() ? t('chat.results') : t('chat.suggested')}
+                </Text>
+                {searchingUsers && searchQuery.trim() ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginBottom: spacing.sm }} />
+                ) : null}
+                <FlatList
+                  data={searchableUsers}
+                  keyExtractor={(item) => item.uid}
+                  style={styles.newMessageList}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  ListEmptyComponent={
+                    <Text style={[styles.emptyOptionText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                      {t('search.noResults')}
+                    </Text>
+                  }
+                  renderItem={({ item }) => (
+                    <TouchableOpacity activeOpacity={0.9} onPress={() => createDirectChat(item)} style={styles.userRowWrap}>
+                      <AppCard style={[styles.userRowCard, { borderColor: colors.border }]}>
+                        <View style={[styles.userRow, isHebrewUi && styles.rtlRow]}>
+                          <View style={[styles.optionAvatarWrap, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                            {item.avatarUrl ? (
+                              <Image source={{ uri: item.avatarUrl }} style={styles.optionAvatar} />
+                            ) : (
+                              <Ionicons name="person" size={14} color={colors.primary} />
+                            )}
+                          </View>
+                          <Text style={[styles.optionText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                            {item.name}
+                          </Text>
+                        </View>
+                      </AppCard>
                     </TouchableOpacity>
-                  );
-                }}
-              />
+                  )}
+                />
+              </>
+            ) : (
+              <>
+                <AppCard style={[styles.searchCard, { borderColor: colors.border }]}>
+                  <View style={[styles.searchRow, isHebrewUi && styles.rtlRow]}>
+                    <Ionicons name="search" size={16} color={colors.textSecondary} />
+                    <TextInput
+                      style={[styles.searchInput, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                      value={groupSearchQuery}
+                      onChangeText={setGroupSearchQuery}
+                      placeholder={t('chat.searchUsers')}
+                      placeholderTextColor={colors.textSecondary}
+                    />
+                  </View>
+                </AppCard>
 
-              <TouchableOpacity
-                style={[
-                  styles.createGroupBtn,
-                  (selectedGroupUserIds.length < 2 || creating) && styles.createGroupBtnDisabled,
-                ]}
-                disabled={selectedGroupUserIds.length < 2 || creating}
-                onPress={createGroupChat}
-              >
-                <Text style={styles.createGroupBtnText}>{t('chat.createGroup')}</Text>
-              </TouchableOpacity>
-            </>
-          )}
+                <AppCard style={[styles.searchCard, { borderColor: colors.border }]}>
+                  <View style={[styles.searchRow, isHebrewUi && styles.rtlRow]}>
+                    <Ionicons name="create-outline" size={16} color={colors.textSecondary} />
+                    <TextInput
+                      style={[styles.searchInput, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                      value={groupName}
+                      onChangeText={setGroupName}
+                      placeholder={t('chat.groupNamePlaceholder')}
+                      placeholderTextColor={colors.textSecondary}
+                      maxLength={60}
+                    />
+                  </View>
+                </AppCard>
+
+                {!!selectedGroupUsers.length ? (
+                  <View style={styles.chipsWrap}>
+                    {selectedGroupUsers.map((user) => (
+                      <View key={user.uid} style={[styles.userChip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                        <Text style={[styles.userChipText, { color: colors.textPrimary }]} numberOfLines={1}>
+                          {user.name}
+                        </Text>
+                        <TouchableOpacity onPress={() => toggleSelectGroupUser(user.uid)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                          <Ionicons name="close" size={14} color={colors.textSecondary} />
+                        </TouchableOpacity>
+                      </View>
+                    ))}
+                  </View>
+                ) : null}
+
+                <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('chat.suggested')}</Text>
+                {searchingUsers && groupSearchQuery.trim() ? (
+                  <ActivityIndicator color={colors.primary} style={{ marginBottom: spacing.sm }} />
+                ) : null}
+                <FlatList
+                  data={filteredGroupUsers}
+                  keyExtractor={(item) => item.uid}
+                  style={styles.newMessageList}
+                  keyboardShouldPersistTaps="handled"
+                  keyboardDismissMode="interactive"
+                  ListEmptyComponent={
+                    <Text style={[styles.emptyOptionText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                      {t('search.noResults')}
+                    </Text>
+                  }
+                  renderItem={({ item }) => {
+                    const selected = selectedGroupUserIds.includes(item.uid);
+                    return (
+                      <TouchableOpacity activeOpacity={0.9} onPress={() => toggleSelectGroupUser(item.uid)} style={styles.userRowWrap}>
+                        <AppCard style={[styles.userRowCard, { borderColor: colors.border }]}>
+                          <View style={[styles.userRow, isHebrewUi && styles.rtlRow]}>
+                            <View style={[styles.optionAvatarWrap, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                              {item.avatarUrl ? (
+                                <Image source={{ uri: item.avatarUrl }} style={styles.optionAvatar} />
+                              ) : (
+                                <Ionicons name="person" size={14} color={colors.primary} />
+                              )}
+                            </View>
+                            <Text style={[styles.optionText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                              {item.name}
+                            </Text>
+                            <View
+                              style={[
+                                styles.checkbox,
+                                { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : 'transparent' },
+                                isHebrewUi && { marginLeft: 0, marginRight: 'auto' },
+                              ]}
+                            >
+                              {selected ? <Ionicons name="checkmark" size={12} color={colors.textOnPrimary} /> : null}
+                            </View>
+                          </View>
+                        </AppCard>
+                      </TouchableOpacity>
+                    );
+                  }}
+                />
+
+                <View style={styles.footerCta}>
+                  <PrimaryButton
+                    label={t('chat.createGroup')}
+                    onPress={createGroupChat}
+                    disabled={selectedGroupUserIds.length < 2 || creating}
+                    loading={creating}
+                  />
+                </View>
+              </>
+            )}
+          </AppScreen>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  header: {
-    backgroundColor: '#ffffff',
-    paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  headerActionBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 1,
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  headerTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  content: {
-    flex: 1,
     justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  title: {
-    marginTop: 12,
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  subtitle: {
-    marginTop: 8,
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
   },
   loadingWrap: {
     flex: 1,
@@ -665,18 +713,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   listContent: {
-    padding: 14,
-    paddingBottom: 30,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
-  threadItem: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    marginBottom: 12,
-    minHeight: 74,
+  threadItemWrap: {
+    marginBottom: spacing.sm,
+  },
+  threadCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  threadRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -685,251 +733,190 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
   },
   threadAvatar: {
     width: '100%',
     height: '100%',
   },
-  threadMain: { flex: 1 },
+  threadMain: { flex: 1, minWidth: 0 },
   threadTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
-  threadTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  threadLast: { marginTop: 3, fontSize: 14, color: '#6b7280' },
+  threadTitle: { fontSize: 16, fontWeight: '800', flexShrink: 1 },
+  threadLast: { marginTop: 3, fontSize: 13, fontWeight: '600' },
   threadLastUnreadSingle: {
     marginTop: 3,
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '700',
+    fontSize: 13,
+    fontWeight: '800',
   },
   unreadText: {
     marginTop: 5,
     fontSize: 13,
-    color: '#111827',
-    fontWeight: '700',
+    fontWeight: '800',
   },
-  unreadDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#ef4444',
-    marginLeft: 8,
+  threadMeta: {
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    minWidth: 52,
   },
   threadTime: {
-    color: '#9ca3af',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  unreadBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  unreadBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  emptyCard: {
+    marginTop: spacing.lg,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+  },
+  emptyTitle: {
+    marginTop: spacing.sm,
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    marginTop: spacing.xs,
     fontSize: 13,
     fontWeight: '600',
-    marginLeft: 8,
-  },
-  emptyState: {
-    marginTop: 80,
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  emptyStateTitle: {
-    marginTop: 10,
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  emptyStateSubtitle: {
-    marginTop: 4,
-    color: '#6b7280',
-    fontSize: 13,
+    textAlign: 'center',
   },
   newMessageScreen: {
     flex: 1,
-    backgroundColor: '#fff',
   },
-  newMessageHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 56,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  newMessageHeaderTitle: {
-    fontSize: 30,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  modalKeyboardWrap: { flex: 1 },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: '#111827' },
-  modalHeader: { flexDirection: 'row' },
-  modalSection: { marginTop: 8 },
-  optionList: { maxHeight: 300 },
   emptyOptionText: {
     paddingVertical: 8,
     fontSize: 12,
-    color: '#6b7280',
+    fontWeight: '600',
+    paddingHorizontal: layout.screenPadding,
   },
-  searchWrap: {
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 10,
-    backgroundColor: '#fff',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 6,
+  searchCard: {
+    marginHorizontal: layout.screenPadding,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
   },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: '#111827',
-    paddingVertical: 0,
-  },
-  optionItem: {
+  searchRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: '600',
+    paddingVertical: 0,
+    minHeight: 22,
+  },
+  actionCard: {
+    marginHorizontal: layout.screenPadding,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  actionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 10,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    marginBottom: 6,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  actionTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  actionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  actionSubtitle: {
+    marginTop: 1,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  actionChevron: {
+    marginLeft: 'auto',
   },
   optionAvatarWrap: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#ecfdf5',
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
+    borderWidth: 1,
   },
   optionAvatar: {
     width: '100%',
     height: '100%',
   },
-  optionText: { color: '#111827', fontSize: 17, fontWeight: '500' },
-  createGroupRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 8,
-  },
-  createGroupIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: '#ecfdf5',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  createGroupText: {
-    color: '#111827',
+  optionText: { fontSize: 14, fontWeight: '700', flex: 1, minWidth: 0 },
+  sectionTitle: {
     fontSize: 14,
-    fontWeight: '700',
-  },
-  toSearchRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  toSearchLabel: {
-    fontSize: 20,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  toSearchInput: {
-    flex: 1,
-    fontSize: 17,
-    color: '#111827',
-    paddingVertical: 0,
-  },
-  groupNameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  groupNameLabel: {
-    fontSize: 17,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  groupNameInput: {
-    flex: 1,
-    fontSize: 17,
-    color: '#111827',
-    paddingVertical: 0,
-  },
-  newMessageGroupRow: {
-    marginHorizontal: 16,
-    marginTop: 12,
-    marginBottom: 4,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 14,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  newMessageSectionTitle: {
-    fontSize: 34,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 8,
-    marginBottom: 6,
-    paddingHorizontal: 16,
+    fontWeight: '800',
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    paddingHorizontal: layout.screenPadding,
   },
   newMessageList: {
     flex: 1,
-    paddingHorizontal: 8,
+    paddingHorizontal: layout.screenPadding,
   },
-  newMessageUserRow: {
+  userRowWrap: {
+    marginBottom: spacing.xs,
+  },
+  userRowCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  userRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    marginBottom: 2,
   },
   chipsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 8,
+    paddingHorizontal: layout.screenPadding,
+    marginTop: spacing.sm,
+    marginBottom: spacing.sm,
   },
   userChip: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
     maxWidth: '100%',
   },
   userChipText: {
-    color: '#111827',
     fontSize: 12,
     fontWeight: '600',
   },
@@ -939,31 +926,19 @@ const styles = StyleSheet.create({
     height: 22,
     borderRadius: 11,
     borderWidth: 1,
-    borderColor: '#9ca3af',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  checkboxSelected: {
-    backgroundColor: PRIMARY_GREEN,
-    borderColor: PRIMARY_GREEN,
+  footerCta: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
   },
-  createGroupBtn: {
-    marginTop: 10,
-    marginHorizontal: 14,
-    marginBottom: 16,
-    backgroundColor: PRIMARY_GREEN,
-    borderRadius: 14,
-    minHeight: 54,
-    paddingVertical: 14,
-    alignItems: 'center',
-    justifyContent: 'center',
+  rtlRow: {
+    flexDirection: 'row-reverse',
   },
-  createGroupBtnDisabled: {
-    backgroundColor: '#6b7280',
-  },
-  createGroupBtnText: {
-    color: '#fff',
-    fontSize: 17,
-    fontWeight: '700',
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });

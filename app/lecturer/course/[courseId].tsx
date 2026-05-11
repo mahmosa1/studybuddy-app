@@ -1,4 +1,20 @@
 // app/lecturer/course/[courseId].tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import {
+  CourseJoinRequest,
+  approveJoinRequest,
+  rejectJoinRequest,
+  subscribeCourseApprovedParticipants,
+  subscribeCoursePendingRequests,
+} from '@/lib/courseJoinRequestService';
+import { iconContainer, layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
 import { startCourseFileIntelligenceJob } from '@/lib/learningIntelligence/api';
 import { supabase } from '@/lib/supabaseClient';
@@ -17,8 +33,8 @@ import {
   where,
 } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
   Alert,
   FlatList,
   Linking,
@@ -29,6 +45,12 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import {
+  formatEnglishJoinRequestWhen,
+  formatHebrewJoinRequestDate,
+  formatHebrewJoinRequestTime,
+  isHebrewUiLanguage,
+} from '@/frontend/utils/format';
 
 type CourseFile = {
   id: string;
@@ -40,6 +62,9 @@ type CourseFile = {
 
 export default function LecturerCourseDetailsScreen() {
   const router = useRouter();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const params = useLocalSearchParams<{
     courseId?: string | string[];
     name?: string;
@@ -52,6 +77,13 @@ export default function LecturerCourseDetailsScreen() {
   const [files, setFiles] = useState<CourseFile[]>([]);
   const [loadingFiles, setLoadingFiles] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [joinedStudents, setJoinedStudents] = useState<CourseJoinRequest[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<CourseJoinRequest[]>([]);
+  const [loadingJoinedStudents, setLoadingJoinedStudents] = useState(true);
+  const [loadingPendingRequests, setLoadingPendingRequests] = useState(true);
+  const [joinedStudentsError, setJoinedStudentsError] = useState(false);
+  const [pendingRequestsError, setPendingRequestsError] = useState(false);
+  const [actingRequestId, setActingRequestId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!courseId) {
@@ -85,7 +117,7 @@ export default function LecturerCourseDetailsScreen() {
       },
       (err) => {
         console.log('Error loading course files:', err);
-        Alert.alert('Error', 'Failed to load course files.');
+        Alert.alert(t('lecturer.error'), t('lecturer.failedToLoadFiles'));
         setLoadingFiles(false);
       }
     );
@@ -93,15 +125,132 @@ export default function LecturerCourseDetailsScreen() {
     return unsub;
   }, [courseId]);
 
+  useEffect(() => {
+    if (!courseId) {
+      setLoadingJoinedStudents(false);
+      setLoadingPendingRequests(false);
+      return;
+    }
+
+    const unsubApproved = subscribeCourseApprovedParticipants(
+      { courseId },
+      (list) => {
+        setJoinedStudents(list);
+        setLoadingJoinedStudents(false);
+        setJoinedStudentsError(false);
+      },
+      (err) => {
+        console.log('Failed to subscribe approved participants:', err);
+        setLoadingJoinedStudents(false);
+        setJoinedStudentsError(true);
+      },
+    );
+
+    const unsubPending = subscribeCoursePendingRequests(
+      { courseId },
+      (list) => {
+        setPendingRequests(list);
+        setLoadingPendingRequests(false);
+        setPendingRequestsError(false);
+      },
+      (err) => {
+        console.log('Failed to subscribe pending requests:', err);
+        setLoadingPendingRequests(false);
+        setPendingRequestsError(true);
+      },
+    );
+
+    return () => {
+      unsubApproved();
+      unsubPending();
+    };
+  }, [courseId]);
+
+  const formatApprovedAtLabel = (ts: any) => {
+    if (!ts?.toDate) return '-';
+    const d = ts.toDate();
+    if (isHebrewUiLanguage(i18n.language)) {
+      return t('lecturer.approvedAt', {
+        date: formatHebrewJoinRequestDate(d),
+        time: formatHebrewJoinRequestTime(d),
+      });
+    }
+    return t('lecturer.approvedAt', { when: formatEnglishJoinRequestWhen(d) });
+  };
+
+  const formatRequestedAtLabel = (ts: any) => {
+    if (!ts?.toDate) return '-';
+    const d = ts.toDate();
+    if (isHebrewUiLanguage(i18n.language)) {
+      return t('lecturer.requestedAt', {
+        date: formatHebrewJoinRequestDate(d),
+        time: formatHebrewJoinRequestTime(d),
+      });
+    }
+    return t('lecturer.requestedAt', { when: formatEnglishJoinRequestWhen(d) });
+  };
+
+  const showActionError = (reason?: string) => {
+    if (reason === 'already_handled') {
+      Alert.alert(t('common.error'), t('lecturer.joinRequestAlreadyHandled'));
+      return;
+    }
+    if (reason === 'not_authorized') {
+      Alert.alert(t('common.error'), t('lecturer.joinRequestNotAuthorized'));
+      return;
+    }
+    if (reason === 'request_not_found') {
+      Alert.alert(t('common.error'), t('lecturer.joinRequestNotFound'));
+      return;
+    }
+    Alert.alert(t('common.error'), t('lecturer.joinRequestActionFailed'));
+  };
+
+  const handleApproveRequest = async (requestId: string) => {
+    if (actingRequestId) return;
+    setActingRequestId(requestId);
+    try {
+      const result = await approveJoinRequest({ requestId });
+      if (!result.ok) {
+        showActionError(result.reason);
+        return;
+      }
+      Alert.alert(t('common.success'), t('lecturer.joinRequestApproved'));
+    } catch (err) {
+      console.log('Approve request from course detail failed:', err);
+      Alert.alert(t('common.error'), t('lecturer.joinRequestActionFailed'));
+    } finally {
+      setActingRequestId(null);
+    }
+  };
+
+  const handleRejectRequest = async (requestId: string) => {
+    if (actingRequestId) return;
+    setActingRequestId(requestId);
+    try {
+      const result = await rejectJoinRequest({ requestId });
+      if (!result.ok) {
+        showActionError(result.reason);
+        return;
+      }
+      Alert.alert(t('common.success'), t('lecturer.joinRequestRejected'));
+    } catch (err) {
+      console.log('Reject request from course detail failed:', err);
+      Alert.alert(t('common.error'), t('lecturer.joinRequestActionFailed'));
+    } finally {
+      setActingRequestId(null);
+    }
+  };
+
   const handleUploadFile = async () => {
     try {
       const user = auth.currentUser;
       if (!user) {
-        Alert.alert('Error', 'You must be logged in to upload files.');
+        Alert.alert(t('lecturer.error'), t('lecturer.mustBeLoggedInToUpload'));
         return;
       }
       if (!courseId) {
-        Alert.alert('Error', 'Missing course id.');
+        Alert.alert(t('lecturer.error'), t('lecturer.missingCourseId'));
         return;
       }
 
@@ -118,7 +267,7 @@ export default function LecturerCourseDetailsScreen() {
 
       const asset = result.assets?.[0];
       if (!asset || !asset.uri) {
-        Alert.alert('Error', 'Could not read selected file.');
+        Alert.alert(t('lecturer.error'), t('lecturer.couldNotReadFile'));
         setUploading(false);
         return;
       }
@@ -130,7 +279,7 @@ export default function LecturerCourseDetailsScreen() {
       );
 
       if (!fileUrl) {
-        Alert.alert('Upload failed', 'Could not upload file. Please try again.');
+        Alert.alert(t('common.uploadFailed'), t('lecturer.couldNotUploadFile'));
         setUploading(false);
         return;
       }
@@ -138,7 +287,7 @@ export default function LecturerCourseDetailsScreen() {
       const createdRef = await addDoc(collection(db, 'courseFiles'), {
         courseId,
         ownerUid: user.uid,
-        name: asset.name ?? 'Untitled file',
+        name: asset.name ?? t('lecturer.untitledFile'),
         size: asset.size ?? null,
         mimeType: asset.mimeType ?? null,
         url: fileUrl,
@@ -148,16 +297,16 @@ export default function LecturerCourseDetailsScreen() {
       startCourseFileIntelligenceJob({
         userId: user.uid,
         courseId,
-        courseName: name ?? 'Course',
+        courseName: name ?? t('lecturer.course'),
         fileId: createdRef.id,
       }).catch((engineErr) => {
         console.log('Lecturer file intelligence job trigger failed:', engineErr);
       });
 
-      Alert.alert('Success', 'File uploaded successfully.');
+      Alert.alert(t('lecturer.success'), t('lecturer.fileUploadedSuccessfully'));
     } catch (err) {
       console.log('Upload error:', err);
-      Alert.alert('Error', 'Failed to upload file, please try again.');
+      Alert.alert(t('lecturer.error'), t('lecturer.failedToUploadFile'));
     } finally {
       setUploading(false);
     }
@@ -165,13 +314,13 @@ export default function LecturerCourseDetailsScreen() {
 
   const handleOpenFile = (file: CourseFile) => {
     if (!file.url) {
-      Alert.alert('Error', 'Missing file URL.');
+      Alert.alert(t('lecturer.error'), t('lecturer.missingFileUrl'));
       return;
     }
 
     Linking.openURL(file.url).catch((err) => {
       console.log('Failed to open file url:', err);
-      Alert.alert('Error', 'Could not open file.');
+      Alert.alert(t('lecturer.error'), t('lecturer.couldNotOpenFile'));
     });
   };
 
@@ -202,10 +351,10 @@ export default function LecturerCourseDetailsScreen() {
   };
 
   const handleDeleteFile = (file: CourseFile) => {
-    Alert.alert('Delete file', 'Are you sure you want to delete this file?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('lecturer.deleteFileTitle'), t('lecturer.deleteFileConfirm'), [
+      { text: t('lecturer.cancel'), style: 'cancel' },
       {
-        text: 'Delete',
+        text: t('common.delete'),
         style: 'destructive',
         onPress: async () => {
           try {
@@ -224,7 +373,7 @@ export default function LecturerCourseDetailsScreen() {
             await deleteDoc(doc(db, 'courseFiles', file.id));
           } catch (err) {
             console.log('Delete file error:', err);
-            Alert.alert('Error', 'Failed to delete file. Please try again.');
+            Alert.alert(t('lecturer.error'), t('lecturer.failedToDeleteFile'));
           }
         },
       },
@@ -244,7 +393,7 @@ export default function LecturerCourseDetailsScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.fileIconContainer}>
-            <Ionicons name={fileIcon} size={24} color={ACCENT_GREEN} />
+            <Ionicons name={fileIcon} size={24} color={colors.accent} />
           </View>
           <View style={styles.fileInfo}>
             <Text style={styles.fileName} numberOfLines={1}>
@@ -253,7 +402,7 @@ export default function LecturerCourseDetailsScreen() {
             <View style={styles.fileMetaRow}>
               {item.mimeType && (
                 <View style={styles.metaTag}>
-                  <Ionicons name="document-outline" size={10} color="#6b7280" />
+                  <Ionicons name="document-outline" size={10} color={colors.textSecondary} />
                   <Text style={styles.metaTagText}>
                     {item.mimeType.split('/')[1]?.toUpperCase() || 'FILE'}
                   </Text>
@@ -261,128 +410,161 @@ export default function LecturerCourseDetailsScreen() {
               )}
               {sizeMb && (
                 <View style={styles.metaTag}>
-                  <Ionicons name="hardware-chip-outline" size={10} color="#6b7280" />
+                  <Ionicons name="hardware-chip-outline" size={10} color={colors.textSecondary} />
                   <Text style={styles.metaTagText}>{sizeMb} MB</Text>
                 </View>
               )}
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => handleDeleteFile(item)}
         >
-          <Ionicons name="trash-outline" size={18} color="#ffffff" />
+          <Ionicons name="trash-outline" size={18} color={colors.textOnPrimary} />
         </TouchableOpacity>
       </View>
     );
   };
 
+  const courseName = typeof name === 'string' ? name : t('lecturer.course');
+
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={courseName} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonHeader}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <Ionicons name="folder" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{name ?? 'Course'}</Text>
-          <Text style={styles.headerSubtitle}>
-            Manage teaching materials and course files
-          </Text>
+        <View style={styles.heroWrap}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowAccent} />
+          <View style={styles.heroBadge}>
+            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <Text style={styles.heroBadgeText}>{t('lecturer.tools')}</Text>
+          </View>
+          <SectionTitle
+            title={courseName}
+            subtitle={t('lecturer.courseSubtitle')}
+          />
         </View>
 
         {/* Joined Students Section */}
-        <View style={styles.studentsCard}>
+        <AppCard style={styles.studentsCard}>
+          <View style={styles.cardAccentBar} />
           <View style={styles.sectionHeader}>
-            <Ionicons name="people" size={22} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>Joined Students</Text>
-          </View>
-          {/* Mock joined students */}
-          <View style={styles.studentsList}>
-            <View style={styles.studentItem}>
-              <View style={styles.studentAvatar}>
-                <Ionicons name="person" size={20} color={PRIMARY_GREEN} />
-              </View>
-              <View style={styles.studentInfo}>
-                <Text style={styles.studentName}>John Doe</Text>
-                <Text style={styles.studentEmail}>john@example.com</Text>
-              </View>
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="people" size={18} color={colors.textPrimary} />
             </View>
-            <View style={styles.studentItem}>
-              <View style={styles.studentAvatar}>
-                <Ionicons name="person" size={20} color={PRIMARY_GREEN} />
-              </View>
-              <View style={styles.studentInfo}>
-                <Text style={styles.studentName}>Jane Smith</Text>
-                <Text style={styles.studentEmail}>jane@example.com</Text>
-              </View>
-            </View>
+            <Text style={styles.sectionTitle}>{t('lecturer.joinedStudents')}</Text>
           </View>
-        </View>
+          {loadingJoinedStudents ? (
+            <LoadingState label={t('common.loading')} />
+          ) : joinedStudentsError ? (
+            <EmptyState title={t('common.error')} subtitle={t('lecturer.joinRequestsLoadError')} />
+          ) : joinedStudents.length === 0 ? (
+            <EmptyState
+              title={t('lecturer.noJoinedStudents')}
+              subtitle={t('lecturer.noJoinedStudentsSubtitle')}
+            />
+          ) : (
+            <View style={styles.studentsList}>
+              {joinedStudents.map((student) => (
+                <View key={student.id} style={styles.studentItem}>
+                  <View style={styles.studentAvatar}>
+                    <Ionicons name="person" size={18} color={colors.primary} />
+                  </View>
+                  <View style={styles.studentInfo}>
+                    <Text style={styles.studentName}>{student.studentName || '-'}</Text>
+                    <Text style={styles.studentEmail}>{student.studentEmail || '-'}</Text>
+                    <Text style={styles.studentMeta}>
+                      {formatApprovedAtLabel(student.approvedAt)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </AppCard>
 
         {/* Pending Join Requests Section */}
-        <View style={styles.requestsCard}>
+        <AppCard style={styles.requestsCard}>
+          <View style={styles.cardAccentBar} />
           <View style={styles.sectionHeader}>
-            <Ionicons name="mail" size={22} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>Pending Join Requests</Text>
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="mail" size={18} color={colors.textPrimary} />
+            </View>
+            <Text style={styles.sectionTitle}>{t('lecturer.pendingJoinRequests')}</Text>
             <TouchableOpacity
               style={styles.viewAllButton}
               onPress={() => router.push('/lecturer/join-requests' as any)}
             >
-              <Text style={styles.viewAllText}>View All</Text>
-              <Ionicons name="chevron-forward" size={16} color={PRIMARY_GREEN} />
+              <Text style={styles.viewAllText}>{t('lecturer.viewAll')}</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
-          {/* Mock pending requests */}
-          <View style={styles.requestsList}>
-            <View style={styles.requestItem}>
-              <View style={styles.requestInfo}>
-                <Text style={styles.requestStudentName}>Bob Johnson</Text>
-                <Text style={styles.requestDate}>Requested 2 days ago</Text>
-              </View>
-              <View style={styles.requestActions}>
-                <TouchableOpacity style={styles.approveButton}>
-                  <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.rejectButton}>
-                  <Ionicons name="close-circle" size={20} color="#ffffff" />
-                </TouchableOpacity>
-              </View>
+          {loadingPendingRequests ? (
+            <LoadingState label={t('common.loading')} />
+          ) : pendingRequestsError ? (
+            <EmptyState title={t('common.error')} subtitle={t('lecturer.joinRequestsLoadError')} />
+          ) : pendingRequests.length === 0 ? (
+            <EmptyState
+              title={t('lecturer.noPendingRequests')}
+              subtitle={t('lecturer.noPendingRequestsSubtitle')}
+            />
+          ) : (
+            <View style={styles.requestsList}>
+              {pendingRequests.map((request) => (
+                <View key={request.id} style={styles.requestItem}>
+                  <View style={styles.requestInfo}>
+                    <Text style={styles.requestStudentName}>{request.studentName || '-'}</Text>
+                    <Text style={styles.requestStudentEmail}>{request.studentEmail || '-'}</Text>
+                    <Text style={styles.requestDate}>
+                      {formatRequestedAtLabel(request.createdAt)}
+                    </Text>
+                  </View>
+                  <View style={styles.requestActions}>
+                    <PrimaryButton
+                      label={t('lecturer.approve')}
+                      onPress={() => handleApproveRequest(request.id)}
+                      loading={actingRequestId === request.id}
+                      disabled={!!actingRequestId}
+                      style={styles.requestActionButton}
+                    />
+                    <PrimaryButton
+                      label={t('lecturer.reject')}
+                      variant="secondary"
+                      onPress={() => handleRejectRequest(request.id)}
+                      disabled={!!actingRequestId}
+                      style={[styles.requestActionButton, styles.requestRejectButton]}
+                    />
+                  </View>
+                </View>
+              ))}
             </View>
-          </View>
-        </View>
+          )}
+        </AppCard>
 
         {/* Files Section */}
-        <View style={styles.filesCard}>
+        <AppCard style={styles.filesCard}>
+          <View style={styles.cardAccentBar} />
           <View style={styles.sectionHeader}>
-            <Ionicons name="document-text" size={22} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>Teaching Materials</Text>
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="document-text" size={18} color={colors.accent} />
+            </View>
+            <Text style={styles.sectionTitle}>{t('lecturer.teachingMaterials')}</Text>
           </View>
 
           {loadingFiles ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator color={PRIMARY_GREEN} size="large" />
-              <Text style={styles.loadingText}>Loading files...</Text>
+              <LoadingState label={t('lecturer.loadingFiles')} />
             </View>
           ) : files.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconContainer}>
-                <Ionicons name="document-outline" size={64} color="#6b7280" />
-              </View>
-              <Text style={styles.emptyTitle}>No files yet</Text>
-              <Text style={styles.emptyText}>
-                Start by uploading your first teaching material to this course.
-              </Text>
-            </View>
+            <EmptyState
+              title={t('lecturer.noFiles')}
+              subtitle={t('lecturer.noFilesSubtitle')}
+            />
           ) : (
             <FlatList
               data={files}
@@ -393,91 +575,92 @@ export default function LecturerCourseDetailsScreen() {
             />
           )}
 
-          <TouchableOpacity
-            style={[
-              styles.uploadButton,
-              uploading && styles.uploadButtonDisabled,
-            ]}
+          <PrimaryButton
+            style={styles.uploadButton}
             onPress={handleUploadFile}
             disabled={uploading}
-          >
-            {uploading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <>
-                <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                <Text style={styles.uploadButtonText}>Upload File</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
+            loading={uploading}
+            label={t('lecturer.uploadFile')}
+          />
+        </AppCard>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
-const styles = StyleSheet.create({
+const makeStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: colors.bg,
   },
   scrollContent: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
     paddingBottom: 40,
   },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -50,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  backButtonHeader: {
+  heroGlowPrimary: {
     position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: -100,
+    right: -50,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: -70,
+    left: -30,
+    backgroundColor: colors.accent,
+    opacity: 0.08,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    marginBottom: spacing.sm,
   },
-  headerTitle: {
-    fontSize: 28,
+  heroBadgeText: {
+    color: colors.textSecondary,
+    ...typography.caption,
     fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 5,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    marginTop: 4,
-    textAlign: 'center',
-    paddingHorizontal: 20,
+  cardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.primary,
+    opacity: 0.35,
   },
   studentsCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: 20,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    position: 'relative',
+    overflow: 'hidden',
   },
   studentsList: {
     gap: 12,
@@ -485,17 +668,17 @@ const styles = StyleSheet.create({
   studentItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
+    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: colors.border,
   },
   studentAvatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#dbeafe',
+    backgroundColor: colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -506,24 +689,24 @@ const styles = StyleSheet.create({
   studentName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   studentEmail: {
     fontSize: 13,
-    color: '#6b7280',
+    color: colors.textSecondary,
+  },
+  studentMeta: {
+    fontSize: 12,
+    color: colors.textSecondary,
+    marginTop: 4,
   },
   requestsCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: 20,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    position: 'relative',
+    overflow: 'hidden',
   },
   requestsList: {
     gap: 12,
@@ -533,10 +716,10 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 12,
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
+    borderColor: colors.border,
   },
   requestInfo: {
     flex: 1,
@@ -544,32 +727,31 @@ const styles = StyleSheet.create({
   requestStudentName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 4,
   },
   requestDate: {
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
+    marginTop: 4,
+  },
+  requestStudentEmail: {
+    fontSize: 13,
+    color: colors.textSecondary,
+    marginTop: 2,
   },
   requestActions: {
-    flexDirection: 'row',
+    marginLeft: 10,
+    width: 96,
     gap: 8,
   },
-  approveButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: ACCENT_GREEN,
-    justifyContent: 'center',
-    alignItems: 'center',
+  requestActionButton: {
+    minHeight: 34,
+    paddingVertical: 6,
   },
-  rejectButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#ef4444',
-    justifyContent: 'center',
-    alignItems: 'center',
+  requestRejectButton: {
+    borderColor: colors.dangerBorder ?? colors.danger,
+    backgroundColor: colors.dangerSurface ?? colors.surfaceElevated,
   },
   viewAllButton: {
     flexDirection: 'row',
@@ -580,30 +762,32 @@ const styles = StyleSheet.create({
   viewAllText: {
     fontSize: 13,
     fontWeight: '600',
-    color: PRIMARY_GREEN,
+    color: colors.textSecondary,
   },
   filesCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: 20,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    position: 'relative',
+    overflow: 'hidden',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.md,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.h3,
+    color: colors.textPrimary,
     marginLeft: 10,
+  },
+  sectionIconBadge: {
+    width: iconContainer.size,
+    height: iconContainer.size,
+    borderRadius: iconContainer.radius,
+    backgroundColor: colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingContainer: {
     alignItems: 'center',
@@ -612,7 +796,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 10,
     fontSize: 14,
-    color: '#6b7280',
+    color: colors.textSecondary,
   },
   emptyState: {
     alignItems: 'center',
@@ -622,7 +806,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#374151',
+    backgroundColor: colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -630,12 +814,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: colors.textSecondary,
     textAlign: 'center',
     paddingHorizontal: 20,
     lineHeight: 20,
@@ -646,12 +830,12 @@ const styles = StyleSheet.create({
   fileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
   },
   fileContent: {
     flex: 1,
@@ -662,7 +846,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#dbeafe',
+    backgroundColor: colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -671,7 +855,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fileName: {
-    color: '#111827',
+    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 6,
@@ -683,14 +867,14 @@ const styles = StyleSheet.create({
   metaTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderRadius: 6,
     paddingVertical: 3,
     paddingHorizontal: 6,
   },
   metaTagText: {
     fontSize: 10,
-    color: '#6b7280',
+    color: colors.textSecondary,
     marginLeft: 4,
     fontWeight: '500',
   },
@@ -698,30 +882,19 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#ef4444',
+    backgroundColor: colors.danger,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
   },
   uploadButton: {
-    flexDirection: 'row',
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 20,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    marginTop: spacing.md,
   },
   uploadButtonDisabled: {
     opacity: 0.7,
   },
   uploadButtonText: {
-    color: '#ffffff',
+    color: colors.textOnPrimary,
     fontWeight: '600',
     fontSize: 16,
   },

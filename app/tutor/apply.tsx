@@ -1,5 +1,11 @@
 // app/tutor/apply.tsx — Student tutor application (grade sheet + course + declaration)
 import { auth, db } from '@/lib/firebaseConfig';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import {
   canSubmitTutorApplication,
   getTutorApplyExcludedCourseIds,
@@ -17,19 +23,26 @@ import {
   ActivityIndicator,
   Alert,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type CourseOption = { id: string; name: string };
 
 export default function TutorApplyScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const isHebrewUi = i18n.language === 'he';
   const { role, loading: userLoading } = useUser();
 
   const [loadingCourses, setLoadingCourses] = useState(true);
@@ -41,6 +54,8 @@ export default function TutorApplyScreen() {
   const [gradeMime, setGradeMime] = useState<string | null>(null);
   const [declarationAccepted, setDeclarationAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [showCoursePicker, setShowCoursePicker] = useState(false);
+  const [courseSearch, setCourseSearch] = useState('');
 
   const declarationText = t('tutor.declarationBody');
 
@@ -165,9 +180,11 @@ export default function TutorApplyScreen() {
 
   if (userLoading) {
     return (
-      <View style={styles.centered}>
-        <ActivityIndicator color="#047857" />
-      </View>
+      <AppScreen>
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </AppScreen>
     );
   }
 
@@ -176,198 +193,347 @@ export default function TutorApplyScreen() {
   }
 
   const selectedCourse = courses.find((c) => c.id === selectedCourseId);
+  const showCourseSearch = courses.length > 5;
+  const filteredCourses = showCourseSearch
+    ? courses.filter((c) => c.name.toLowerCase().includes(courseSearch.trim().toLowerCase()))
+    : courses;
 
   return (
     <KeyboardAvoidingView
       style={styles.flex}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}
     >
-      <View style={styles.headerBar}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.back')}
-        >
-          <Ionicons name="arrow-back" size={22} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('tutor.applyTitle')}</Text>
-        <View style={{ width: 40 }} />
+      <AppScreen>
+        <AppHeader title={t('tutor.applyTitle')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
-        <Text style={styles.subtitle}>{t('tutor.applySubtitle')}</Text>
-        <Text style={styles.hint}>{t('tutor.minGradeHint')}</Text>
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+          <AppCard style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.subtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('tutor.applySubtitle')}</Text>
+            <View style={[styles.hintBox, { backgroundColor: colors.surfaceMuted, borderColor: colors.warning }]}>
+              <Ionicons name="warning-outline" size={16} color={colors.warning} />
+              <Text style={[styles.hint, { color: colors.warning }, isHebrewUi && styles.rtlText]}>{t('tutor.minGradeHint')}</Text>
+            </View>
+          </AppCard>
 
-        <Text style={styles.sectionLabel}>{t('tutor.selectCourse')}</Text>
-        {loadingCourses ? (
-          <ActivityIndicator style={{ marginVertical: 16 }} color="#047857" />
-        ) : courses.length === 0 ? (
-          <View
-            style={[
-              styles.emptyBox,
-              coursesEmptyReason === 'all_blocked' && styles.emptyBoxInfo,
-            ]}
-          >
-            <Text
-              style={[
-                styles.emptyText,
-                coursesEmptyReason === 'all_blocked' && styles.emptyTextInfo,
-              ]}
-            >
-              {coursesEmptyReason === 'all_blocked'
-                ? t('tutor.noCoursesLeftToApply')
-                : t('tutor.noCoursesForApply')}
-            </Text>
-          </View>
-        ) : (
-          <View style={styles.courseList}>
-            {courses.map((c) => {
-              const sel = c.id === selectedCourseId;
-              return (
-                <TouchableOpacity
-                  key={c.id}
-                  style={[styles.courseChip, sel && styles.courseChipSelected]}
-                  onPress={() => setSelectedCourseId(c.id)}
-                >
-                  <Text style={[styles.courseChipText, sel && styles.courseChipTextSelected]} numberOfLines={2}>
-                    {c.name}
+          <AppCard style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('tutor.selectCourse')}</Text>
+            {loadingCourses ? (
+              <ActivityIndicator style={{ marginVertical: 16 }} color={colors.primary} />
+            ) : courses.length === 0 ? (
+              <View
+                style={[
+                  styles.emptyBox,
+                  { borderColor: coursesEmptyReason === 'all_blocked' ? colors.success : colors.dangerBorder, backgroundColor: coursesEmptyReason === 'all_blocked' ? colors.surfaceMuted : colors.dangerSurface },
+                ]}
+              >
+                <Text style={[styles.emptyText, { color: coursesEmptyReason === 'all_blocked' ? colors.success : colors.danger }, isHebrewUi && styles.rtlText]}>
+                  {coursesEmptyReason === 'all_blocked'
+                    ? t('tutor.noCoursesLeftToApply')
+                    : t('tutor.noCoursesForApply')}
+                </Text>
+              </View>
+            ) : (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.selectField,
+                  {
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceMuted,
+                    opacity: pressed ? 0.9 : 1,
+                  },
+                  isHebrewUi && styles.rtlRow,
+                ]}
+                onPress={() => setShowCoursePicker(true)}
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.selectFieldLabel, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                    {t('tutor.selectCourse')}
                   </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        )}
+                  <Text
+                    numberOfLines={2}
+                    style={[
+                      styles.selectFieldValue,
+                      { color: selectedCourse ? colors.textPrimary : colors.textSecondary },
+                      isHebrewUi && styles.rtlText,
+                    ]}
+                  >
+                    {selectedCourse?.name || t('tutor.selectCourse')}
+                  </Text>
+                </View>
+                <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={18} color={colors.textSecondary} />
+              </Pressable>
+            )}
+          </AppCard>
 
-        <Text style={styles.sectionLabel}>{t('tutor.gradeSheet')}</Text>
-        <TouchableOpacity style={styles.uploadBtn} onPress={pickGradeSheet}>
-          <Ionicons name="cloud-upload-outline" size={20} color="#047857" />
-          <Text style={styles.uploadBtnText}>
-            {gradeName ? gradeName : t('tutor.uploadGradeSheet')}
-          </Text>
-        </TouchableOpacity>
+          <AppCard style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('tutor.gradeSheet')}</Text>
+            <TouchableOpacity style={[styles.uploadBtn, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]} onPress={pickGradeSheet}>
+              <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
+              <Text style={[styles.uploadBtnText, { color: gradeName ? colors.textPrimary : colors.primary }, isHebrewUi && styles.rtlText]}>
+                {gradeName ? gradeName : t('tutor.uploadGradeSheet')}
+              </Text>
+            </TouchableOpacity>
+          </AppCard>
 
-        <Text style={styles.sectionLabel}>{t('tutor.declarationTitle')}</Text>
-        <View style={styles.declarationBox}>
-          <Text style={styles.declarationBody}>{declarationText}</Text>
-        </View>
-        <TouchableOpacity
-          style={styles.checkRow}
-          onPress={() => setDeclarationAccepted(!declarationAccepted)}
-        >
-          <Ionicons
-            name={declarationAccepted ? 'checkbox' : 'square-outline'}
-            size={22}
-            color={declarationAccepted ? '#047857' : '#6b7280'}
+          <AppCard style={[styles.sectionCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.sectionLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('tutor.declarationTitle')}</Text>
+            <View style={[styles.declarationBox, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+              <Text style={[styles.declarationBody, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{declarationText}</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.checkRow, isHebrewUi && styles.rtlRow]}
+              onPress={() => setDeclarationAccepted(!declarationAccepted)}
+            >
+              <Ionicons
+                name={declarationAccepted ? 'checkbox' : 'square-outline'}
+                size={22}
+                color={declarationAccepted ? colors.primary : colors.textSecondary}
+              />
+              <Text style={[styles.checkLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('tutor.declarationAcceptLabel')}</Text>
+            </TouchableOpacity>
+          </AppCard>
+
+          <PrimaryButton
+            label={t('tutor.submitApplication')}
+            onPress={handleSubmit}
+            loading={submitting}
+            disabled={!selectedCourseId || !gradeUri || !declarationAccepted || submitting}
+            style={styles.submitBtn}
           />
-          <Text style={styles.checkLabel}>{t('tutor.declarationAcceptLabel')}</Text>
-        </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[
-            styles.submitBtn,
-            (!selectedCourseId || !gradeUri || !declarationAccepted || submitting) && styles.submitBtnDisabled,
-          ]}
-          disabled={!selectedCourseId || !gradeUri || !declarationAccepted || submitting}
-          onPress={handleSubmit}
-        >
-          {submitting ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.submitBtnText}>{t('tutor.submitApplication')}</Text>
-          )}
-        </TouchableOpacity>
+          {selectedCourse ? (
+            <Text style={[styles.footerNote, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+              {t('tutor.footerSelected', { course: selectedCourse.name })}
+            </Text>
+          ) : null}
+        </ScrollView>
 
-        {selectedCourse ? (
-          <Text style={styles.footerNote}>
-            {t('tutor.footerSelected', { course: selectedCourse.name })}
-          </Text>
-        ) : null}
-      </ScrollView>
+        <Modal visible={showCoursePicker} transparent animationType="slide" onRequestClose={() => setShowCoursePicker(false)}>
+          <Pressable
+            style={[
+              styles.modalBackdrop,
+              { paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom + 12, 28) : 18 },
+            ]}
+            onPress={() => setShowCoursePicker(false)}
+          >
+            <Pressable
+              style={[
+                styles.modalSheet,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                  paddingBottom: Platform.OS === 'ios' ? Math.max(insets.bottom + 10, 24) : 24,
+                },
+              ]}
+              onPress={(e) => e.stopPropagation()}
+            >
+              <View style={[styles.modalHeader, isHebrewUi && styles.rtlRow]}>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                  {t('tutor.selectCourse')}
+                </Text>
+                <TouchableOpacity onPress={() => setShowCoursePicker(false)}>
+                  <Ionicons name="close" size={20} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+
+              {showCourseSearch && (
+                <View style={[styles.searchBox, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }, isHebrewUi && styles.rtlRow]}>
+                  <Ionicons name="search-outline" size={16} color={colors.textSecondary} />
+                  <TextInput
+                    style={[styles.searchInput, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                    placeholder={t('search.title')}
+                    placeholderTextColor={colors.textSecondary}
+                    value={courseSearch}
+                    onChangeText={setCourseSearch}
+                  />
+                </View>
+              )}
+
+              <ScrollView style={styles.modalScroll} contentContainerStyle={styles.modalList} showsVerticalScrollIndicator={false}>
+                {filteredCourses.map((c) => {
+                  const selected = c.id === selectedCourseId;
+                  return (
+                    <Pressable
+                      key={c.id}
+                      onPress={() => {
+                        setSelectedCourseId(c.id);
+                        setShowCoursePicker(false);
+                      }}
+                      style={({ pressed }) => [
+                        styles.modalRow,
+                        {
+                          borderColor: selected ? colors.primary : colors.border,
+                          backgroundColor: selected ? colors.surfaceElevated : colors.surfaceMuted,
+                          opacity: pressed ? 0.9 : 1,
+                        },
+                        isHebrewUi && styles.rtlRow,
+                      ]}
+                    >
+                      <Text style={[styles.modalRowText, { color: selected ? colors.primary : colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                        {c.name}
+                      </Text>
+                      {selected ? <Ionicons name="checkmark" size={18} color={colors.primary} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+            </Pressable>
+          </Pressable>
+        </Modal>
+      </AppScreen>
     </KeyboardAvoidingView>
   );
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1, backgroundColor: '#f9fafb' },
-  centered: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f9fafb' },
-  headerBar: {
+  flex: { flex: 1 },
+  centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+  rtlRow: { flexDirection: 'row-reverse' },
+  rtlText: { textAlign: 'right', writingDirection: 'rtl' },
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+  },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  scroll: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: 2,
+    paddingBottom: 40,
+    gap: spacing.sm,
+  },
+  sectionCard: {
+    padding: spacing.lg,
+  },
+  subtitle: { fontSize: 14, marginBottom: 8, lineHeight: 20 },
+  hintBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingTop: 56,
-    paddingHorizontal: 12,
-    paddingBottom: 12,
-    backgroundColor: '#ffffff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    gap: 8,
   },
-  backBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerTitle: { fontSize: 17, fontWeight: '800', color: '#111827', flex: 1, textAlign: 'center' },
-  scroll: { padding: 20, paddingBottom: 40 },
-  subtitle: { fontSize: 14, color: '#374151', marginBottom: 8, lineHeight: 20 },
-  hint: { fontSize: 13, color: '#b45309', backgroundColor: '#fffbeb', padding: 10, borderRadius: 10, marginBottom: 16 },
-  sectionLabel: { fontSize: 13, fontWeight: '700', color: '#111827', marginBottom: 8, marginTop: 8 },
-  courseList: { gap: 8 },
-  courseChip: {
+  hint: { flex: 1, fontSize: 13, lineHeight: 18 },
+  sectionLabel: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  selectField: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 12,
-    padding: 14,
-    backgroundColor: '#ffffff',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
-  courseChipSelected: { borderColor: '#047857', backgroundColor: '#ecfdf5' },
-  courseChipText: { fontSize: 15, color: '#374151' },
-  courseChipTextSelected: { color: '#065f46', fontWeight: '700' },
+  selectFieldLabel: { fontSize: 12, fontWeight: '600' },
+  selectFieldValue: { marginTop: 2, fontSize: 15, fontWeight: '600' },
   emptyBox: {
     padding: 16,
     borderRadius: 12,
-    backgroundColor: '#fef2f2',
     borderWidth: 1,
-    borderColor: '#fecaca',
   },
-  emptyText: { color: '#991b1b', fontSize: 14 },
-  emptyBoxInfo: {
-    backgroundColor: '#ecfdf5',
-    borderColor: '#a7f3d0',
-  },
-  emptyTextInfo: { color: '#065f46' },
+  emptyText: { fontSize: 14 },
   uploadBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
     borderWidth: 1,
-    borderColor: '#047857',
     borderRadius: 12,
     padding: 14,
-    backgroundColor: '#ffffff',
   },
-  uploadBtnText: { fontSize: 15, color: '#047857', fontWeight: '600', flex: 1 },
+  uploadBtnText: { fontSize: 15, fontWeight: '600', flex: 1 },
   declarationBox: {
     borderWidth: 1,
-    borderColor: '#e5e7eb',
     borderRadius: 12,
     padding: 12,
-    backgroundColor: '#ffffff',
     marginBottom: 10,
   },
-  declarationBody: { fontSize: 13, color: '#374151', lineHeight: 20 },
+  declarationBody: { fontSize: 13, lineHeight: 20 },
   checkRow: { flexDirection: 'row', alignItems: 'center', gap: 10, marginBottom: 20 },
-  checkLabel: { flex: 1, fontSize: 14, color: '#111827', fontWeight: '600' },
+  checkLabel: { flex: 1, fontSize: 14, fontWeight: '600' },
   submitBtn: {
-    backgroundColor: '#047857',
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
+    marginTop: 2,
   },
-  submitBtnDisabled: { opacity: 0.45 },
-  submitBtnText: { color: '#ffffff', fontSize: 16, fontWeight: '700' },
-  footerNote: { marginTop: 14, fontSize: 12, color: '#6b7280', textAlign: 'center' },
+  footerNote: { marginTop: 14, fontSize: 12, textAlign: 'center' },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    padding: 16,
+    maxHeight: '74%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    flex: 1,
+  },
+  searchBox: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    height: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+  },
+  modalScroll: { maxHeight: 360 },
+  modalList: { gap: 8, paddingBottom: 6 },
+  modalRow: {
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  modalRowText: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+  },
 });

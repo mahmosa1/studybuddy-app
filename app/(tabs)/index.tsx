@@ -1,5 +1,11 @@
 // app/(tabs)/index.tsx
 import { db } from '@/lib/firebaseConfig';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import {
     createTask,
     deleteTask as deleteStudyTask,
@@ -26,6 +32,7 @@ import {
     KeyboardAvoidingView,
     Modal,
     Platform,
+  Pressable,
     ScrollView,
     StyleSheet,
     Text,
@@ -38,6 +45,30 @@ type RecentCourse = {
   id: string;
   name: string;
 };
+
+function localizeSmartAlertMessage(
+  message: string,
+  language: string,
+  t: (key: string, options?: Record<string, any>) => string,
+): string {
+  const isHebrewUi = language === 'he' || language.startsWith('he-');
+  if (!isHebrewUi) return message;
+
+  const remainingMatch = message.match(/You still need about\s+(\d+)\s+minutes/i);
+  if (remainingMatch?.[1]) {
+    return t('home.smartAlertRemainingGoal', { minutes: Number(remainingMatch[1]) });
+  }
+
+  const weakTopicMatch = message.match(/Weak topic detected:\s*"?([^"]+)"?\s*\((\d+)% accuracy\)/i);
+  if (weakTopicMatch?.[1] && weakTopicMatch?.[2]) {
+    return t('home.smartAlertWeakTopic', {
+      topic: weakTopicMatch[1],
+      accuracy: Number(weakTopicMatch[2]),
+    });
+  }
+
+  return message;
+}
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -110,6 +141,7 @@ function StudentHomeWithJournal({
 }) {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
   const [stats, setStats] = useState<StudyStats | null>(null);
   const [tasks, setTasks] = useState<StudyTask[]>([]);
   const [loadingData, setLoadingData] = useState(true);
@@ -155,7 +187,10 @@ function StudentHomeWithJournal({
     setPaused(false);
     if (seconds > 0) {
       await saveStudySession(seconds);
-      Alert.alert('Saved', `Study session saved (${Math.floor(seconds / 60)} min)`);
+      Alert.alert(
+        t('common.success'),
+        t('home.timerSaved', { minutes: Math.floor(seconds / 60) }),
+      );
       setSeconds(0);
       const newStats = await getStudyStats();
       setStats(newStats);
@@ -227,29 +262,36 @@ function StudentHomeWithJournal({
   };
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={styles.logoContainer}>
-          <Text style={styles.appTitle}>{t('home.title')}</Text>
-          <Text style={styles.welcomeInlineText}>
-            {t('home.welcome', { name: loading ? '...' : username || 'Student' })}
-          </Text>
-          <Text style={[styles.appTagline, mirroredTextAlignStyle]}>{t('home.tagline')}</Text>
+        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+            <Ionicons name="sparkles-outline" size={14} color={colors.primary} />
+            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>
+              {t('home.studyStats')}
+            </Text>
+          </View>
+          <SectionTitle
+            title={t('home.welcome', { name: loading ? '...' : username || 'Student' })}
+            subtitle={t('home.tagline')}
+          />
         </View>
 
-        <View style={styles.journalCard}>
+        <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.journalHeaderBetween, isHebrewUi && styles.rtlRow]}>
             <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
-              <Ionicons name="stats-chart" size={20} color={PRIMARY_GREEN} />
+              <Ionicons name="stats-chart" size={20} color={colors.primary} />
               <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.studyStats')}</Text>
             </View>
             <TouchableOpacity style={styles.goalEditButton} onPress={openGoalEditor}>
-              <Ionicons name="create-outline" size={16} color={PRIMARY_GREEN} />
+              <Ionicons name="create-outline" size={16} color={colors.primary} />
               <Text style={styles.goalEditButtonText}>{t('home.editGoalButton')}</Text>
             </TouchableOpacity>
           </View>
           {loadingData ? (
-            <ActivityIndicator color={PRIMARY_GREEN} />
+            <ActivityIndicator color={colors.primary} />
           ) : (
             <>
               <Text style={[styles.goalLabel, mirroredTextAlignStyle]}>{t('home.dailyGoal')}</Text>
@@ -266,14 +308,14 @@ function StudentHomeWithJournal({
                   : t('home.goalCompletedMessage')}
               </Text>
               <View style={styles.progressRow}>
-                <View style={styles.progressTrack}>
-                  <View style={[styles.progressFill, { width: `${liveGoalProgress}%` }]} />
+                <View style={[styles.progressTrack, { backgroundColor: colors.surfaceElevated }]}>
+                  <View style={[styles.progressFill, { width: `${liveGoalProgress}%`, backgroundColor: colors.primary }]} />
                 </View>
-                <Text style={styles.goalPercent}>{liveGoalProgress}%</Text>
+                <Text style={[styles.goalPercent, { color: colors.primary }]}>{liveGoalProgress}%</Text>
               </View>
               <View style={styles.statsRow}>
                 <View style={styles.statTiny}>
-                  <Ionicons name="time-outline" size={16} color={PRIMARY_GREEN} />
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
                   <Text style={styles.statTinyValue}>{Math.floor(todayStudySecondsLive / 60)}</Text>
                   <Text style={[styles.statTinyLabel, mirroredTextAlignStyle]}>{t('home.minutes')}</Text>
                 </View>
@@ -283,20 +325,20 @@ function StudentHomeWithJournal({
                   <Text style={[styles.statTinyLabel, mirroredTextAlignStyle]}>{t('home.streak')}</Text>
                 </View>
                 <View style={styles.statTiny}>
-                  <Ionicons name="calendar-outline" size={16} color={PRIMARY_GREEN} />
+                  <Ionicons name="calendar-outline" size={16} color={colors.primary} />
                   <Text style={styles.statTinyValue}>{stats?.totalSessions || 0}</Text>
                   <Text style={[styles.statTinyLabel, mirroredTextAlignStyle]}>{t('home.sessions')}</Text>
                 </View>
               </View>
             </>
           )}
-        </View>
+        </AppCard>
 
         {smartNotifications.length > 0 && (
-          <View style={styles.journalCard}>
+          <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
-              <Ionicons name="notifications-outline" size={20} color={PRIMARY_GREEN} />
-              <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>Smart Alerts</Text>
+              <Ionicons name="notifications-outline" size={20} color={colors.primary} />
+              <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.smartAlerts')}</Text>
             </View>
             {smartNotifications.map((item) => (
               <View
@@ -310,24 +352,26 @@ function StudentHomeWithJournal({
                       : styles.smartAlertInfo,
                 ]}
               >
-                <Text style={[styles.smartAlertText, mirroredTextAlignStyle]}>{item.message}</Text>
+                <Text style={[styles.smartAlertText, mirroredTextAlignStyle]}>
+                  {localizeSmartAlertMessage(item.message, i18n.language, t)}
+                </Text>
               </View>
             ))}
-          </View>
+          </AppCard>
         )}
 
-        <View style={styles.journalCard}>
+        <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
-            <Ionicons name="timer-outline" size={20} color={PRIMARY_GREEN} />
+            <Ionicons name="timer-outline" size={20} color={colors.primary} />
             <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.studyTimer')}</Text>
           </View>
-          <View style={styles.timerDisplayBox}>
-            <Text style={styles.timerText}>{formatTimer(seconds)}</Text>
+          <View style={[styles.timerDisplayBox, { borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}>
+            <Text style={[styles.timerText, { color: colors.primary }]}>{formatTimer(seconds)}</Text>
           </View>
           <View style={styles.timerActions}>
             {!running ? (
               <TouchableOpacity
-                style={styles.timerPrimaryButton}
+                style={[styles.timerPrimaryButton, { backgroundColor: colors.primary }]}
                 onPress={() => {
                   setRunning(true);
                   setPaused(false);
@@ -337,7 +381,7 @@ function StudentHomeWithJournal({
                 <Text style={styles.timerPrimaryButtonText}>{t('home.startTimer')}</Text>
               </TouchableOpacity>
             ) : !paused ? (
-              <TouchableOpacity style={styles.timerResetButton} onPress={handlePauseResume}>
+              <TouchableOpacity style={[styles.timerResetButton, { backgroundColor: colors.accent }]} onPress={handlePauseResume}>
                 <Ionicons name="pause" size={16} color="#fff" />
                 <Text style={styles.timerPrimaryButtonText}>{t('home.pauseTimer')}</Text>
               </TouchableOpacity>
@@ -347,27 +391,27 @@ function StudentHomeWithJournal({
                   <Ionicons name="stop" size={16} color="#fff" />
                   <Text style={styles.timerPrimaryButtonText}>{t('home.finishTimer')}</Text>
                 </TouchableOpacity>
-                <TouchableOpacity style={styles.timerContinueButton} onPress={handlePauseResume}>
+                <TouchableOpacity style={[styles.timerContinueButton, { backgroundColor: colors.primary }]} onPress={handlePauseResume}>
                   <Ionicons name="play" size={16} color="#fff" />
                   <Text style={styles.timerPrimaryButtonText}>{t('home.resumeTimer')}</Text>
                 </TouchableOpacity>
               </View>
             )}
           </View>
-        </View>
+        </AppCard>
 
-        <View style={styles.journalCard}>
+        <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.tasksHeader, isHebrewUi && styles.rtlRow]}>
             <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
-              <Ionicons name="checkmark-circle" size={20} color={PRIMARY_GREEN} />
+              <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
               <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.myTasks')}</Text>
             </View>
             <View style={[styles.taskHeaderActions, isHebrewUi && styles.rtlRow]}>
               <TouchableOpacity onPress={() => setIsTaskEditMode((prev) => !prev)}>
-                <Ionicons name={isTaskEditMode ? 'close-circle' : 'create-outline'} size={21} color={PRIMARY_GREEN} />
+                <Ionicons name={isTaskEditMode ? 'close-circle' : 'create-outline'} size={21} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setShowTaskModal(true)}>
-                <Ionicons name="add-circle" size={22} color={PRIMARY_GREEN} />
+                <Ionicons name="add-circle" size={22} color={colors.primary} />
               </TouchableOpacity>
             </View>
           </View>
@@ -402,7 +446,7 @@ function StudentHomeWithJournal({
                   size={16}
                   color={
                     task.status === 'completed'
-                      ? PRIMARY_GREEN
+                      ? colors.primary
                       : task.status === 'in-progress'
                         ? '#1d4ed8'
                         : '#6b7280'
@@ -460,17 +504,17 @@ function StudentHomeWithJournal({
               ))}
             </>
           )}
-        </View>
+        </AppCard>
 
-        <View style={styles.journalCard}>
+        <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.quickActions')}</Text>
           <View style={styles.quickGrid}>
             <TouchableOpacity style={styles.quickTile} onPress={() => router.push('/ai-practice-setup' as any)}>
-              <Ionicons name="flask-outline" size={20} color={PRIMARY_GREEN} />
+              <Ionicons name="flask-outline" size={20} color={colors.primary} />
               <Text style={[styles.quickTileText, mirroredTextAlignStyle]}>{t('home.startPractice')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={styles.quickTile} onPress={() => router.push('/(tabs)/courses')}>
-              <Ionicons name="book-outline" size={20} color={PRIMARY_GREEN} />
+              <Ionicons name="book-outline" size={20} color={colors.primary} />
               <Text style={[styles.quickTileText, mirroredTextAlignStyle]}>{t('home.myCourses')}</Text>
             </TouchableOpacity>
           </View>
@@ -479,13 +523,13 @@ function StudentHomeWithJournal({
               style={styles.lastCourseRow}
               onPress={() => router.push(`/course/${recentCourses[0].id}` as any)}
             >
-              <Ionicons name="play-forward-outline" size={16} color={PRIMARY_GREEN} />
-              <Text style={[styles.lastCourseText, mirroredTextAlignStyle]}>
+              <Ionicons name="play-forward-outline" size={16} color={colors.primary} />
+              <Text style={[styles.lastCourseText, mirroredTextAlignStyle, { color: colors.primary }]}>
                 {t('home.continueCourse', { name: recentCourses[0].name })}
               </Text>
             </TouchableOpacity>
           )}
-        </View>
+        </AppCard>
       </ScrollView>
 
       <Modal visible={showTaskModal} transparent animationType="slide" onRequestClose={() => setShowTaskModal(false)}>
@@ -499,25 +543,32 @@ function StudentHomeWithJournal({
               contentContainerStyle={styles.modalOverlayScrollContent}
               keyboardShouldPersistTaps="handled"
             >
-              <View style={styles.modalSimple}>
-                <Text style={styles.modalSimpleTitle}>{t('home.addTask')}</Text>
+              <View style={[styles.modalSimple, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.modalSimpleTitle, { color: colors.textPrimary }]}>{t('home.addTask')}</Text>
                 <TextInput
                   value={taskTitle}
                   onChangeText={setTaskTitle}
-                  style={[styles.modalInputSimple, isHebrewUi ? styles.modalInputRtl : styles.modalInputLtr]}
+                  style={[
+                    styles.modalInputSimple,
+                    { borderColor: colors.border, color: colors.textPrimary, backgroundColor: colors.surface },
+                    isHebrewUi ? styles.modalInputRtl : styles.modalInputLtr,
+                  ]}
                   placeholder={t('home.taskTitle')}
-                  placeholderTextColor="#9ca3af"
-                  selectionColor={PRIMARY_GREEN}
-                  cursorColor={PRIMARY_GREEN}
+                  placeholderTextColor={colors.textSecondary}
+                  selectionColor={colors.primary}
+                  cursorColor={colors.primary}
                   multiline={false}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
                 <View style={styles.modalActionsSimple}>
-                  <TouchableOpacity style={styles.modalCancelSimple} onPress={() => setShowTaskModal(false)}>
-                    <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+                  <TouchableOpacity
+                    style={[styles.modalCancelSimple, { backgroundColor: colors.surfaceElevated }]}
+                    onPress={() => setShowTaskModal(false)}
+                  >
+                    <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.modalSaveSimple} onPress={handleAddTask}>
+                  <TouchableOpacity style={[styles.modalSaveSimple, { backgroundColor: colors.primary }]} onPress={handleAddTask}>
                     <Text style={styles.modalSaveText}>{t('common.save')}</Text>
                   </TouchableOpacity>
                 </View>
@@ -538,41 +589,44 @@ function StudentHomeWithJournal({
               contentContainerStyle={styles.modalOverlayScrollContent}
               keyboardShouldPersistTaps="handled"
             >
-              <View style={styles.modalSimple}>
-                <Text style={styles.modalSimpleTitle}>{t('home.editDailyGoal')}</Text>
+              <View style={[styles.modalSimple, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Text style={[styles.modalSimpleTitle, { color: colors.textPrimary }]}>{t('home.editDailyGoal')}</Text>
                 <View style={styles.goalInputsRow}>
                   <View style={styles.goalInputBox}>
-                    <Text style={styles.goalInputLabel}>{t('home.hours')}</Text>
+                    <Text style={[styles.goalInputLabel, { color: colors.textSecondary }]}>{t('home.hours')}</Text>
                     <TextInput
                       value={goalHoursInput}
                       onChangeText={setGoalHoursInput}
-                      style={styles.modalInputSimple}
+                      style={[styles.modalInputSimple, { borderColor: colors.border, color: colors.textPrimary, backgroundColor: colors.surface }]}
                       keyboardType="numeric"
                       placeholder="0"
-                      placeholderTextColor="#9ca3af"
-                      selectionColor={PRIMARY_GREEN}
-                      cursorColor={PRIMARY_GREEN}
+                      placeholderTextColor={colors.textSecondary}
+                      selectionColor={colors.primary}
+                      cursorColor={colors.primary}
                     />
                   </View>
                   <View style={styles.goalInputBox}>
-                    <Text style={styles.goalInputLabel}>{t('home.minutes')}</Text>
+                    <Text style={[styles.goalInputLabel, { color: colors.textSecondary }]}>{t('home.minutes')}</Text>
                     <TextInput
                       value={goalMinutesInput}
                       onChangeText={setGoalMinutesInput}
-                      style={styles.modalInputSimple}
+                      style={[styles.modalInputSimple, { borderColor: colors.border, color: colors.textPrimary, backgroundColor: colors.surface }]}
                       keyboardType="numeric"
                       placeholder="0-59"
-                      placeholderTextColor="#9ca3af"
-                      selectionColor={PRIMARY_GREEN}
-                      cursorColor={PRIMARY_GREEN}
+                      placeholderTextColor={colors.textSecondary}
+                      selectionColor={colors.primary}
+                      cursorColor={colors.primary}
                     />
                   </View>
                 </View>
                 <View style={styles.modalActionsSimple}>
-                  <TouchableOpacity style={styles.modalCancelSimple} onPress={() => setShowGoalModal(false)}>
-                    <Text style={styles.modalCancelText}>{t('common.cancel')}</Text>
+                  <TouchableOpacity
+                    style={[styles.modalCancelSimple, { backgroundColor: colors.surfaceElevated }]}
+                    onPress={() => setShowGoalModal(false)}
+                  >
+                    <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.modalSaveSimple} onPress={handleSaveDailyGoal}>
+                  <TouchableOpacity style={[styles.modalSaveSimple, { backgroundColor: colors.primary }]} onPress={handleSaveDailyGoal}>
                     <Text style={styles.modalSaveText}>{t('common.save')}</Text>
                   </TouchableOpacity>
                 </View>
@@ -581,7 +635,7 @@ function StudentHomeWithJournal({
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
@@ -589,6 +643,7 @@ function StudentHomeWithJournal({
 function LecturerHomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
   const { firebaseUser } = useUser();
   const [lecturerName, setLecturerName] = useState<string>('');
   const [recentCourses, setRecentCourses] = useState<RecentCourse[]>([]);
@@ -632,36 +687,54 @@ function LecturerHomeScreen() {
   }, [firebaseUser]);
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.appTitle}>{t('home.title')}</Text>
-        <Text style={styles.title}>
-          {t('home.welcome', { name: loading ? '...' : lecturerName || t('auth.lecturer') })}
-        </Text>
-        <Text style={styles.subtitle}>
-          {t('home.lecturerSubtitle')}
-        </Text>
+        <View style={[styles.lecturerHeroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.lecturerHeroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.lecturerHeroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+            <Ionicons name="school-outline" size={14} color={colors.primary} />
+            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>
+              {t('lecturer.tools')}
+            </Text>
+          </View>
+          <SectionTitle
+            title={t('home.welcome', { name: loading ? '...' : lecturerName || t('auth.lecturer') })}
+            subtitle={t('home.lecturerSubtitle')}
+          />
+        </View>
 
         <View style={styles.cardsWrapper}>
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('home.createNewCourse')}</Text>
+          <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.lecturerCardAccent, { backgroundColor: colors.primary }]} />
+            <View style={styles.lecturerCardHeader}>
+              <View style={[styles.lecturerCardIconBadge, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="add-circle-outline" size={16} color={colors.primary} />
+              </View>
+              <Text style={styles.cardTitle}>{t('home.createNewCourse')}</Text>
+            </View>
             <Text style={styles.cardText}>
               {t('home.createNewCourseDescription')}
             </Text>
-            <TouchableOpacity
-              style={[styles.buttonBase, styles.buttonPrimary]}
+            <PrimaryButton
+              label={t('home.createCourse')}
               onPress={() => router.push('/lecturer/add-course' as any)}
-            >
-              <Text style={styles.buttonPrimaryText}>{t('home.createCourse')}</Text>
-            </TouchableOpacity>
-          </View>
+              style={styles.primaryCta}
+            />
+          </AppCard>
 
           {recentCourses.length > 0 && (
-            <View style={styles.card}>
-              <Text style={styles.cardTitle}>{t('home.recentCourses')}</Text>
+            <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.lecturerCardAccent, { backgroundColor: colors.primary }]} />
+              <View style={styles.lecturerCardHeader}>
+                <View style={[styles.lecturerCardIconBadge, { backgroundColor: colors.surfaceElevated }]}>
+                  <Ionicons name="time-outline" size={16} color={colors.primary} />
+                </View>
+                <Text style={styles.cardTitle}>{t('home.recentCourses')}</Text>
+              </View>
               <FlatList
                 data={recentCourses}
                 keyExtractor={(item) => item.id}
@@ -675,24 +748,29 @@ function LecturerHomeScreen() {
                 )}
                 scrollEnabled={false}
               />
-            </View>
+            </AppCard>
           )}
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('home.myCourses')}</Text>
+          <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.lecturerCardAccent, { backgroundColor: colors.primary }]} />
+            <View style={styles.lecturerCardHeader}>
+              <View style={[styles.lecturerCardIconBadge, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="library-outline" size={16} color={colors.primary} />
+              </View>
+              <Text style={styles.cardTitle}>{t('home.myCourses')}</Text>
+            </View>
             <Text style={styles.cardText}>
               {t('home.lecturerCoursesDescription')}
             </Text>
-            <TouchableOpacity
-              style={[styles.buttonBase, styles.buttonPrimary]}
+            <PrimaryButton
+              label={t('home.viewAllCourses')}
               onPress={() => router.push('/(tabs)/courses')}
-            >
-              <Text style={styles.buttonPrimaryText}>{t('home.viewAllCourses')}</Text>
-            </TouchableOpacity>
-          </View>
+              style={styles.primaryCta}
+            />
+          </AppCard>
         </View>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
@@ -700,6 +778,7 @@ function LecturerHomeScreen() {
 function AdminHomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
   const [stats, setStats] = useState({
     students: 0,
     lecturers: 0,
@@ -747,66 +826,85 @@ function AdminHomeScreen() {
   }, []);
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <Ionicons name="shield-checkmark" size={36} color="#ffffff" />
-          <Text style={styles.headerTitle}>{t('admin.dashboard')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('admin.dashboardSubtitle')}
-          </Text>
+        <View style={[styles.adminHeroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.adminHeroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.adminHeroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={styles.adminHeroTopRow}>
+            <View style={[styles.adminHeroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+              <Ionicons name="shield-checkmark" size={14} color={colors.primary} />
+              <Text style={[styles.adminHeroBadgeText, { color: colors.textSecondary }]}>
+                לוח בקרה
+              </Text>
+            </View>
+          </View>
+          <View style={styles.adminHeroRow}>
+            <View style={[styles.adminHeroIcon, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+              <Ionicons name="shield-half" size={22} color={colors.primary} />
+            </View>
+            <SectionTitle title="לוח בקרה למנהל" subtitle="נהל משתמשים, קורסים והגדרות מערכת" />
+          </View>
         </View>
 
         {/* Statistics Grid */}
         <View style={styles.statsGrid}>
-          <View style={styles.statCard}>
-            <View style={[styles.statIconContainer, { backgroundColor: '#dbeafe' }]}>
-              <Ionicons name="school" size={28} color="#3b82f6" />
+          <AppCard style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statAccentLine, { backgroundColor: colors.primary }]} />
+            <View style={[styles.statIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="school" size={22} color={colors.primary} />
             </View>
             <Text style={styles.statNumber}>{loading ? '...' : stats.students}</Text>
             <Text style={styles.statLabel}>{t('admin.students')}</Text>
-          </View>
+          </AppCard>
 
-          <View style={styles.statCard}>
-            <View style={[styles.statIconContainer, { backgroundColor: '#ffffff' }]}>
-              <Ionicons name="person" size={28} color={ACCENT_GREEN} />
+          <AppCard style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statAccentLine, { backgroundColor: colors.accent }]} />
+            <View style={[styles.statIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="person" size={22} color={colors.accent} />
             </View>
             <Text style={styles.statNumber}>{loading ? '...' : stats.lecturers}</Text>
             <Text style={styles.statLabel}>{t('admin.lecturers')}</Text>
-          </View>
+          </AppCard>
 
-          <View style={styles.statCard}>
-            <View style={[styles.statIconContainer, { backgroundColor: '#fee2e2' }]}>
-              <Ionicons name="time" size={28} color="#ef4444" />
+          <AppCard style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statAccentLine, { backgroundColor: colors.warning }]} />
+            <View style={[styles.statIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="time" size={22} color={colors.warning} />
             </View>
             <Text style={styles.statNumber}>{loading ? '...' : stats.pendingUsers}</Text>
             <Text style={styles.statLabel}>{t('admin.pending')}</Text>
-          </View>
+          </AppCard>
 
-          <View style={styles.statCard}>
-            <View style={[styles.statIconContainer, { backgroundColor: '#d1fae5' }]}>
-              <Ionicons name="book" size={28} color="#047857" />
+          <AppCard style={[styles.statCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <View style={[styles.statAccentLine, { backgroundColor: colors.primary }]} />
+            <View style={[styles.statIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="book" size={22} color={colors.primary} />
             </View>
             <Text style={styles.statNumber}>{loading ? '...' : stats.courses}</Text>
             <Text style={styles.statLabel}>{t('admin.courses')}</Text>
-          </View>
+          </AppCard>
         </View>
 
         {/* Quick Actions */}
         <View style={styles.quickActionsSection}>
           <Text style={styles.sectionTitle}>{t('admin.quickActions')}</Text>
 
-          <TouchableOpacity
-            style={styles.actionCard}
-            onPress={() => router.push('/(tabs)/admin')}
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              pressed && { opacity: 0.9, transform: [{ scale: 0.995 }] },
+            ]}
+            onPress={() => router.push('/admin/pending-approvals' as any)}
           >
+            <View style={[styles.actionAccentLine, { backgroundColor: colors.warning }]} />
             <View style={styles.actionCardLeft}>
-              <View style={[styles.actionIconContainer, { backgroundColor: '#ffffff' }]}>
-                <Ionicons name="checkmark-circle" size={24} color={ACCENT_GREEN} />
+              <View style={[styles.actionIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="checkmark-circle" size={20} color={colors.warning} />
               </View>
               <View style={styles.actionCardContent}>
                 <Text style={styles.actionCardTitle}>{t('admin.pendingApprovals')}</Text>
@@ -817,16 +915,21 @@ function AdminHomeScreen() {
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={24} color="#6b7280" />
-          </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+          </Pressable>
 
-          <TouchableOpacity
-            style={styles.actionCard}
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              pressed && { opacity: 0.9, transform: [{ scale: 0.995 }] },
+            ]}
             onPress={() => router.push('/admin/appeals' as any)}
           >
+            <View style={[styles.actionAccentLine, { backgroundColor: colors.warning }]} />
             <View style={styles.actionCardLeft}>
-              <View style={[styles.actionIconContainer, { backgroundColor: '#ffffff' }]}>
-                <Ionicons name="chatbubble-ellipses" size={24} color={ACCENT_GREEN} />
+              <View style={[styles.actionIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="chatbubble-ellipses" size={20} color={colors.warning} />
               </View>
               <View style={styles.actionCardContent}>
                 <Text style={styles.actionCardTitle}>{t('admin.appeals')}</Text>
@@ -841,21 +944,26 @@ function AdminHomeScreen() {
             </View>
             {stats.pendingAppeals > 0 && (
               <View style={styles.badgeContainer}>
-                <View style={styles.badge}>
+                <View style={[styles.badge, { backgroundColor: colors.warning }]}>
                   <Text style={styles.badgeText}>{stats.pendingAppeals}</Text>
                 </View>
               </View>
             )}
-            <Ionicons name="chevron-forward" size={24} color="#6b7280" />
-          </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+          </Pressable>
 
-          <TouchableOpacity
-            style={styles.actionCard}
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              pressed && { opacity: 0.9, transform: [{ scale: 0.995 }] },
+            ]}
             onPress={() => router.push('/admin/users' as any)}
           >
+            <View style={[styles.actionAccentLine, { backgroundColor: colors.primary }]} />
             <View style={styles.actionCardLeft}>
-              <View style={[styles.actionIconContainer, { backgroundColor: '#eff6ff' }]}>
-                <Ionicons name="people" size={24} color="#3b82f6" />
+              <View style={[styles.actionIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="people" size={20} color={colors.primary} />
               </View>
               <View style={styles.actionCardContent}>
                 <Text style={styles.actionCardTitle}>{t('admin.userManagement')}</Text>
@@ -864,16 +972,21 @@ function AdminHomeScreen() {
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={24} color="#6b7280" />
-          </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+          </Pressable>
 
-          <TouchableOpacity
-            style={styles.actionCard}
+          <Pressable
+            style={({ pressed }) => [
+              styles.actionCard,
+              { backgroundColor: colors.surface, borderColor: colors.border },
+              pressed && { opacity: 0.9, transform: [{ scale: 0.995 }] },
+            ]}
             onPress={() => router.push('/admin/courses' as any)}
           >
+            <View style={[styles.actionAccentLine, { backgroundColor: colors.accent }]} />
             <View style={styles.actionCardLeft}>
-              <View style={[styles.actionIconContainer, { backgroundColor: '#f0fdf4' }]}>
-                <Ionicons name="library" size={24} color="#047857" />
+              <View style={[styles.actionIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+                <Ionicons name="library" size={20} color={colors.accent} />
               </View>
               <View style={styles.actionCardContent}>
                 <Text style={styles.actionCardTitle}>{t('admin.courseManagement')}</Text>
@@ -882,36 +995,38 @@ function AdminHomeScreen() {
                 </Text>
               </View>
             </View>
-            <Ionicons name="chevron-forward" size={24} color="#6b7280" />
-          </TouchableOpacity>
+            <Ionicons name="chevron-forward" size={22} color={colors.textSecondary} />
+          </Pressable>
         </View>
 
         {/* System Info */}
-        <View style={styles.systemInfoCard}>
+        <AppCard style={[styles.systemInfoCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.systemInfoHeader}>
-            <Ionicons name="information-circle" size={20} color={ACCENT_GREEN} />
+            <View style={[styles.systemInfoIcon, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+              <Ionicons name="information-circle" size={18} color={colors.primary} />
+            </View>
             <Text style={styles.systemInfoTitle}>{t('admin.systemOverview')}</Text>
           </View>
-          <View style={styles.systemInfoRow}>
+          <View style={[styles.systemInfoRow, { borderBottomColor: colors.border }]}>
             <Text style={styles.systemInfoLabel}>{t('admin.totalUsers')}:</Text>
             <Text style={styles.systemInfoValue}>
               {loading ? '...' : stats.students + stats.lecturers}
             </Text>
           </View>
-          <View style={styles.systemInfoRow}>
+          <View style={[styles.systemInfoRow, styles.systemInfoLastRow]}>
             <Text style={styles.systemInfoLabel}>{t('admin.activeUsers')}:</Text>
             <Text style={styles.systemInfoValue}>
               {loading ? '...' : stats.students + stats.lecturers - stats.pendingUsers}
             </Text>
           </View>
-        </View>
+        </AppCard>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
+const PRIMARY_GREEN = '#2563eb';
+const ACCENT_GREEN = '#2563eb';
 const GREY = '#4b5563';
 const GREY_LIGHT = '#374151';
 
@@ -928,6 +1043,107 @@ const styles = StyleSheet.create({
   logoContainer: {
     alignItems: 'center',
     marginBottom: 24,
+  },
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    top: -80,
+    right: -45,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    left: -30,
+    bottom: -60,
+    opacity: 0.08,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginBottom: spacing.sm,
+  },
+  heroBadgeText: {
+    ...typography.caption,
+    fontWeight: '700',
+  },
+  adminHeroRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  adminHeroIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  lecturerHeroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  lecturerHeroGlowPrimary: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: -90,
+    right: -45,
+    opacity: 0.08,
+  },
+  lecturerHeroGlowAccent: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    left: -30,
+    bottom: -65,
+    opacity: 0.08,
+  },
+  lecturerCardAccent: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    opacity: 0.35,
+  },
+  lecturerCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    gap: 8,
+  },
+  lecturerCardIconBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   appTitle: {
     fontSize: 38,
@@ -955,8 +1171,8 @@ const styles = StyleSheet.create({
   journalCard: {
     backgroundColor: '#ffffff',
     borderRadius: 20,
-    padding: 16,
-    marginBottom: 14,
+    padding: 14,
+    marginBottom: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
   },
@@ -1008,10 +1224,10 @@ const styles = StyleSheet.create({
   goalEditButtonText: {
     fontSize: 12,
     fontWeight: '600',
-    color: '#047857',
+    color: '#334155',
   },
   journalTitle: {
-    fontSize: 22,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111827',
   },
@@ -1021,8 +1237,8 @@ const styles = StyleSheet.create({
   },
   goalValue: {
     marginTop: 4,
-    fontSize: 14,
-    color: '#047857',
+    fontSize: 13,
+    color: '#111827',
     fontWeight: '700',
   },
   goalInfoRow: {
@@ -1038,9 +1254,9 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
   },
   goalPercent: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
-    color: '#047857',
+    color: '#111827',
   },
   goalSubtext: {
     marginTop: 4,
@@ -1048,26 +1264,26 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   progressRow: {
-    marginTop: 8,
+    marginTop: 6,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
   },
   progressTrack: {
     flex: 1,
-    height: 8,
+    height: 6,
     borderRadius: 999,
     backgroundColor: '#e5e7eb',
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#047857',
+    backgroundColor: '#2563eb',
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 16,
+    marginTop: 12,
   },
   statTiny: {
     alignItems: 'center',
@@ -1075,7 +1291,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   statTinyValue: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#111827',
   },
@@ -1084,16 +1300,16 @@ const styles = StyleSheet.create({
     color: '#6b7280',
   },
   timerDisplayBox: {
-    borderWidth: 2,
-    borderColor: '#047857',
+    borderWidth: 1,
+    borderColor: '#d1d5db',
     borderRadius: 14,
-    paddingVertical: 20,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   timerText: {
-    fontSize: 52,
+    fontSize: 44,
     fontWeight: '700',
-    color: '#047857',
+    color: '#111827',
   },
   timerActions: {
     alignItems: 'center',
@@ -1107,7 +1323,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: '#047857',
+    backgroundColor: '#2563eb',
     paddingHorizontal: 22,
     paddingVertical: 10,
     borderRadius: 12,
@@ -1206,7 +1422,7 @@ const styles = StyleSheet.create({
     color: '#1d4ed8',
   },
   taskStatusBadgeTextDone: {
-    color: '#047857',
+    color: '#16a34a',
   },
   taskDeleteButton: {
     paddingHorizontal: 4,
@@ -1239,7 +1455,7 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   lastCourseText: {
-    color: '#047857',
+    color: '#111827',
     fontWeight: '600',
     fontSize: 13,
   },
@@ -1260,6 +1476,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     padding: 18,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   modalSimpleTitle: {
     fontSize: 18,
@@ -1324,7 +1542,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 9,
     borderRadius: 10,
-    backgroundColor: '#047857',
+    backgroundColor: '#2563eb',
   },
   modalCancelText: {
     color: '#111827',
@@ -1399,6 +1617,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     alignSelf: 'flex-start',
   },
+  primaryCta: {
+    alignSelf: 'flex-start',
+    minHeight: 40,
+    paddingHorizontal: 16,
+  },
   buttonDisabled: {
     backgroundColor: GREY_LIGHT,
   },
@@ -1458,64 +1681,89 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   // Admin Dashboard Styles
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
+  adminHeroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  adminHeroGlowPrimary: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    top: -78,
+    right: -42,
+    opacity: 0.08,
+  },
+  adminHeroGlowAccent: {
+    position: 'absolute',
+    width: 110,
+    height: 110,
+    borderRadius: 55,
+    bottom: -56,
+    left: -38,
+    opacity: 0.1,
+  },
+  adminHeroTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  adminHeroBadge: {
+    flexDirection: 'row',
     alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    marginHorizontal: -24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+    gap: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
   },
-  headerTitle: {
-    fontSize: 28,
+  adminHeroBadgeText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    textAlign: 'center',
-    paddingHorizontal: 20,
   },
   statsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'space-between',
-    marginTop: 20,
+    marginTop: 8,
     marginBottom: 24,
     gap: 12,
   },
   statCard: {
+    overflow: 'hidden',
     backgroundColor: '#ffffff',
     borderRadius: 16,
     padding: 16,
     alignItems: 'center',
     width: '48%',
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: '#e5e7eb',
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
+  statAccentLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+  },
   statIconContainer: {
     width: 56,
     height: 56,
-    borderRadius: 28,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   statNumber: {
     fontSize: 24,
@@ -1538,6 +1786,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   actionCard: {
+    overflow: 'hidden',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -1553,6 +1802,13 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
+  actionAccentLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 3,
+  },
   actionCardLeft: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1561,10 +1817,12 @@ const styles = StyleSheet.create({
   actionIconContainer: {
     width: 48,
     height: 48,
-    borderRadius: 24,
+    borderRadius: 14,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   actionCardContent: {
     flex: 1,
@@ -1583,7 +1841,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   badge: {
-    backgroundColor: '#ef4444',
+    backgroundColor: '#f59e0b',
     borderRadius: 12,
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -1601,7 +1859,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: '#e5e7eb',
     shadowColor: '#000',
     shadowOpacity: 0.05,
     shadowRadius: 8,
@@ -1613,19 +1871,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
+  systemInfoIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    marginRight: 8,
+  },
   systemInfoTitle: {
     fontSize: 16,
     fontWeight: '700',
     color: '#111827',
-    marginLeft: 8,
   },
   systemInfoRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: '#374151',
+    borderBottomColor: '#e5e7eb',
+  },
+  systemInfoLastRow: {
+    borderBottomWidth: 0,
   },
   systemInfoLabel: {
     fontSize: 14,

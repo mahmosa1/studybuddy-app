@@ -1,4 +1,13 @@
 // app/course/[courseId].tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { iconContainer, layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
 import { useUser } from '@/lib/UserContext';
 import { askCourseAssistant } from '@/lib/aiService';
@@ -48,6 +57,8 @@ type CourseFile = {
 export default function CourseDetailsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const { role } = useUser();
   const params = useLocalSearchParams<{
     courseId?: string | string[];
@@ -422,7 +433,7 @@ export default function CourseDetailsScreen() {
           activeOpacity={0.7}
         >
           <View style={styles.fileIconContainer}>
-            <Ionicons name={fileIcon} size={24} color={ACCENT_GREEN} />
+            <Ionicons name={fileIcon} size={24} color={colors.accent} />
           </View>
           <View style={styles.fileInfo}>
             <Text style={styles.fileName} numberOfLines={1}>
@@ -431,7 +442,7 @@ export default function CourseDetailsScreen() {
             <View style={styles.fileMetaRow}>
               {item.mimeType && (
                 <View style={styles.metaTag}>
-                  <Ionicons name="document-outline" size={10} color="#6b7280" />
+                  <Ionicons name="document-outline" size={10} color={colors.textSecondary} />
                   <Text style={styles.metaTagText}>
                     {item.mimeType.split('/')[1]?.toUpperCase() || 'FILE'}
                   </Text>
@@ -439,64 +450,55 @@ export default function CourseDetailsScreen() {
               )}
               {sizeMb && (
                 <View style={styles.metaTag}>
-                  <Ionicons name="hardware-chip-outline" size={10} color="#6b7280" />
+                  <Ionicons name="hardware-chip-outline" size={10} color={colors.textSecondary} />
                   <Text style={styles.metaTagText}>{sizeMb} MB</Text>
                 </View>
               )}
             </View>
           </View>
-          <Ionicons name="chevron-forward" size={20} color="#6b7280" />
+          <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
         <TouchableOpacity
           style={styles.deleteButton}
           onPress={() => handleDeleteFile(item)}
         >
-          <Ionicons name="trash-outline" size={18} color="#ffffff" />
+          <Ionicons name="trash-outline" size={18} color={colors.textOnPrimary} />
         </TouchableOpacity>
       </View>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={String(name ?? 'Course')} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerTop}>
-            <TouchableOpacity
-              style={styles.backButtonHeader}
-              onPress={() => {
-                // Use router.back() to maintain RTL/LTR state
-                // This prevents layout direction from changing
-                router.back();
-              }}
-            >
-              <Ionicons name="arrow-back" size={24} color="#ffffff" />
-            </TouchableOpacity>
+        <View style={styles.heroWrap}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowAccent} />
+          <View style={styles.heroBadge}>
+            <Ionicons name="folder-outline" size={14} color={colors.primary} />
+            <Text style={styles.heroBadgeText}>{t('courses.title')}</Text>
           </View>
-          <View style={styles.headerContent}>
-            <Ionicons name="folder" size={32} color="#ffffff" />
-            <Text style={styles.headerTitle}>{name ?? 'Course'}</Text>
-            <Text style={styles.headerSubtitle}>
-              {t('courseDetails.manageMaterials')}
-            </Text>
-          </View>
+          <SectionTitle title={String(name ?? 'Course')} subtitle={t('courseDetails.manageMaterials')} />
         </View>
 
         {/* Study Insights Section - Only for students */}
-        <View style={styles.insightsCard}>
+        <AppCard style={styles.insightsCard}>
+          <View style={styles.cardAccentBar} />
           <View style={styles.sectionHeader}>
-            <Ionicons name="analytics" size={22} color={ACCENT_GREEN} />
+            <View style={styles.sectionIconBadge}>
+              <Ionicons name="analytics" size={18} color={colors.accent} />
+            </View>
             <Text style={styles.sectionTitle}>{t('courseDetails.studyInsights')}</Text>
           </View>
 
           {/* Real practice statistics */}
           {loadingStats ? (
             <View style={styles.insightsContent}>
-              <ActivityIndicator size="small" color={ACCENT_GREEN} />
+              <LoadingState />
             </View>
           ) : practiceStats ? (
             <View style={styles.insightsContent}>
@@ -507,12 +509,12 @@ export default function CourseDetailsScreen() {
                   <Text style={styles.insightValue}>{practiceStats.weakTopics.length}</Text>
                 </View>
                 <View style={styles.insightItem}>
-                  <Ionicons name="flask" size={20} color={ACCENT_GREEN} />
+                  <Ionicons name="flask" size={20} color={colors.accent} />
                   <Text style={styles.insightLabel}>{t('courseDetails.practices')}</Text>
                   <Text style={styles.insightValue}>{practiceStats.totalPractices}</Text>
                 </View>
                 <View style={styles.insightItem}>
-                  <Ionicons name="calendar" size={20} color={PRIMARY_GREEN} />
+                  <Ionicons name="calendar" size={20} color={colors.primary} />
                   <Text style={styles.insightLabel}>{t('courseDetails.lastPractice')}</Text>
                   <Text style={styles.insightValue}>
                     {practiceStats.lastPracticeDate
@@ -542,20 +544,23 @@ export default function CourseDetailsScreen() {
               <Text style={styles.noDataText}>{t('courseDetails.noPracticeData')}</Text>
             </View>
           )}
-        </View>
+        </AppCard>
 
         {/* Files Section */}
-        <View style={styles.filesCard}>
+        <AppCard style={styles.filesCard}>
+          <View style={styles.cardAccentBar} />
           <View style={styles.sectionHeader}>
             <View style={styles.sectionHeaderLeft}>
-              <Ionicons name="document-text" size={22} color={ACCENT_GREEN} />
+              <View style={styles.sectionIconBadge}>
+                <Ionicons name="document-text" size={18} color={colors.textPrimary} />
+              </View>
               <Text style={styles.sectionTitle}>{t('courseDetails.courseFiles')}</Text>
             </View>
             <TouchableOpacity
               style={styles.aiButtonInline}
               onPress={() => setShowAIModal(true)}
             >
-              <Ionicons name="sparkles" size={18} color={PRIMARY_GREEN} />
+              <Ionicons name="sparkles" size={18} color={colors.accent} />
               <Text style={styles.aiButtonInlineText}>{t('courseDetails.askAI')}</Text>
             </TouchableOpacity>
           </View>
@@ -564,40 +569,31 @@ export default function CourseDetailsScreen() {
               style={styles.aiQuickAction}
               onPress={() => handleQuickAIAction(t('courseDetails.quickAiSummaryQuestion', { courseName: name ?? t('courseDetails.thisCourse') }))}
             >
-              <Ionicons name="document-text-outline" size={14} color="#065f46" />
+              <Ionicons name="document-text-outline" size={14} color={colors.accent} />
               <Text style={styles.aiQuickActionText}>{t('courseDetails.quickAiSummary')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.aiQuickAction}
               onPress={() => handleQuickAIAction(t('courseDetails.quickAiExamQuestion', { courseName: name ?? t('courseDetails.thisCourse') }))}
             >
-              <Ionicons name="school-outline" size={14} color="#065f46" />
+              <Ionicons name="school-outline" size={14} color={colors.accent} />
               <Text style={styles.aiQuickActionText}>{t('courseDetails.quickAiExamPrep')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.aiQuickAction}
               onPress={() => handleQuickAIAction(t('courseDetails.quickAiWeakQuestion', { courseName: name ?? t('courseDetails.thisCourse') }))}
             >
-              <Ionicons name="analytics-outline" size={14} color="#065f46" />
+              <Ionicons name="analytics-outline" size={14} color={colors.accent} />
               <Text style={styles.aiQuickActionText}>{t('courseDetails.quickAiWeakTopics')}</Text>
             </TouchableOpacity>
           </View>
 
           {loadingFiles ? (
             <View style={styles.loadingContainer}>
-              <ActivityIndicator color={PRIMARY_GREEN} size="large" />
-              <Text style={styles.loadingText}>{t('courseDetails.loadingFiles')}</Text>
+              <LoadingState label={t('courseDetails.loadingFiles')} />
             </View>
           ) : files.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconContainer}>
-                <Ionicons name="document-outline" size={64} color="#6b7280" />
-              </View>
-              <Text style={styles.emptyTitle}>{t('courseDetails.noFiles')}</Text>
-              <Text style={styles.emptyText}>
-                {t('courseDetails.noFilesMessage')}
-              </Text>
-            </View>
+            <EmptyState title={t('courseDetails.noFiles')} subtitle={t('courseDetails.noFilesMessage')} />
           ) : (
             <FlatList
               data={files}
@@ -608,27 +604,18 @@ export default function CourseDetailsScreen() {
             />
           )}
 
-          <TouchableOpacity
-            style={styles.uploadButton}
+          <PrimaryButton
+            label={t('courseDetails.uploadFile')}
             onPress={handleUploadFile}
-          >
-            <Ionicons name="cloud-upload-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-            <Text style={styles.uploadButtonText}>{t('courseDetails.uploadFile')}</Text>
-          </TouchableOpacity>
+            style={styles.uploadButton}
+          />
 
-          <TouchableOpacity
-            style={[styles.uploadButton, { marginTop: 10, backgroundColor: '#0f766e' }]}
+          <PrimaryButton
+            label={summaryLoading ? `${t('common.loading')}...` : 'AI Summary + Flashcards'}
             onPress={handleGenerateSummaryPack}
-          >
-            {summaryLoading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <>
-                <Ionicons name="bulb-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                <Text style={styles.uploadButtonText}>AI Summary + Flashcards</Text>
-              </>
-            )}
-          </TouchableOpacity>
+            loading={summaryLoading}
+            style={styles.summaryButton}
+          />
 
           {summaryPack && (
             <View style={styles.summaryPackBox}>
@@ -655,7 +642,7 @@ export default function CourseDetailsScreen() {
               )}
             </View>
           )}
-        </View>
+        </AppCard>
       </ScrollView>
 
       {/* AI Question Modal */}
@@ -847,81 +834,95 @@ export default function CourseDetailsScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
+const PRIMARY_GREEN = '#635BFF';
+const ACCENT_GREEN = '#0891B2';
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: any) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
+    backgroundColor: colors.bg,
   },
   scrollContent: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
     paddingBottom: 40,
   },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 24,
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -10,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
   },
-  headerTop: {
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: -100,
+    right: -50,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: -65,
+    left: -30,
+    backgroundColor: colors.accent,
+    opacity: 0.08,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
-    paddingHorizontal: 20,
-    marginBottom: 20,
-  },
-  backButtonHeader: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    marginBottom: spacing.sm,
   },
-  headerContent: {
-    alignItems: 'center',
-    paddingHorizontal: 20,
-  },
-  headerTitle: {
-    fontSize: 28,
+  heroBadgeText: {
+    color: colors.textSecondary,
+    ...typography.caption,
     fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 8,
-    textAlign: 'center',
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    marginBottom: 8,
-    textAlign: 'center',
+  cardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.primary,
+    opacity: 0.35,
   },
   aiButtonInline: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#f0fdf4',
+    backgroundColor: colors.surface,
     paddingHorizontal: 12,
     paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1.5,
-    borderColor: PRIMARY_GREEN,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   aiButtonInlineText: {
     fontSize: 13,
     fontWeight: '600',
-    color: PRIMARY_GREEN,
+    color: colors.accent,
   },
   aiQuickActionsRow: {
     marginTop: 12,
@@ -934,8 +935,8 @@ const styles = StyleSheet.create({
     minHeight: 36,
     borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
-    backgroundColor: '#ecfdf5',
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -943,22 +944,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   aiQuickActionText: {
-    color: '#065f46',
+    color: colors.textSecondary,
     fontSize: 11,
     fontWeight: '700',
   },
   insightsCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    marginHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    position: 'relative',
+    overflow: 'hidden',
   },
   insightsContent: {
     marginTop: 16,
@@ -974,24 +969,24 @@ const styles = StyleSheet.create({
   },
   insightLabel: {
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
     marginTop: 4,
   },
   insightValue: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
   },
   weakTopicsSection: {
     marginTop: 8,
     paddingTop: 16,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: colors.border,
   },
   weakTopicsTitle: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   weakTopicsList: {
@@ -1002,40 +997,35 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     padding: 10,
-    backgroundColor: '#fef3c7',
-    borderRadius: 8,
-    borderLeftWidth: 3,
-    borderLeftColor: '#f59e0b',
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   noDataText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: colors.textSecondary,
     textAlign: 'center',
     padding: 20,
   },
   weakTopicText: {
     flex: 1,
     fontSize: 13,
-    color: '#111827',
+    color: colors.textPrimary,
     fontWeight: '500',
   },
   filesCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: 20,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    position: 'relative',
+    overflow: 'hidden',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: spacing.md,
   },
   sectionHeaderLeft: {
     flexDirection: 'row',
@@ -1043,14 +1033,21 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.h3,
+    color: colors.textPrimary,
     marginLeft: 10,
+  },
+  sectionIconBadge: {
+    width: iconContainer.size,
+    height: iconContainer.size,
+    borderRadius: iconContainer.radius,
+    backgroundColor: colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   loadingContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
+    paddingVertical: spacing.lg,
   },
   loadingText: {
     marginTop: 10,
@@ -1065,7 +1062,7 @@ const styles = StyleSheet.create({
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: '#374151',
+    backgroundColor: colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 20,
@@ -1073,12 +1070,12 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   emptyText: {
     fontSize: 14,
-    color: '#6b7280',
+    color: colors.textSecondary,
     textAlign: 'center',
     paddingHorizontal: 20,
     lineHeight: 20,
@@ -1089,12 +1086,12 @@ const styles = StyleSheet.create({
   fileCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 12,
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
   },
   fileContent: {
     flex: 1,
@@ -1105,7 +1102,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 12,
-    backgroundColor: '#dbeafe',
+    backgroundColor: colors.surfaceElevated,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -1114,7 +1111,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fileName: {
-    color: '#111827',
+    color: colors.textPrimary,
     fontSize: 15,
     fontWeight: '600',
     marginBottom: 6,
@@ -1126,14 +1123,14 @@ const styles = StyleSheet.create({
   metaTag: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     borderRadius: 6,
     paddingVertical: 3,
     paddingHorizontal: 6,
   },
   metaTagText: {
     fontSize: 10,
-    color: '#6b7280',
+    color: colors.textSecondary,
     marginLeft: 4,
     fontWeight: '500',
   },
@@ -1141,27 +1138,19 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 10,
-    backgroundColor: '#ef4444',
+    backgroundColor: colors.danger,
     justifyContent: 'center',
     alignItems: 'center',
     marginLeft: 10,
   },
   uploadButton: {
-    flexDirection: 'row',
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 14,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
+    marginTop: spacing.md,
+  },
+  summaryButton: {
     marginTop: 20,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
   },
   uploadButtonText: {
-    color: '#ffffff',
+    color: colors.textOnPrimary,
     fontWeight: '600',
     fontSize: 16,
   },

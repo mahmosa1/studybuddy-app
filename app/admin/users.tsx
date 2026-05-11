@@ -1,4 +1,10 @@
 // app/admin/users.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -14,6 +20,7 @@ import { useTranslation } from 'react-i18next';
 import {
     ActivityIndicator,
     Alert,
+    I18nManager,
     Image,
     ScrollView,
     StyleSheet,
@@ -36,9 +43,12 @@ type UserItem = {
 export default function AdminUsersManagementScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const isRtl = I18nManager.isRTL;
   const [users, setUsers] = useState<UserItem[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserItem[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedFilter, setSelectedFilter] = useState<'all' | 'student' | 'lecturer' | 'admin' | 'pending' | 'blocked'>('all');
   const [loading, setLoading] = useState(true);
   const [updatingUid, setUpdatingUid] = useState<string | null>(null);
 
@@ -47,18 +57,34 @@ export default function AdminUsersManagementScreen() {
   }, []);
 
   useEffect(() => {
-    if (searchQuery.trim()) {
-      const filtered = users.filter(
+    const searchMatchedUsers = searchQuery.trim()
+      ? users.filter(
         (user) =>
           user.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
           (user.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
           (user.username || '').toLowerCase().includes(searchQuery.toLowerCase())
-      );
-      setFilteredUsers(filtered);
-    } else {
-      setFilteredUsers(users);
-    }
-  }, [searchQuery, users]);
+      )
+      : users;
+
+    const filterMatchedUsers = searchMatchedUsers.filter((user) => {
+      switch (selectedFilter) {
+        case 'student':
+          return user.role === 'student';
+        case 'lecturer':
+          return user.role === 'lecturer';
+        case 'admin':
+          return user.role === 'admin';
+        case 'pending':
+          return user.status === 'pending';
+        case 'blocked':
+          return user.status === 'blocked';
+        default:
+          return true;
+      }
+    });
+
+    setFilteredUsers(filterMatchedUsers);
+  }, [searchQuery, selectedFilter, users]);
 
   const loadUsers = async () => {
     try {
@@ -158,13 +184,13 @@ export default function AdminUsersManagementScreen() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return '#22c55e';
+        return colors.success;
       case 'pending':
-        return ACCENT_GREEN;
+        return colors.warning;
       case 'blocked':
-        return '#ef4444';
+        return colors.danger;
       default:
-        return '#6b7280';
+        return colors.textSecondary;
     }
   };
 
@@ -180,136 +206,208 @@ export default function AdminUsersManagementScreen() {
   };
 
   const renderUser = ({ item }: { item: UserItem }) => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
+    <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={[styles.cardAccentLine, { backgroundColor: getStatusColor(item.status) }]} />
+      <View style={[styles.cardHeader, isRtl && styles.rtlRow]}>
         {item.profilePictureUrl ? (
           <Image
             source={{ uri: item.profilePictureUrl }}
-            style={styles.profileImage}
+            style={[
+              styles.profileImage,
+              {
+                borderColor:
+                  item.status === 'blocked'
+                    ? colors.danger
+                    : item.status === 'pending'
+                      ? colors.warning
+                      : colors.primary,
+              },
+            ]}
           />
         ) : (
-          <View style={styles.profilePlaceholder}>
-            <Text style={styles.profileInitials}>{getInitials(item)}</Text>
+          <View style={[styles.profilePlaceholder, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
+            <Text style={[styles.profileInitials, { color: colors.textPrimary }]}>{getInitials(item)}</Text>
           </View>
         )}
         <View style={styles.userInfo}>
-          <Text style={styles.email}>{item.email}</Text>
-          <Text style={styles.smallText}>
+          <Text style={[styles.email, { color: colors.textPrimary }, isRtl && styles.rtlText]}>{item.email}</Text>
+          <Text style={[styles.smallText, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
             {item.fullName ?? t('admin.noName')} · {item.username ?? t('admin.noUsername')}
           </Text>
-          <View style={styles.roleBadge}>
-            <Ionicons
-              name={item.role === 'lecturer' ? 'person' : 'school'}
-              size={12}
-              color="#ffffff"
-            />
-            <Text style={styles.roleText}>{t(`auth.${item.role}`)}</Text>
+          <View style={[styles.metaRow, isRtl && styles.rtlRow]}>
+            <View style={[styles.roleBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+              <Ionicons
+                name={item.role === 'lecturer' ? 'person-outline' : 'school-outline'}
+                size={12}
+                color={colors.primary}
+              />
+              <Text style={[styles.roleText, { color: colors.primary }]}>{t(`auth.${item.role}`)}</Text>
+            </View>
+            <View style={[styles.statusPill, { borderColor: getStatusColor(item.status), backgroundColor: colors.surfaceElevated }, isRtl && styles.rtlRow]}>
+              <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
+              <Text style={[styles.statusPillText, { color: getStatusColor(item.status) }]}>
+                {t(`admin.status.${item.status}`)}
+              </Text>
+            </View>
           </View>
         </View>
       </View>
 
-      <View style={[styles.statusPill, { borderColor: getStatusColor(item.status) }]}>
-        <View style={[styles.statusDot, { backgroundColor: getStatusColor(item.status) }]} />
-        <Text style={[styles.statusPillText, { color: getStatusColor(item.status) }]}>
-          {t(`admin.status.${item.status}`)}
-        </Text>
-      </View>
-
-      <View style={styles.actionsRow}>
+      <View style={[styles.actionsRow, { borderTopColor: colors.border }, isRtl && styles.rtlRow]}>
         {item.status === 'blocked' ? (
           <TouchableOpacity
-            style={[styles.actionButton, styles.unblockButton]}
+            style={[
+              styles.actionButton,
+              styles.secondaryActionButton,
+              {
+                backgroundColor: colors.surfaceElevated,
+                borderColor: colors.success,
+              },
+            ]}
             onPress={() => handleUnblockUser(item.uid)}
             disabled={updatingUid === item.uid}
           >
             {updatingUid === item.uid ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.success} />
             ) : (
               <>
-                <Ionicons name="checkmark-circle-outline" size={16} color="#ffffff" />
-                <Text style={styles.actionText}>{t('admin.unblock')}</Text>
+                <Ionicons name="checkmark-circle-outline" size={16} color={colors.success} />
+                <Text style={[styles.secondaryActionText, { color: colors.success }]}>{t('admin.unblock')}</Text>
               </>
             )}
           </TouchableOpacity>
         ) : (
           <TouchableOpacity
-            style={[styles.actionButton, styles.blockButton]}
+            style={[
+              styles.actionButton,
+              styles.secondaryActionButton,
+              {
+                backgroundColor: colors.surfaceElevated,
+                borderColor: colors.danger,
+              },
+            ]}
             onPress={() => handleBlockUser(item.uid)}
             disabled={updatingUid === item.uid}
           >
             {updatingUid === item.uid ? (
-              <ActivityIndicator color="#ffffff" />
+              <ActivityIndicator color={colors.danger} />
             ) : (
               <>
-                <Ionicons name="ban-outline" size={16} color="#ffffff" />
-                <Text style={styles.actionText}>{t('admin.block')}</Text>
+                <Ionicons name="ban-outline" size={16} color={colors.danger} />
+                <Text style={[styles.secondaryActionText, { color: colors.danger }]}>{t('admin.block')}</Text>
               </>
             )}
           </TouchableOpacity>
         )}
 
         <TouchableOpacity
-          style={[styles.actionButton, styles.deleteButton]}
+          style={[styles.actionButton, { backgroundColor: colors.danger }]}
           onPress={() => handleDeleteUser(item.uid)}
           disabled={updatingUid === item.uid}
         >
           {updatingUid === item.uid ? (
-            <ActivityIndicator color="#ffffff" />
+            <ActivityIndicator color={colors.textOnPrimary} />
           ) : (
             <>
-              <Ionicons name="trash-outline" size={16} color="#ffffff" />
-                <Text style={styles.actionText}>{t('common.delete')}</Text>
+              <Ionicons
+                name="trash-outline"
+                size={15}
+                color={colors.textOnPrimary}
+              />
+              <Text style={[styles.actionText, { color: colors.textOnPrimary }]}>{t('common.delete')}</Text>
             </>
           )}
         </TouchableOpacity>
       </View>
-    </View>
+    </AppCard>
   );
 
+  const filterOptions: Array<{ key: 'all' | 'student' | 'lecturer' | 'admin' | 'pending' | 'blocked'; label: string }> = [
+    { key: 'all', label: t('admin.users.filterAll') },
+    { key: 'student', label: t('admin.users.filterStudents') },
+    { key: 'lecturer', label: t('admin.users.filterLecturers') },
+    { key: 'admin', label: t('admin.users.filterAdmins') },
+    { key: 'pending', label: t('admin.users.filterPending') },
+    { key: 'blocked', label: t('admin.users.filterBlocked') },
+  ];
+
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={t('admin.userManagement')} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonHeader}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <Ionicons name="people" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{t('admin.userManagement')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('admin.userManagementDescription')}
-          </Text>
+        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
+          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="shield-checkmark-outline" size={14} color={colors.primary} />
+            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.userManagement')}</Text>
+          </View>
+          <SectionTitle title={t('admin.userManagement')} subtitle={t('admin.userManagementDescription')} />
         </View>
 
-        {/* Search Box */}
-        <View style={styles.searchContainer}>
-          <View style={styles.searchBox}>
-            <Ionicons name="search-outline" size={20} color="#6b7280" style={styles.searchIcon} />
+        <AppCard style={[styles.searchPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+          <View style={[styles.searchBox, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons
+              name="search-outline"
+              size={18}
+              color={colors.textSecondary}
+              style={[styles.searchIcon, isRtl && styles.rtlSearchIcon]}
+            />
             <TextInput
-              style={styles.searchInput}
+              style={[
+                styles.searchInput,
+                {
+                  color: colors.textPrimary,
+                  textAlign: isRtl ? 'right' : 'left',
+                },
+              ]}
               placeholder={t('admin.searchUsersPlaceholder')}
-              placeholderTextColor="#6b7280"
+              placeholderTextColor={colors.textSecondary}
               value={searchQuery}
               onChangeText={setSearchQuery}
             />
             {searchQuery.length > 0 && (
               <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <Ionicons name="close-circle" size={20} color="#6b7280" />
+                <Ionicons name="close-circle" size={18} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
-        </View>
+        </AppCard>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={[styles.filterRow, isRtl && styles.rtlRow]}
+          style={styles.filterScroll}
+        >
+          {filterOptions.map((option) => {
+            const isSelected = selectedFilter === option.key;
+            return (
+              <TouchableOpacity
+                key={option.key}
+                style={[
+                  styles.filterChip,
+                  {
+                    backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                  },
+                ]}
+                onPress={() => setSelectedFilter(option.key)}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.filterChipText, { color: isSelected ? colors.textOnPrimary : colors.textPrimary }]}>
+                  {option.label}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
 
-        {/* Results Count */}
         {!loading && filteredUsers.length > 0 && (
-          <Text style={styles.resultsCount}>
-            {filteredUsers.length === 1 
+          <Text style={[styles.resultsCount, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
+            {filteredUsers.length === 1
               ? t('admin.userFound', { count: filteredUsers.length })
               : t('admin.usersFound', { count: filteredUsers.length })}
           </Text>
@@ -317,25 +415,25 @@ export default function AdminUsersManagementScreen() {
 
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color={PRIMARY_GREEN} />
-            <Text style={styles.loadingText}>{t('admin.loadingUsers')}</Text>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>{t('admin.loadingUsers')}</Text>
           </View>
         ) : filteredUsers.length === 0 ? (
-          <View style={styles.emptyState}>
+          <AppCard style={[styles.emptyState, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <Ionicons
               name={searchQuery ? "search-outline" : "people-outline"}
-              size={64}
-              color="#6b7280"
+              size={44}
+              color={colors.textSecondary}
             />
-            <Text style={styles.emptyTitle}>
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }, isRtl && styles.rtlText]}>
               {searchQuery ? t('admin.noUsersFound') : t('admin.noUsersInSystem')}
             </Text>
-            <Text style={styles.emptyText}>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
               {searchQuery
                 ? t('admin.tryAdjustingSearch')
                 : t('admin.usersWillAppear')}
             </Text>
-          </View>
+          </AppCard>
         ) : (
           <View style={styles.usersList}>
             {filteredUsers.map((item) => (
@@ -344,212 +442,203 @@ export default function AdminUsersManagementScreen() {
           </View>
         )}
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   scrollContent: {
-    paddingBottom: 40,
+    paddingHorizontal: spacing.md,
+    paddingBottom: spacing.lg,
   },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
   },
-  backButtonHeader: {
+  heroGlowPrimary: {
     position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    top: -72,
+    right: -38,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    bottom: -52,
+    left: -26,
+    opacity: 0.1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    gap: 6,
+    marginBottom: spacing.sm,
   },
-  headerTitle: {
-    fontSize: 28,
+  heroBadgeText: {
+    fontSize: 12,
     fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 5,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    textAlign: 'center',
-    paddingHorizontal: 20,
+  searchPanel: {
+    marginBottom: spacing.sm,
   },
-  searchContainer: {
-    paddingHorizontal: 20,
-    marginTop: 20,
-    marginBottom: 16,
+  filterScroll: {
+    marginBottom: spacing.sm,
+  },
+  filterRow: {
+    gap: 8,
+    paddingHorizontal: 2,
+  },
+  filterChip: {
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  filterChipText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
   searchBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
     borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    paddingHorizontal: 12,
+    minHeight: 46,
   },
   searchIcon: {
-    marginRight: 10,
+    marginRight: 8,
+  },
+  rtlSearchIcon: {
+    marginRight: 0,
+    marginLeft: 8,
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
-    color: '#111827',
   },
   resultsCount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    color: '#6b7280',
-    paddingHorizontal: 20,
-    marginBottom: 12,
+    marginBottom: spacing.sm,
+    paddingHorizontal: 4,
   },
   loadingContainer: {
     alignItems: 'center',
-    paddingVertical: 40,
-    marginTop: 20,
+    paddingVertical: 42,
   },
   loadingText: {
     marginTop: 10,
     fontSize: 14,
-    color: '#6b7280',
   },
   emptyState: {
     alignItems: 'center',
-    paddingVertical: 60,
-    marginTop: 20,
-    marginHorizontal: 20,
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#374151',
+    paddingVertical: 36,
+    marginTop: spacing.sm,
   },
   emptyTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '700',
-    color: '#111827',
-    marginTop: 16,
-    marginBottom: 8,
+    marginTop: 12,
+    marginBottom: 6,
   },
   emptyText: {
     fontSize: 14,
-    color: '#6b7280',
     textAlign: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: 10,
   },
   usersList: {
-    paddingHorizontal: 20,
+    gap: 10,
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 3,
+    overflow: 'hidden',
+  },
+  cardAccentLine: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    opacity: 0.55,
   },
   cardHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   profileImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     marginRight: 12,
     borderWidth: 2,
-    borderColor: PRIMARY_GREEN,
   },
   profilePlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: '#374151',
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#374151',
+    borderWidth: 1,
   },
   profileInitials: {
-    fontSize: 24,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
   },
   userInfo: {
     flex: 1,
   },
   email: {
-    color: '#111827',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    marginBottom: 4,
+    marginBottom: 3,
   },
   smallText: {
-    color: '#6b7280',
-    fontSize: 13,
+    fontSize: 12,
     marginBottom: 8,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
   },
   roleBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    backgroundColor: PRIMARY_GREEN,
-    borderRadius: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    gap: 4,
   },
   roleText: {
-    color: '#ffffff',
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: '700',
-    marginLeft: 4,
   },
   statusPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
-    marginBottom: 16,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
     borderRadius: 999,
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
   },
   statusDot: {
     width: 8,
@@ -558,43 +647,40 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   statusPillText: {
-    fontSize: 12,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
   },
   actionsRow: {
     flexDirection: 'row',
-    gap: 12,
-    paddingTop: 16,
+    gap: 8,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#374151',
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: 10,
+    minHeight: 36,
     gap: 6,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
   },
-  blockButton: {
-    backgroundColor: ACCENT_GREEN,
+  secondaryActionButton: {
+    borderWidth: 1,
   },
-  unblockButton: {
-    backgroundColor: '#22c55e',
-  },
-  deleteButton: {
-    backgroundColor: '#ef4444',
+  secondaryActionText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   actionText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
   },
 });
 

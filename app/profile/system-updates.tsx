@@ -7,15 +7,24 @@ import {
   setTutorUpdatesSeenSignature,
 } from '@/lib/profileSystemUpdates';
 import {
+  fetchStudentCourseJoinOutcomes,
+  type CourseJoinRequest,
+} from '@/lib/courseJoinRequestService';
+import {
   fetchTutorSupportRequestsForStudent,
   fetchTutorSupportRequestsForTutor,
   reviewTutorSupportRequest,
   TutorSupportRequestDoc,
 } from '@/lib/tutorSupportRequestService';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { doc, getDoc } from 'firebase/firestore';
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -27,10 +36,15 @@ import {
   View,
   Image,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
 
 type TutorRow = { courseId: string; courseName: string; approvedAt?: string };
+
+type SystemUpdatesMergedItem =
+  | { kind: 'courseJoin'; sortMs: number; request: CourseJoinRequest; lecturerName?: string }
+  | { kind: 'tutorRequest'; sortMs: number; req: TutorSupportRequestDoc }
+  | { kind: 'tutorRibbon'; sortMs: number; row: TutorRow }
+  | { kind: 'studentTutorDecision'; sortMs: number; req: TutorSupportRequestDoc };
 
 const ACCENT = '#047857';
 
@@ -42,16 +56,111 @@ function formatReceivedAt(iso: string | undefined, lang: string): string {
   return d.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+function parseApprovedAtMs(approvedAt: string | undefined): number {
+  if (!approvedAt) return 0;
+  const t = new Date(approvedAt).getTime();
+  return Number.isNaN(t) ? 0 : t;
+}
+
+function courseJoinOutcomeSortMs(request: CourseJoinRequest): number {
+  if (request.status === 'approved') {
+    return (
+      request.approvedAt?.toMillis?.() ??
+      request.updatedAt?.toMillis?.() ??
+      0
+    );
+  }
+  return request.rejectedAt?.toMillis?.() ?? request.updatedAt?.toMillis?.() ?? 0;
+}
+
+function courseJoinDismissKey(request: CourseJoinRequest): string {
+  return `course-join:${request.id}:${request.status}`;
+}
+
+function buildSystemUpdatesMergedFeed(params: {
+  courseJoinOutcomes: CourseJoinRequest[];
+  lecturerNamesByUid: Record<string, string>;
+  tutorRibbonRows: TutorRow[];
+  tutorRequests: TutorSupportRequestDoc[];
+  studentDecisionRequests: TutorSupportRequestDoc[];
+}): SystemUpdatesMergedItem[] {
+  const {
+    courseJoinOutcomes,
+    lecturerNamesByUid,
+    tutorRibbonRows,
+    tutorRequests,
+    studentDecisionRequests,
+  } = params;
+  const items: SystemUpdatesMergedItem[] = [];
+
+  courseJoinOutcomes.forEach((request) => {
+    const lecturerName = request.lecturerUid
+      ? lecturerNamesByUid[request.lecturerUid]?.trim()
+      : undefined;
+    items.push({
+      kind: 'courseJoin',
+      sortMs: courseJoinOutcomeSortMs(request),
+      request,
+      lecturerName: lecturerName || undefined,
+    });
+  });
+
+  tutorRequests.forEach((req) => {
+    items.push({
+      kind: 'tutorRequest',
+      sortMs: (req.createdAt as any)?.toMillis?.() ?? 0,
+      req,
+    });
+  });
+
+  tutorRibbonRows.forEach((row) => {
+    items.push({
+      kind: 'tutorRibbon',
+      sortMs: parseApprovedAtMs(row.approvedAt),
+      row,
+    });
+  });
+
+  studentDecisionRequests.forEach((req) => {
+    items.push({
+      kind: 'studentTutorDecision',
+      sortMs:
+        (req.reviewedAt as any)?.toMillis?.() ??
+        (req.createdAt as any)?.toMillis?.() ??
+        0,
+      req,
+    });
+  });
+
+  return items.sort((a, b) => b.sortMs - a.sortMs);
+}
+
+function isMergedItemDismissed(item: SystemUpdatesMergedItem, dismissedKeys: string[]): boolean {
+  if (item.kind === 'courseJoin') {
+    return dismissedKeys.includes(courseJoinDismissKey(item.request));
+  }
+  if (item.kind === 'tutorRequest') {
+    return dismissedKeys.includes(`request:${item.req.id}`);
+  }
+  if (item.kind === 'tutorRibbon') {
+    const { row } = item;
+    return dismissedKeys.includes(`approved:${row.courseId}:${row.approvedAt ?? ''}`);
+  }
+  return dismissedKeys.includes(`student-request:${item.req.id}`);
+}
+
 export default function SystemUpdatesScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const isHebrewUi = i18n.language === 'he';
 
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<TutorRow[]>([]);
   const [tutorRequests, setTutorRequests] = useState<TutorSupportRequestDoc[]>([]);
   const [studentDecisionRequests, setStudentDecisionRequests] = useState<TutorSupportRequestDoc[]>([]);
+  const [courseJoinOutcomes, setCourseJoinOutcomes] = useState<CourseJoinRequest[]>([]);
+  const [lecturerNamesByUid, setLecturerNamesByUid] = useState<Record<string, string>>({});
   const [dismissedKeys, setDismissedKeys] = useState<string[]>([]);
   const [updatingRequestId, setUpdatingRequestId] = useState<string | null>(null);
 
@@ -83,11 +192,33 @@ export default function SystemUpdatesScreen() {
           const pendingRequests = allTutorRequests.filter((r) => r.status === 'pending');
           const allStudentRequests = await fetchTutorSupportRequestsForStudent(user.uid);
           const studentDecisions = allStudentRequests.filter((r) => r.status !== 'pending');
+          const joinOutcomes = await fetchStudentCourseJoinOutcomes(user.uid);
+          const lectUids = new Set<string>();
+          joinOutcomes.forEach((o) => {
+            if (o.lecturerUid) lectUids.add(o.lecturerUid);
+          });
+          const lectNames: Record<string, string> = {};
+          await Promise.all(
+            [...lectUids].map(async (lectUid) => {
+              try {
+                const u = await getDoc(doc(db, 'users', lectUid));
+                if (u.exists()) {
+                  const d = u.data() as any;
+                  const n = String(d.fullName || d.username || '').trim();
+                  if (n) lectNames[lectUid] = n;
+                }
+              } catch {
+                // ignore name resolution failures
+              }
+            }),
+          );
           const dismissed = await getDismissedSystemUpdateKeys(user.uid);
           if (!cancelled) {
             setItems(list);
             setTutorRequests(allTutorRequests);
             setStudentDecisionRequests(studentDecisions);
+            setCourseJoinOutcomes(joinOutcomes);
+            setLecturerNamesByUid(lectNames);
             setDismissedKeys(dismissed);
             await setTutorUpdatesSeenSignature(
               user.uid,
@@ -110,6 +241,8 @@ export default function SystemUpdatesScreen() {
             setItems([]);
             setTutorRequests([]);
             setStudentDecisionRequests([]);
+            setCourseJoinOutcomes([]);
+            setLecturerNamesByUid({});
           }
         } finally {
           if (!cancelled) setLoading(false);
@@ -159,12 +292,21 @@ export default function SystemUpdatesScreen() {
     }
   };
 
-  const visibleTutorRequests = tutorRequests.filter((req) => !dismissedKeys.includes(`request:${req.id}`));
-  const visibleTutorApprovals = items.filter(
-    (c) => !dismissedKeys.includes(`approved:${c.courseId}:${c.approvedAt ?? ''}`),
+  const mergedFeed = useMemo(
+    () =>
+      buildSystemUpdatesMergedFeed({
+        courseJoinOutcomes,
+        lecturerNamesByUid,
+        tutorRibbonRows: items,
+        tutorRequests,
+        studentDecisionRequests,
+      }),
+    [courseJoinOutcomes, lecturerNamesByUid, items, tutorRequests, studentDecisionRequests],
   );
-  const visibleStudentDecisionRequests = studentDecisionRequests.filter(
-    (r) => !dismissedKeys.includes(`student-request:${r.id}`),
+
+  const visibleMergedFeed = useMemo(
+    () => mergedFeed.filter((entry) => !isMergedItemDismissed(entry, dismissedKeys)),
+    [mergedFeed, dismissedKeys],
   );
 
   const dismissUpdate = async (key: string) => {
@@ -172,6 +314,40 @@ export default function SystemUpdatesScreen() {
     if (!uid) return;
     setDismissedKeys((prev) => (prev.includes(key) ? prev : [...prev, key]));
     await addDismissedSystemUpdateKey(uid, key);
+  };
+
+  const courseJoinLineText = (request: CourseJoinRequest, lecturerName?: string) => {
+    const courseName = request.courseName || t('lecturer.course');
+    const lang = i18n.language || '';
+    const isHe = lang === 'he' || lang.startsWith('he');
+    if (request.status === 'approved') {
+      if (isHe) {
+        return lecturerName
+          ? t('profile.systemUpdateCourseJoinApprovedNamedLine', { courseName, lecturerName })
+          : t('profile.systemUpdateCourseJoinApprovedLine', { courseName });
+      }
+      return t('profile.systemUpdateCourseJoinApprovedLine', { courseName });
+    }
+    if (isHe) {
+      return lecturerName
+        ? t('profile.systemUpdateCourseJoinRejectedNamedLine', { courseName, lecturerName })
+        : t('profile.systemUpdateCourseJoinRejectedLine', { courseName });
+    }
+    return t('profile.systemUpdateCourseJoinRejectedLine', { courseName });
+  };
+
+  const courseJoinAccessibilityLabel = (request: CourseJoinRequest, body: string) => {
+    const heading =
+      request.status === 'approved'
+        ? t('profile.systemUpdateCourseJoinApprovedTitle')
+        : t('profile.systemUpdateCourseJoinRejectedTitle');
+    return `${heading}. ${body}`;
+  };
+
+  const courseJoinReceivedWhen = (request: CourseJoinRequest) => {
+    const ts = request.status === 'approved' ? request.approvedAt : request.rejectedAt;
+    const ms = ts?.toMillis?.() ?? request.updatedAt?.toMillis?.() ?? 0;
+    return ms ? formatReceivedAt(new Date(ms).toISOString(), i18n.language) : '—';
   };
 
   const renderDeleteAction = (updateKey: string) => (
@@ -183,140 +359,207 @@ export default function SystemUpdatesScreen() {
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <View style={[styles.screen, { paddingTop: insets.top }]}>
-      <View style={styles.topBar}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.back')}
-        >
-          <Ionicons name="arrow-back" size={24} color="#111827" />
-        </TouchableOpacity>
-        <Text style={[styles.title, isHebrewUi && styles.rtlText]}>{t('profile.systemUpdatesTitle')}</Text>
-        <View style={{ width: 40 }} />
+      <AppScreen>
+      <AppHeader title={t('profile.systemUpdatesTitle')} onBack={() => router.back()} />
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
       </View>
 
       {loading ? (
         <View style={styles.centered}>
-          <ActivityIndicator color={ACCENT} />
+          <ActivityIndicator color={colors.primary} />
         </View>
       ) : (
         <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
-          {visibleTutorApprovals.length === 0 &&
-          visibleTutorRequests.length === 0 &&
-          visibleStudentDecisionRequests.length === 0 ? (
-            <Text style={[styles.empty, isHebrewUi && styles.rtlText]}>{t('profile.systemUpdatesEmpty')}</Text>
+          {visibleMergedFeed.length === 0 ? (
+            <AppCard style={[styles.emptyCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={[styles.emptyIconBadge, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                <Ionicons name="notifications-outline" size={24} color={colors.primary} />
+              </View>
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('profile.systemUpdatesEmpty')}
+              </Text>
+              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                {t('profile.systemUpdatesTitle')}
+              </Text>
+            </AppCard>
           ) : (
             <>
-              {visibleTutorRequests.map((req) => {
-                const requestCreatedAtMs = (req.createdAt as any)?.toMillis?.() ?? 0;
-                const requestWhen = requestCreatedAtMs
-                  ? formatReceivedAt(new Date(requestCreatedAtMs).toISOString(), i18n.language)
-                  : '—';
-                const busy = updatingRequestId === req.id;
-                const pending = req.status === 'pending';
-                return (
-                  <Swipeable
-                    key={req.id}
-                    overshootRight={false}
-                    renderRightActions={() => renderDeleteAction(`request:${req.id}`)}
-                  >
-                    <View style={styles.card}>
-                      <View style={styles.cardHeader}>
-                        <TouchableOpacity
-                          onPress={() => router.push(`/user-profile/${req.studentUid}` as any)}
-                          activeOpacity={0.8}
-                        >
-                          {req.studentAvatarUrl ? (
-                            <Image source={{ uri: req.studentAvatarUrl }} style={styles.requestAvatar} />
-                          ) : (
-                            <View style={styles.requestAvatarFallback}>
-                              <Ionicons name="person-outline" size={18} color={ACCENT} />
-                            </View>
-                          )}
-                        </TouchableOpacity>
-                        <View style={{ flex: 1 }}>
+              {visibleMergedFeed.map((entry) => {
+                if (entry.kind === 'courseJoin') {
+                  const { request, lecturerName } = entry;
+                  const body = courseJoinLineText(request, lecturerName);
+                  const updateKey = courseJoinDismissKey(request);
+                  return (
+                    <Swipeable
+                      key={`course-join-${request.id}-${request.status}`}
+                      overshootRight={false}
+                      renderRightActions={() => renderDeleteAction(updateKey)}
+                    >
+                      <AppCard
+                        style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}
+                        accessibilityLabel={courseJoinAccessibilityLabel(request, body)}
+                      >
+                        <View style={[styles.cardHeader, isHebrewUi && styles.rtlRow]}>
+                          <View
+                            style={[
+                              styles.statusBadge,
+                              {
+                                backgroundColor: colors.surfaceMuted,
+                                borderColor: request.status === 'approved' ? colors.success : colors.danger,
+                              },
+                            ]}
+                          >
+                            <Ionicons
+                              name={request.status === 'approved' ? 'checkmark' : 'close'}
+                              size={14}
+                              color={request.status === 'approved' ? colors.success : colors.danger}
+                            />
+                          </View>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.cardTitle, isHebrewUi && styles.rtlText]} numberOfLines={4}>
+                              {body}
+                            </Text>
+                            <Text style={[styles.cardMeta, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                              {t('profile.systemUpdateReceivedAt', { when: courseJoinReceivedWhen(request) })}
+                            </Text>
+                          </View>
+                        </View>
+                      </AppCard>
+                    </Swipeable>
+                  );
+                }
+
+                if (entry.kind === 'tutorRequest') {
+                  const req = entry.req;
+                  const requestCreatedAtMs = (req.createdAt as any)?.toMillis?.() ?? 0;
+                  const requestWhen = requestCreatedAtMs
+                    ? formatReceivedAt(new Date(requestCreatedAtMs).toISOString(), i18n.language)
+                    : '—';
+                  const busy = updatingRequestId === req.id;
+                  const pending = req.status === 'pending';
+                  return (
+                    <Swipeable
+                      key={`tutor-req-${req.id}`}
+                      overshootRight={false}
+                      renderRightActions={() => renderDeleteAction(`request:${req.id}`)}
+                    >
+                      <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={[styles.cardHeader, isHebrewUi && styles.rtlRow]}>
+                          <TouchableOpacity
+                            onPress={() => router.push(`/user-profile/${req.studentUid}` as any)}
+                            activeOpacity={0.8}
+                          >
+                            {req.studentAvatarUrl ? (
+                              <Image source={{ uri: req.studentAvatarUrl }} style={styles.requestAvatar} />
+                            ) : (
+                              <View style={[styles.requestAvatarFallback, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                                <Ionicons name="person-outline" size={18} color={colors.primary} />
+                              </View>
+                            )}
+                          </TouchableOpacity>
+                          <View style={{ flex: 1 }}>
+                            <Text style={[styles.cardTitle, isHebrewUi && styles.rtlText]} numberOfLines={3}>
+                              {pending
+                                ? t('profile.systemUpdateTutorRequestLine', {
+                                    studentName: req.studentName || t('auth.student'),
+                                    courseName: req.courseName,
+                                  })
+                                : req.status === 'accepted'
+                                ? t('profile.systemUpdateTutorRequestAcceptedLine', {
+                                    studentName: req.studentName || t('auth.student'),
+                                    courseName: req.courseName,
+                                  })
+                                : t('profile.systemUpdateTutorRequestRejectedLine', {
+                                    studentName: req.studentName || t('auth.student'),
+                                    courseName: req.courseName,
+                                  })}
+                            </Text>
+                            <Text style={[styles.cardMeta, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                              {t('profile.systemUpdateReceivedAt', { when: requestWhen })}
+                            </Text>
+                          </View>
+                        </View>
+                        {pending ? (
+                          <View style={styles.requestActions}>
+                            <TouchableOpacity
+                              style={[styles.requestBtn, styles.acceptBtn, busy && styles.requestBtnDisabled]}
+                              disabled={busy}
+                              onPress={() => handleReviewRequest(req.id, 'accepted')}
+                            >
+                              <Text style={styles.requestBtnText}>{t('profile.accept')}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                              style={[styles.requestBtn, styles.rejectBtn, busy && styles.requestBtnDisabled]}
+                              disabled={busy}
+                              onPress={() => handleReviewRequest(req.id, 'rejected')}
+                            >
+                              <Text style={styles.requestBtnText}>{t('profile.reject')}</Text>
+                            </TouchableOpacity>
+                          </View>
+                        ) : null}
+                      </AppCard>
+                    </Swipeable>
+                  );
+                }
+
+                if (entry.kind === 'tutorRibbon') {
+                  const c = entry.row;
+                  return (
+                    <Swipeable
+                      key={`tutor-ribbon-${c.courseId}:${c.approvedAt ?? ''}`}
+                      overshootRight={false}
+                      renderRightActions={() =>
+                        renderDeleteAction(`approved:${c.courseId}:${c.approvedAt ?? ''}`)
+                      }
+                    >
+                      <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                        <View style={[styles.cardHeader, isHebrewUi && styles.rtlRow]}>
+                          <View style={[styles.statusBadge, { backgroundColor: colors.surfaceMuted, borderColor: colors.primary }]}>
+                            <Ionicons name="ribbon-outline" size={14} color={colors.primary} />
+                          </View>
                           <Text style={[styles.cardTitle, isHebrewUi && styles.rtlText]} numberOfLines={3}>
-                            {pending
-                              ? t('profile.systemUpdateTutorRequestLine', {
-                                  studentName: req.studentName || t('auth.student'),
-                                  courseName: req.courseName,
-                                })
-                              : req.status === 'accepted'
-                              ? t('profile.systemUpdateTutorRequestAcceptedLine', {
-                                  studentName: req.studentName || t('auth.student'),
-                                  courseName: req.courseName,
-                                })
-                              : t('profile.systemUpdateTutorRequestRejectedLine', {
-                                  studentName: req.studentName || t('auth.student'),
-                                  courseName: req.courseName,
-                                })}
-                          </Text>
-                          <Text style={[styles.cardMeta, isHebrewUi && styles.rtlText]}>
-                            {t('profile.systemUpdateReceivedAt', { when: requestWhen })}
+                            {t('profile.systemUpdateTutorLine', { courseName: c.courseName })}
                           </Text>
                         </View>
-                      </View>
-                      {pending ? (
-                        <View style={styles.requestActions}>
-                          <TouchableOpacity
-                            style={[styles.requestBtn, styles.acceptBtn, busy && styles.requestBtnDisabled]}
-                            disabled={busy}
-                            onPress={() => handleReviewRequest(req.id, 'accepted')}
-                          >
-                            <Text style={styles.requestBtnText}>{t('profile.accept')}</Text>
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.requestBtn, styles.rejectBtn, busy && styles.requestBtnDisabled]}
-                            disabled={busy}
-                            onPress={() => handleReviewRequest(req.id, 'rejected')}
-                          >
-                            <Text style={styles.requestBtnText}>{t('profile.reject')}</Text>
-                          </TouchableOpacity>
-                        </View>
-                      ) : null}
-                    </View>
-                  </Swipeable>
-                );
-              })}
-              {visibleTutorApprovals.map((c) => (
-                <Swipeable
-                  key={`${c.courseId}:${c.approvedAt ?? ''}`}
-                  overshootRight={false}
-                  renderRightActions={() => renderDeleteAction(`approved:${c.courseId}:${c.approvedAt ?? ''}`)}
-                >
-                  <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                      <Ionicons name="ribbon-outline" size={22} color={ACCENT} />
-                      <Text style={[styles.cardTitle, isHebrewUi && styles.rtlText]} numberOfLines={3}>
-                        {t('profile.systemUpdateTutorLine', { courseName: c.courseName })}
-                      </Text>
-                    </View>
-                    <Text style={[styles.cardMeta, isHebrewUi && styles.rtlText]}>
-                      {t('profile.systemUpdateReceivedAt', {
-                        when: formatReceivedAt(c.approvedAt, i18n.language),
-                      })}
-                    </Text>
-                  </View>
-                </Swipeable>
-              ))}
-              {visibleStudentDecisionRequests.map((req) => {
-                const whenMs = (req.reviewedAt as any)?.toMillis?.() ?? (req.createdAt as any)?.toMillis?.() ?? 0;
+                        <Text style={[styles.cardMeta, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                          {t('profile.systemUpdateReceivedAt', {
+                            when: formatReceivedAt(c.approvedAt, i18n.language),
+                          })}
+                        </Text>
+                      </AppCard>
+                    </Swipeable>
+                  );
+                }
+
+                const req = entry.req;
+                const whenMs =
+                  (req.reviewedAt as any)?.toMillis?.() ?? (req.createdAt as any)?.toMillis?.() ?? 0;
                 const when = whenMs ? formatReceivedAt(new Date(whenMs).toISOString(), i18n.language) : '—';
                 return (
                   <Swipeable
-                    key={`student-${req.id}`}
+                    key={`student-tutor-${req.id}`}
                     overshootRight={false}
                     renderRightActions={() => renderDeleteAction(`student-request:${req.id}`)}
                   >
-                    <View style={styles.card}>
-                      <View style={styles.cardHeader}>
-                        <Ionicons
-                          name={req.status === 'accepted' ? 'checkmark-circle-outline' : 'close-circle-outline'}
-                          size={22}
-                          color={req.status === 'accepted' ? '#059669' : '#ef4444'}
-                        />
+                    <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                      <View style={[styles.cardHeader, isHebrewUi && styles.rtlRow]}>
+                        <View
+                          style={[
+                            styles.statusBadge,
+                            {
+                              backgroundColor: colors.surfaceMuted,
+                              borderColor: req.status === 'accepted' ? colors.success : colors.danger,
+                            },
+                          ]}
+                        >
+                          <Ionicons
+                            name={req.status === 'accepted' ? 'checkmark' : 'close'}
+                            size={14}
+                            color={req.status === 'accepted' ? colors.success : colors.danger}
+                          />
+                        </View>
                         <View style={{ flex: 1 }}>
                           <Text style={[styles.cardTitle, isHebrewUi && styles.rtlText]} numberOfLines={3}>
                             {req.status === 'accepted'
@@ -329,12 +572,12 @@ export default function SystemUpdatesScreen() {
                                   courseName: req.courseName,
                                 })}
                           </Text>
-                          <Text style={[styles.cardMeta, isHebrewUi && styles.rtlText]}>
+                          <Text style={[styles.cardMeta, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
                             {t('profile.systemUpdateReceivedAt', { when })}
                           </Text>
                         </View>
                       </View>
-                    </View>
+                    </AppCard>
                   </Swipeable>
                 );
               })}
@@ -342,48 +585,64 @@ export default function SystemUpdatesScreen() {
           )}
         </ScrollView>
       )}
-      </View>
+      </AppScreen>
     </GestureHandlerRootView>
   );
 }
 
 const styles = StyleSheet.create({
   gestureRoot: { flex: 1 },
-  screen: { flex: 1, backgroundColor: '#f9fafb' },
-  topBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 8,
-    paddingBottom: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#e5e7eb',
-    backgroundColor: '#fff',
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
   },
-  backBtn: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
   },
-  title: {
-    flex: 1,
-    fontSize: 18,
-    fontWeight: '800',
-    color: '#111827',
-    textAlign: 'center',
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
   },
   rtlText: { textAlign: 'right', writingDirection: 'rtl' },
+  rtlRow: { flexDirection: 'row-reverse' },
   centered: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  scroll: { padding: 20, paddingBottom: 40 },
-  empty: { fontSize: 15, color: '#6b7280', lineHeight: 22 },
+  scroll: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.xs, paddingBottom: 40, gap: spacing.sm },
+  emptyCard: {
+    alignItems: 'center',
+    paddingVertical: 28,
+  },
+  emptyIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 10,
+  },
+  emptyTitle: { fontSize: 15, fontWeight: '700' },
+  emptySubtitle: { fontSize: 13, fontWeight: '500', marginTop: 6 },
   card: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 14,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: '#e5e7eb',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -394,15 +653,23 @@ const styles = StyleSheet.create({
   },
   cardTitle: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    color: '#111827',
-    lineHeight: 22,
+    color: '#0f172a',
+    lineHeight: 21,
   },
   cardMeta: {
-    fontSize: 13,
-    color: '#6b7280',
+    fontSize: 12.5,
     fontWeight: '500',
+    marginTop: 3,
+  },
+  statusBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   requestAvatar: {
     width: 42,
@@ -415,9 +682,7 @@ const styles = StyleSheet.create({
     width: 42,
     height: 42,
     borderRadius: 21,
-    backgroundColor: '#ecfdf5',
     borderWidth: 1,
-    borderColor: '#d1fae5',
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -452,7 +717,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderRadius: 12,
     marginBottom: 12,
-    width: 86,
+    width: 92,
     gap: 6,
   },
   deleteActionText: {

@@ -1,5 +1,12 @@
 // app/ai-practice-test.tsx
 import { evaluateOpenAnswer, PracticeQuestion } from '@/lib/aiService';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { iconContainer, layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
 import { PracticeAnswer, savePracticeResults } from '@/lib/practiceService';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,14 +15,13 @@ import { doc, getDoc } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 type Question = PracticeQuestion & {
@@ -25,6 +31,8 @@ type Question = PracticeQuestion & {
 export default function AIPracticeTestScreen() {
   const router = useRouter();
   const { i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const params = useLocalSearchParams<{
     sessionId?: string;
     courseId?: string;
@@ -142,6 +150,14 @@ export default function AIPracticeTestScreen() {
         nextAdaptive: 'Next Adaptive Question',
         nextQuestion: 'Next Question',
       };
+
+  const navigateBackToCourse = () => {
+    if (params.courseId) {
+      router.replace(`/course/${params.courseId}` as any);
+    } else {
+      router.replace('/(tabs)/courses' as any);
+    }
+  };
 
   // Load questions from session
   useEffect(() => {
@@ -419,7 +435,7 @@ export default function AIPracticeTestScreen() {
     if (showReview) {
       // Show all questions with correct/incorrect indicators in review mode
       return (
-        <View
+        <AppCard
           key={question.id}
           style={[
             styles.questionCard,
@@ -430,12 +446,12 @@ export default function AIPracticeTestScreen() {
             <Text style={styles.questionNumber}>{uiText.question} {index + 1}</Text>
             {isCorrect ? (
               <View style={styles.correctBadge}>
-                <Ionicons name="checkmark-circle" size={20} color={ACCENT_GREEN} />
+                <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                 <Text style={styles.correctBadgeText}>{uiText.correct}</Text>
               </View>
             ) : (
               <View style={styles.incorrectBadge}>
-                <Ionicons name="close-circle" size={20} color="#ef4444" />
+                <Ionicons name="close-circle" size={20} color={colors.danger} />
                 <Text style={styles.incorrectBadgeText}>{uiText.incorrect}</Text>
               </View>
             )}
@@ -457,16 +473,16 @@ export default function AIPracticeTestScreen() {
                 <TouchableOpacity
                   style={[
                     styles.optionButton,
-                    userSelectedTrue && styles.selectedOption,
-                    correctIsTrue && styles.correctOption,
+                    userSelectedTrue && styles.reviewSelectedOption,
+                    correctIsTrue && styles.reviewCorrectOption,
                   ]}
                   disabled
                 >
                   <Text
                     style={[
                       styles.optionText,
-                      userSelectedTrue && styles.selectedOptionText,
-                      correctIsTrue && styles.correctOptionText,
+                      userSelectedTrue && styles.reviewSelectedOptionText,
+                      correctIsTrue && styles.reviewCorrectOptionText,
                     ]}
                   >
                     {trueLabel}
@@ -475,16 +491,16 @@ export default function AIPracticeTestScreen() {
                 <TouchableOpacity
                   style={[
                     styles.optionButton,
-                    userSelectedFalse && styles.selectedOption,
-                    correctIsFalse && styles.correctOption,
+                    userSelectedFalse && styles.reviewSelectedOption,
+                    correctIsFalse && styles.reviewCorrectOption,
                   ]}
                   disabled
                 >
                   <Text
                     style={[
                       styles.optionText,
-                      userSelectedFalse && styles.selectedOptionText,
-                      correctIsFalse && styles.correctOptionText,
+                      userSelectedFalse && styles.reviewSelectedOptionText,
+                      correctIsFalse && styles.reviewCorrectOptionText,
                     ]}
                   >
                     {falseLabel}
@@ -501,16 +517,16 @@ export default function AIPracticeTestScreen() {
                   key={optIndex}
                   style={[
                     styles.optionButton,
-                    question.userAnswer === option && styles.selectedOption,
-                    question.correctAnswer === option && styles.correctOption,
+                    question.userAnswer === option && styles.reviewSelectedOption,
+                    question.correctAnswer === option && styles.reviewCorrectOption,
                   ]}
                   disabled
                 >
                   <Text
                     style={[
                       styles.optionText,
-                      question.userAnswer === option && styles.selectedOptionText,
-                      question.correctAnswer === option && styles.correctOptionText,
+                      question.userAnswer === option && styles.reviewSelectedOptionText,
+                      question.correctAnswer === option && styles.reviewCorrectOptionText,
                     ]}
                   >
                     {option}
@@ -551,12 +567,12 @@ export default function AIPracticeTestScreen() {
               </Text>
             </View>
           )}
-        </View>
+        </AppCard>
       );
     }
 
     return (
-      <View key={question.id} style={styles.questionCard}>
+      <AppCard key={question.id} style={styles.questionCard}>
         <Text style={styles.questionNumber}>{uiText.question} {index + 1}</Text>
         <Text style={styles.questionText}>{question.question}</Text>
 
@@ -643,36 +659,26 @@ export default function AIPracticeTestScreen() {
             editable={!submitted}
           />
         )}
-      </View>
+      </AppCard>
     );
   };
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={ACCENT_GREEN} />
-        <Text style={styles.loadingText}>{uiText.loadingQuestions}</Text>
-      </View>
+      <AppScreen>
+        <LoadingState label={uiText.loadingQuestions} />
+      </AppScreen>
     );
   }
 
   if (questions.length === 0) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.emptyText}>{uiText.noQuestions}</Text>
-        <TouchableOpacity
-          style={styles.backToCourseButton}
-          onPress={() => {
-            if (params.courseId) {
-              router.replace(`/course/${params.courseId}` as any);
-            } else {
-              router.replace('/(tabs)/courses' as any);
-            }
-          }}
-        >
-          <Text style={styles.backToCourseButtonText}>{uiText.goBack}</Text>
-        </TouchableOpacity>
-      </View>
+      <AppScreen>
+        <View style={styles.emptyWrap}>
+          <EmptyState title={uiText.noQuestions} subtitle={uiText.coursePrefix.replace('{{course}}', courseName)} />
+          <PrimaryButton label={uiText.goBack} variant="secondary" onPress={navigateBackToCourse} style={styles.emptyButton} />
+        </View>
+      </AppScreen>
     );
   }
 
@@ -681,16 +687,21 @@ export default function AIPracticeTestScreen() {
     const correctCount = answers.filter(a => a.isCorrect).length;
     
     return (
-      <View style={styles.container}>
+      <AppScreen>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.title}>{uiText.reviewAnswers}</Text>
-          <Text style={styles.subtitle}>{uiText.coursePrefix.replace('{{course}}', courseName)}</Text>
+          <View style={styles.sessionWrap}>
+            <View style={styles.sessionGlowPrimary} />
+            <View style={styles.sessionGlowAccent} />
+            <Text style={styles.title}>{uiText.reviewAnswers}</Text>
+            <Text style={styles.subtitle}>{uiText.coursePrefix.replace('{{course}}', courseName)}</Text>
+          </View>
 
           {score !== null && (
-            <View style={styles.resultCard}>
+            <AppCard style={styles.resultCard}>
+              <View style={styles.cardAccentBar} />
               <Text style={styles.resultTitle}>{uiText.yourScore}</Text>
               <Text style={styles.scoreText}>{score}%</Text>
               <Text style={styles.resultSubtitle}>
@@ -698,7 +709,7 @@ export default function AIPracticeTestScreen() {
                   .replace('{{correct}}', String(correctCount))
                   .replace('{{total}}', String(questions.length))}
               </Text>
-            </View>
+            </AppCard>
           )}
 
           {questions.map((q, index) => renderQuestion(q, index))}
@@ -723,49 +734,48 @@ export default function AIPracticeTestScreen() {
                 });
               }}
             >
-              <Ionicons name="stats-chart" size={20} color="#ffffff" />
+              <Ionicons name="stats-chart" size={20} color={colors.textOnPrimary} />
               <Text style={styles.viewResultsButtonText}>{uiText.viewResults}</Text>
             </TouchableOpacity>
             
             <TouchableOpacity
               style={styles.backToCourseButton}
-              onPress={() => {
-                if (params.courseId) {
-                  router.replace(`/course/${params.courseId}` as any);
-                } else {
-                  router.replace('/(tabs)/courses' as any);
-                }
-              }}
+              onPress={navigateBackToCourse}
             >
               <Text style={styles.backToCourseButtonText}>{uiText.backToCourse}</Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
-      </View>
+      </AppScreen>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.title}>{uiText.practiceTitle}</Text>
-        <View style={generationMode === 'ai' ? styles.modeBadgeAI : styles.modeBadgeFallback}>
-          <Ionicons
-            name={generationMode === 'ai' ? 'shield-checkmark-outline' : 'flash-outline'}
-            size={14}
-            color={generationMode === 'ai' ? '#065f46' : '#9a3412'}
-          />
-          <Text style={generationMode === 'ai' ? styles.modeBadgeAITxt : styles.modeBadgeFallbackTxt}>
-            {generationMode === 'ai' ? uiText.aiVerified : uiText.fallbackQuestions}
-          </Text>
+        <View style={styles.sessionWrap}>
+          <View style={styles.sessionGlowPrimary} />
+          <View style={styles.sessionGlowAccent} />
+          <Text style={styles.title}>{uiText.practiceTitle}</Text>
+          <View style={generationMode === 'ai' ? styles.modeBadgeAI : styles.modeBadgeFallback}>
+            <Ionicons
+              name={generationMode === 'ai' ? 'shield-checkmark-outline' : 'flash-outline'}
+              size={14}
+              color={generationMode === 'ai' ? colors.accent : colors.warning}
+            />
+            <Text style={generationMode === 'ai' ? styles.modeBadgeAITxt : styles.modeBadgeFallbackTxt}>
+              {generationMode === 'ai' ? uiText.aiVerified : uiText.fallbackQuestions}
+            </Text>
+          </View>
+          <Text style={styles.subtitle}>{uiText.coursePrefix.replace('{{course}}', courseName)}</Text>
         </View>
-        <Text style={styles.subtitle}>{uiText.coursePrefix.replace('{{course}}', courseName)}</Text>
+
         {examMode && (
           <View style={styles.examTimerBox}>
-            <Ionicons name="timer-outline" size={16} color="#ef4444" />
+            <Ionicons name="timer-outline" size={16} color={colors.danger} />
             <Text style={styles.examTimerText}>
               {uiText.timeLeft.replace(
                 '{{time}}',
@@ -776,7 +786,8 @@ export default function AIPracticeTestScreen() {
         )}
 
         {submitted && score !== null && (
-          <View style={styles.resultCard}>
+          <AppCard style={styles.resultCard}>
+            <View style={styles.cardAccentBar} />
             <Text style={styles.resultTitle}>{uiText.testResults}</Text>
             <Text style={styles.scoreText}>{score}%</Text>
             <Text style={styles.resultSubtitle}>
@@ -786,12 +797,14 @@ export default function AIPracticeTestScreen() {
                 ? uiText.good
                 : uiText.keepStudying}
             </Text>
-          </View>
+          </AppCard>
         )}
 
         <>
           <View style={styles.adaptiveHeader}>
-            <Ionicons name="list-outline" size={16} color={ACCENT_GREEN} />
+            <View style={styles.iconBadge}>
+              <Ionicons name="list-outline" size={16} color={colors.primary} />
+            </View>
             <Text style={styles.adaptiveHeaderText}>
               {adaptiveMode ? uiText.adaptiveStep : uiText.linearStep}: {(adaptiveMode ? adaptiveStep : linearStep) + 1}/{questions.length}
             </Text>
@@ -804,270 +817,315 @@ export default function AIPracticeTestScreen() {
 
         {!submitted && (
           adaptiveMode ? (
-            <TouchableOpacity
-              style={[styles.submitButton, submitting && styles.buttonDisabled]}
+            <PrimaryButton
+              style={styles.submitButton}
               onPress={advanceAdaptive}
               disabled={submitting}
-            >
-              <Text style={styles.submitButtonText}>
-                {adaptiveStep === questions.length - 1 ? uiText.submit : uiText.nextAdaptive}
-              </Text>
-            </TouchableOpacity>
+              label={adaptiveStep === questions.length - 1 ? uiText.submit : uiText.nextAdaptive}
+            />
           ) : (
-            <TouchableOpacity
-              style={[styles.submitButton, submitting && styles.buttonDisabled]}
+            <PrimaryButton
+              style={styles.submitButton}
               onPress={advanceLinear}
               disabled={submitting}
-            >
-              <Text style={styles.submitButtonText}>
-                {linearStep === questions.length - 1 ? uiText.submit : uiText.nextQuestion}
-              </Text>
-            </TouchableOpacity>
+              label={linearStep === questions.length - 1 ? uiText.submit : uiText.nextQuestion}
+            />
           )
         )}
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const ACCENT_GREEN = '#047857';
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
+const makeStyles = (colors: any) => StyleSheet.create({
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 60,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
     paddingBottom: 40,
   },
+  emptyWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingHorizontal: layout.screenPadding,
+  },
+  emptyButton: {
+    marginTop: spacing.md,
+  },
+  sessionWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  sessionGlowPrimary: {
+    position: 'absolute',
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    top: -100,
+    right: -50,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  sessionGlowAccent: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: -70,
+    left: -25,
+    backgroundColor: colors.accent,
+    opacity: 0.08,
+  },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+    ...typography.h2,
+    color: colors.textPrimary,
     textAlign: 'center',
-    marginBottom: 4,
+    marginBottom: spacing.xs,
   },
   subtitle: {
-    fontSize: 14,
-    color: '#4b5563',
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 24,
   },
   modeBadgeAI: {
     alignSelf: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#ecfdf5',
+    backgroundColor: colors.surfaceElevated,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
-    borderRadius: 999,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  modeBadgeAITxt: { color: '#065f46', fontSize: 12, fontWeight: '700' },
+  modeBadgeAITxt: { color: colors.textPrimary, fontSize: 12, fontWeight: '700' },
   modeBadgeFallback: {
     alignSelf: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: '#fff7ed',
+    backgroundColor: colors.surfaceMuted,
     borderWidth: 1,
-    borderColor: '#fdba74',
-    borderRadius: 999,
+    borderColor: colors.border,
+    borderRadius: radius.pill,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
-  modeBadgeFallbackTxt: { color: '#9a3412', fontSize: 12, fontWeight: '700' },
+  modeBadgeFallbackTxt: { color: colors.textSecondary, fontSize: 12, fontWeight: '700' },
+  cardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.accent,
+    opacity: 0.4,
+  },
   resultCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: '#374151',
+    padding: spacing.md,
+    marginBottom: spacing.md,
     alignItems: 'center',
+    position: 'relative',
+    overflow: 'hidden',
   },
   resultTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
+    ...typography.h3,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
   },
   scoreText: {
     fontSize: 48,
-    fontWeight: '700',
-    color: ACCENT_GREEN,
-    marginBottom: 8,
+    fontWeight: '800',
+    color: colors.primary,
+    marginBottom: spacing.xs,
   },
   resultSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
+    ...typography.body,
+    color: colors.textSecondary,
     textAlign: 'center',
   },
   questionCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#374151',
+    padding: spacing.md,
+    marginBottom: spacing.md,
   },
   correctCard: {
-    borderColor: ACCENT_GREEN,
-    backgroundColor: '#f0fdf4',
-    borderWidth: 2,
+    borderColor: colors.success,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
   },
   incorrectCard: {
-    borderColor: '#ef4444',
-    backgroundColor: '#fef2f2',
-    borderWidth: 2,
+    borderColor: colors.dangerBorder,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
   },
   questionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.sm,
   },
   correctBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#dcfce7',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.success,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
   },
   correctBadgeText: {
-    color: ACCENT_GREEN,
-    fontSize: 12,
-    fontWeight: '600',
+    color: colors.success,
+    fontSize: 11,
+    fontWeight: '700',
   },
   incorrectBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: '#fee2e2',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.dangerBorder,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
   },
   incorrectBadgeText: {
-    color: '#ef4444',
-    fontSize: 12,
-    fontWeight: '600',
+    color: colors.danger,
+    fontSize: 11,
+    fontWeight: '700',
   },
   answerLabel: {
     fontSize: 12,
-    fontWeight: '600',
-    color: '#111827',
-    marginTop: 8,
-    marginBottom: 4,
+    fontWeight: '700',
+    color: colors.textPrimary,
+    marginTop: spacing.sm,
+    marginBottom: spacing.xs,
   },
   correctAnswerInput: {
-    backgroundColor: '#dcfce7',
-    borderColor: ACCENT_GREEN,
+    backgroundColor: colors.surface,
+    borderColor: colors.success,
   },
   feedbackContainer: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
     borderTopWidth: 1,
-    borderTopColor: '#e5e7eb',
+    borderTopColor: colors.border,
   },
   questionNumber: {
     fontSize: 12,
-    fontWeight: '600',
-    color: ACCENT_GREEN,
-    marginBottom: 8,
+    fontWeight: '700',
+    color: colors.primary,
+    marginBottom: spacing.xs,
   },
   questionText: {
     fontSize: 15,
     fontWeight: '500',
-    color: '#111827',
-    marginBottom: 12,
+    color: colors.textPrimary,
+    marginBottom: spacing.md,
   },
   optionsContainer: {
-    gap: 8,
+    gap: spacing.sm,
   },
   optionButton: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
   },
   selectedOption: {
-    backgroundColor: '#dbeafe',
-    borderColor: '#047857',
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   correctOption: {
-    backgroundColor: '#dcfce7',
-    borderColor: '#22c55e',
+    backgroundColor: colors.surfaceElevated,
+    borderColor: colors.success,
+  },
+  reviewSelectedOption: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.border,
+  },
+  reviewCorrectOption: {
+    backgroundColor: colors.surface,
+    borderColor: colors.success,
   },
   optionText: {
     fontSize: 14,
-    color: '#111827',
+    color: colors.textPrimary,
   },
   selectedOptionText: {
-    color: ACCENT_GREEN,
-    fontWeight: '600',
+    color: colors.textOnPrimary,
+    fontWeight: '700',
   },
   correctOptionText: {
-    color: '#22c55e',
+    color: colors.success,
+    fontWeight: '700',
+  },
+  reviewSelectedOptionText: {
+    color: colors.textPrimary,
     fontWeight: '600',
   },
+  reviewCorrectOptionText: {
+    color: colors.success,
+    fontWeight: '700',
+  },
   textInput: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 8,
-    padding: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
     minHeight: 100,
     textAlignVertical: 'top',
     fontSize: 14,
-    color: '#111827',
+    color: colors.textPrimary,
   },
   disabledInput: {
-    backgroundColor: '#ffffff',
-    color: '#111827',
-    borderColor: '#d1d5db',
+    backgroundColor: colors.surfaceMuted,
+    color: colors.textPrimary,
+    borderColor: colors.border,
   },
   feedbackText: {
     fontSize: 12,
-    color: '#6b7280',
-    marginTop: 8,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
   },
   correctAnswerText: {
     fontSize: 12,
-    color: '#22c55e',
-    fontWeight: '600',
+    color: colors.success,
+    fontWeight: '700',
     marginTop: 4,
   },
   submitButton: {
-    backgroundColor: ACCENT_GREEN,
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
-    marginTop: 8,
-  },
-  submitButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+    marginTop: spacing.xs,
   },
   adaptiveHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    marginBottom: 12,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  iconBadge: {
+    width: iconContainer.size,
+    height: iconContainer.size,
+    borderRadius: iconContainer.radius,
+    backgroundColor: colors.surfaceElevated,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   adaptiveHeaderText: {
-    color: '#047857',
+    color: colors.primary,
     fontSize: 13,
     fontWeight: '700',
   },
@@ -1076,67 +1134,48 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    backgroundColor: '#fef2f2',
+    backgroundColor: colors.dangerSurface,
     borderWidth: 1,
-    borderColor: '#fecaca',
-    borderRadius: 10,
+    borderColor: colors.dangerBorder,
+    borderRadius: radius.md,
     paddingVertical: 8,
-    marginBottom: 10,
+    marginBottom: spacing.sm,
   },
   examTimerText: {
-    color: '#b91c1c',
+    color: colors.danger,
     fontSize: 13,
     fontWeight: '700',
   },
   reviewActions: {
-    marginTop: 24,
-    gap: 12,
+    marginTop: spacing.lg,
+    gap: spacing.sm,
   },
   viewResultsButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     gap: 8,
-    backgroundColor: ACCENT_GREEN,
+    backgroundColor: colors.primary,
     paddingVertical: 14,
-    borderRadius: 999,
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    borderRadius: radius.pill,
   },
   viewResultsButtonText: {
-    color: '#ffffff',
+    color: colors.textOnPrimary,
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   backToCourseButton: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surface,
     paddingVertical: 14,
-    borderRadius: 999,
+    borderRadius: radius.pill,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
   },
   backToCourseButtonText: {
-    color: '#4b5563',
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  emptyText: {
-    fontSize: 16,
-    color: '#6b7280',
-    marginBottom: 20,
   },
   buttonDisabled: {
     opacity: 0.6,

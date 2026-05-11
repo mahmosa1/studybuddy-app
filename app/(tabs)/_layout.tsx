@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { View } from 'react-native';
 
 import { auth, db } from '@/lib/firebaseConfig';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 
 type UserRole = 'student' | 'lecturer' | 'admin' | null;
 type UserStatus = 'pending' | 'active' | 'blocked' | 'rejected' | null;
@@ -15,6 +16,7 @@ type UserStatus = 'pending' | 'active' | 'blocked' | 'rejected' | null;
 export default function TabLayout() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
 
   const [role, setRole] = useState<UserRole>(null);
   const [status, setStatus] = useState<UserStatus>(null);
@@ -74,18 +76,19 @@ export default function TabLayout() {
       screenOptions={{
         headerShown: false,
         sceneStyle: {
-          backgroundColor: '#f9fafb',
+          backgroundColor: colors.bg,
           paddingBottom: 95,
         },
-        tabBarActiveTintColor: '#047857',
-        tabBarInactiveTintColor: '#9ca3af',
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.textSecondary,
         tabBarStyle: {
           position: 'absolute',
           left: 8,
           right: 8,
           bottom: 0,
-          backgroundColor: '#ffffff',
-          borderTopWidth: 0,
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
           borderBottomWidth: 0,
           height: 95,
           paddingBottom: 10,
@@ -105,7 +108,7 @@ export default function TabLayout() {
           fontWeight: '600',
           marginTop: 2,
         },
-        tabBarBackground: () => <View style={{ flex: 1, backgroundColor: '#ffffff' }} />,
+        tabBarBackground: () => <View style={{ flex: 1, backgroundColor: colors.surface }} />,
       }}
     >
       {/* Home */}
@@ -197,7 +200,7 @@ export default function TabLayout() {
         name="admin"
         options={{
           title: 'Admin',
-          href: role === 'admin' ? undefined : null,
+          href: null,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'shield-checkmark' : 'shield-outline'}

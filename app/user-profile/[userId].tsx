@@ -392,7 +392,9 @@ export default function UserProfileScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
               renderItem={({ item }) => {
-                // Only allow navigation to course files if it's the user's own profile
+                const canOpenLecturerCourse = !isOwnProfile && profile.role === 'lecturer';
+
+                // Keep own-profile navigation unchanged.
                 if (isOwnProfile) {
                   return (
                     <TouchableOpacity
@@ -409,21 +411,47 @@ export default function UserProfileScreen() {
                       </Text>
                     </TouchableOpacity>
                   );
-                } else {
-                  // For other users' profiles, show courses but make them non-clickable
+                }
+
+                if (canOpenLecturerCourse) {
                   return (
-                    <View style={[styles.courseItem, styles.courseItemDisabled]}>
-                      <View style={[styles.courseCircle, styles.courseCircleDisabled]}>
+                    <TouchableOpacity
+                      style={styles.courseItem}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/lecturer-course/[courseId]' as any,
+                          params: { courseId: item.id, name: item.name },
+                        })
+                      }
+                    >
+                      <View style={styles.courseCircle}>
                         <Text style={styles.courseInitial}>
                           {item.name[0]?.toUpperCase()}
                         </Text>
                       </View>
-                      <Text style={styles.courseLabel} numberOfLines={1}>
-                        {item.name}
-                      </Text>
-                    </View>
+                      <View style={styles.courseLabelRow}>
+                        <Text style={styles.courseLabel} numberOfLines={1}>
+                          {item.name}
+                        </Text>
+                        <Ionicons name="chevron-forward" size={12} color={ACCENT_GREEN} />
+                      </View>
+                    </TouchableOpacity>
                   );
                 }
+
+                // For non-lecturer profiles, keep non-clickable cards.
+                return (
+                  <View style={[styles.courseItem, styles.courseItemDisabled]}>
+                    <View style={[styles.courseCircle, styles.courseCircleDisabled]}>
+                      <Text style={styles.courseInitial}>
+                        {item.name[0]?.toUpperCase()}
+                      </Text>
+                    </View>
+                    <Text style={styles.courseLabel} numberOfLines={1}>
+                      {item.name}
+                    </Text>
+                  </View>
+                );
               }}
               contentContainerStyle={styles.coursesList}
             />
@@ -708,6 +736,11 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: ACCENT_GREEN,
+  },
+  courseLabelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
   courseLabel: {
     fontSize: 12,

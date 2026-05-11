@@ -1,10 +1,21 @@
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppChip } from '@/frontend/components/ui/AppChip';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { StatCard } from '@/frontend/components/ui/StatCard';
+import { layout, radius, spacing, typography, ThemeColors } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ActivityIndicator, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 
 type Stat = {
   totalCourses: number;
@@ -22,6 +33,8 @@ type CourseItem = {
 export default function CourseStatsScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Stat>({
     totalCourses: 0,
@@ -86,84 +99,53 @@ export default function CourseStatsScreen() {
   }, [allResults, selectedCourseId, courses.length]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={22} color="#111827" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>{t('courses.hub.statisticsTitle')}</Text>
-        <View style={{ width: 22 }} />
-      </View>
+    <AppScreen>
+      <AppHeader title={t('courses.hub.statisticsTitle')} onBack={() => router.back()} />
 
       {loading ? (
-        <View style={styles.loadingWrap}>
-          <ActivityIndicator color="#047857" />
-        </View>
+        <LoadingState label={t('common.loading')} />
       ) : (
         <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.filterTitle}>{t('courses.hub.statisticsFilterTitle')}</Text>
+          <View style={styles.heroWrap}>
+            <View style={styles.heroGlowPrimary} />
+            <View style={styles.heroGlowAccent} />
+            <View style={styles.heroBadge}>
+              <Ionicons name="stats-chart-outline" size={14} color={colors.accent} />
+              <Text style={styles.heroBadgeText}>{t('courses.hub.statisticsTitle')}</Text>
+            </View>
+            <SectionTitle title={t('courses.hub.statisticsTitle')} subtitle={t('courses.hub.statisticsFilterTitle')} />
+          </View>
+
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filtersRow}
           >
-            <TouchableOpacity
-              style={[
-                styles.filterChip,
-                selectedCourseId === 'all' && styles.filterChipActive,
-              ]}
+            <AppChip
+              label={t('courses.hub.statisticsAllCourses')}
+              active={selectedCourseId === 'all'}
               onPress={() => setSelectedCourseId('all')}
-            >
-              <Text
-                style={[
-                  styles.filterChipText,
-                  selectedCourseId === 'all' && styles.filterChipTextActive,
-                ]}
-              >
-                {t('courses.hub.statisticsAllCourses')}
-              </Text>
-            </TouchableOpacity>
+            />
             {courses.map((course) => (
-              <TouchableOpacity
+              <AppChip
                 key={course.id}
-                style={[
-                  styles.filterChip,
-                  selectedCourseId === course.id && styles.filterChipActive,
-                ]}
+                label={course.name}
+                active={selectedCourseId === course.id}
                 onPress={() => setSelectedCourseId(course.id)}
-              >
-                <Text
-                  style={[
-                    styles.filterChipText,
-                    selectedCourseId === course.id && styles.filterChipTextActive,
-                  ]}
-                  numberOfLines={1}
-                >
-                  {course.name}
-                </Text>
-              </TouchableOpacity>
+                style={styles.filterChip}
+              />
             ))}
           </ScrollView>
 
           <View style={styles.grid}>
-            <View style={styles.card}>
-              <Text style={styles.value}>{stats.totalCourses}</Text>
-              <Text style={styles.label}>{t('courses.hub.totalCourses')}</Text>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.value}>{stats.totalSessions}</Text>
-              <Text style={styles.label}>{t('courses.hub.totalSessions')}</Text>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.value}>{stats.avgScore}%</Text>
-              <Text style={styles.label}>{t('courses.hub.averageScore')}</Text>
-            </View>
-            <View style={styles.card}>
-              <Text style={styles.value}>{stats.bestScore}%</Text>
-              <Text style={styles.label}>{t('courses.hub.bestScore')}</Text>
-            </View>
+            <StatCard value={stats.totalCourses} label={t('courses.hub.totalCourses')} style={styles.statCard} />
+            <StatCard value={stats.totalSessions} label={t('courses.hub.totalSessions')} style={styles.statCard} />
+            <StatCard value={`${stats.avgScore}%`} label={t('courses.hub.averageScore')} style={styles.statCard} />
+            <StatCard value={`${stats.bestScore}%`} label={t('courses.hub.bestScore')} style={styles.statCard} />
           </View>
-          <View style={styles.trendCard}>
+
+          <AppCard style={styles.trendCard}>
+            <View style={styles.cardAccentBar} />
             <Text style={styles.trendTitle}>{t('courses.hub.recentTrend')}</Text>
             {stats.recentScores.length > 0 ? (
               <>
@@ -178,89 +160,99 @@ export default function CourseStatsScreen() {
                 <Text style={styles.trendHint}>{t('courses.hub.recentTrendHint')}</Text>
               </>
             ) : (
-              <Text style={styles.trendEmpty}>{t('courses.hub.noSessionsYet')}</Text>
+              <EmptyState title={t('courses.hub.noSessionsYet')} subtitle={t('courses.hub.recentTrendHint')} />
             )}
-          </View>
+          </AppCard>
 
-          <TouchableOpacity style={styles.actionBtn} onPress={() => router.push('/ai-practice-setup' as any)}>
-            <Ionicons name="flask-outline" size={18} color="#fff" />
-            <Text style={styles.actionTxt}>{t('courses.hub.startPractice')}</Text>
-          </TouchableOpacity>
+          <PrimaryButton
+            label={t('courses.hub.startPractice')}
+            onPress={() => router.push('/ai-practice-setup' as any)}
+            style={styles.actionBtn}
+          />
         </ScrollView>
       )}
-    </View>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f9fafb' },
-  header: {
-    backgroundColor: '#fff',
-    paddingTop: 58,
-    paddingBottom: 14,
-    paddingHorizontal: 16,
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
+  content: { padding: layout.screenPadding, paddingBottom: 28 },
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 85,
+    top: -105,
+    right: -55,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: -70,
+    left: -30,
+    backgroundColor: colors.accent,
+    opacity: 0.1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    marginBottom: spacing.sm,
   },
-  headerTitle: { color: '#111827', fontSize: 20, fontWeight: '700' },
-  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  content: { padding: 14, paddingBottom: 28 },
-  filterTitle: {
-    color: '#111827',
-    fontSize: 14,
+  heroBadgeText: {
+    color: colors.textSecondary,
+    ...typography.caption,
     fontWeight: '700',
-    marginBottom: 10,
   },
   filtersRow: {
-    gap: 8,
+    gap: spacing.sm,
     paddingBottom: 6,
     marginBottom: 10,
   },
   filterChip: {
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    backgroundColor: '#ffffff',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
     maxWidth: 180,
   },
-  filterChipActive: {
-    backgroundColor: '#047857',
-    borderColor: '#047857',
-  },
-  filterChipText: {
-    color: '#374151',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  filterChipTextActive: {
-    color: '#ffffff',
-  },
-  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
-  card: {
+  grid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: spacing.sm },
+  statCard: {
     width: '48.5%',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#fff',
-    paddingVertical: 16,
-    paddingHorizontal: 12,
   },
-  value: { color: '#047857', fontSize: 24, fontWeight: '800' },
-  label: { marginTop: 4, color: '#374151', fontSize: 13, fontWeight: '600' },
   trendCard: {
     marginTop: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    backgroundColor: '#fff',
     padding: 14,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  trendTitle: { color: '#111827', fontSize: 15, fontWeight: '700' },
+  cardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.accent,
+    opacity: 0.45,
+  },
+  trendTitle: { color: colors.textPrimary, fontSize: 15, fontWeight: '700' },
   trendBarsRow: {
     marginTop: 12,
     height: 120,
@@ -272,23 +264,14 @@ const styles = StyleSheet.create({
   trendBarWrap: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
   trendBar: {
     width: '100%',
-    borderRadius: 8,
-    backgroundColor: '#10b981',
+    borderRadius: radius.sm,
+    backgroundColor: colors.primary,
     minHeight: 10,
   },
-  trendBarLabel: { marginTop: 5, color: '#6b7280', fontSize: 10, fontWeight: '600' },
-  trendHint: { marginTop: 10, color: '#6b7280', fontSize: 12 },
-  trendEmpty: { marginTop: 8, color: '#9ca3af', fontSize: 13 },
+  trendBarLabel: { marginTop: 5, color: colors.textSecondary, fontSize: 10, fontWeight: '600' },
+  trendHint: { marginTop: 10, color: colors.textSecondary, ...typography.caption },
   actionBtn: {
     marginTop: 18,
-    height: 46,
-    borderRadius: 12,
-    backgroundColor: '#047857',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  actionTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  }
 });
 

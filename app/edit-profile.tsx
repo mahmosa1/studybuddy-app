@@ -1,5 +1,11 @@
 // app/edit-profile.tsx
 import { auth, db } from '@/lib/firebaseConfig';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { doc, getDoc, updateDoc } from 'firebase/firestore';
@@ -19,15 +25,12 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { uploadImageToSupabase } from '@/lib/upload';
-
-const ACCENT_GREEN = '#047857';
 
 export default function EditProfileScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
   const isHebrewUi = i18n.language === 'he';
 
   const [loading, setLoading] = useState(true);
@@ -151,9 +154,11 @@ export default function EditProfileScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color={ACCENT_GREEN} size="large" />
-      </View>
+      <AppScreen>
+        <View style={[styles.container, styles.center]}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      </AppScreen>
     );
   }
 
@@ -165,149 +170,138 @@ export default function EditProfileScreen() {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          { paddingTop: Math.max(insets.top + 12, 20) },
-        ]}
-        keyboardShouldPersistTaps="handled"
-      >
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-          accessibilityRole="button"
-          accessibilityLabel={t('common.back')}
-        >
-          <Ionicons name="arrow-back" size={22} color="#111827" />
-        </TouchableOpacity>
-
-        <Text style={styles.title}>{t('editProfileScreen.title')}</Text>
-        <Text style={styles.subtitle}>{t('editProfileScreen.subtitle')}</Text>
-
-        <View style={styles.card}>
-          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.profilePicture')}</Text>
-          <View style={styles.avatarSection}>
-            {profilePictureUrl ? (
-              <Image source={{ uri: profilePictureUrl }} style={styles.avatar} />
-            ) : (
-              <View style={styles.avatarPlaceholder}>
-                <Text style={styles.avatarText}>
-                  {(fullName || username || 'U')[0].toUpperCase()}
-                </Text>
-              </View>
-            )}
-            <View style={[styles.avatarButtons, isHebrewUi && styles.avatarButtonsRtl]}>
-              <TouchableOpacity
-                style={styles.uploadButton}
-                onPress={handlePickImage}
-                disabled={uploading}
-              >
-                {uploading ? (
-                  <ActivityIndicator color={ACCENT_GREEN} />
-                ) : (
-                  <Text style={[styles.uploadButtonText, rtlText]}>
-                    {profilePictureUrl ? t('editProfileScreen.changePicture') : t('editProfileScreen.uploadPicture')}
-                  </Text>
-                )}
-              </TouchableOpacity>
-              {profilePictureUrl && (
-                <TouchableOpacity
-                  style={[styles.deleteButton, isHebrewUi && styles.deleteButtonRtl]}
-                  onPress={handleDeletePicture}
-                >
-                  <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                  <Text style={[styles.deleteButtonText, rtlText]}>{t('editProfileScreen.deletePicture')}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.usernameLabel')}</Text>
-          <TextInput
-            style={inputStyle}
-            placeholder={t('editProfileScreen.usernamePlaceholder')}
-            placeholderTextColor="#6b7280"
-            value={username}
-            onChangeText={setUsername}
-            textAlign={isHebrewUi ? 'right' : 'left'}
-          />
-
-          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.fullNameLabel')}</Text>
-          <TextInput
-            style={inputStyle}
-            placeholder={t('editProfileScreen.fullNamePlaceholder')}
-            placeholderTextColor="#6b7280"
-            value={fullName}
-            onChangeText={setFullName}
-            textAlign={isHebrewUi ? 'right' : 'left'}
-          />
-
-          <Text style={[styles.label, rtlText]}>{t('editProfileScreen.phoneLabel')}</Text>
-          <TextInput
-            style={inputStyle}
-            placeholder={t('editProfileScreen.phonePlaceholder')}
-            placeholderTextColor="#6b7280"
-            value={phone}
-            onChangeText={setPhone}
-            keyboardType="phone-pad"
-            textAlign={isHebrewUi ? 'right' : 'left'}
-          />
-
-          <Text style={[styles.label, rtlText]}>
-            {role === 'lecturer' ? t('editProfileScreen.institutionLecturerLabel') : t('editProfileScreen.universityLabel')}
-          </Text>
-          <TextInput
-            style={inputStyle}
-            placeholder={
-              role === 'lecturer'
-                ? t('editProfileScreen.institutionPlaceholderLecturer')
-                : t('editProfileScreen.institutionPlaceholderStudent')
-            }
-            placeholderTextColor="#6b7280"
-            value={institution}
-            onChangeText={setInstitution}
-            textAlign={isHebrewUi ? 'right' : 'left'}
-          />
-
-          {role === 'student' ? (
-            <>
-              <Text style={[styles.label, rtlText]}>{t('editProfileScreen.fieldOfStudyLabel')}</Text>
-              <TextInput
-                style={inputStyle}
-                placeholder={t('editProfileScreen.fieldOfStudyPlaceholder')}
-                placeholderTextColor="#6b7280"
-                value={fieldOfStudy}
-                onChangeText={setFieldOfStudy}
-                textAlign={isHebrewUi ? 'right' : 'left'}
-              />
-            </>
-          ) : (
-            <>
-              <Text style={[styles.label, rtlText]}>{t('editProfileScreen.departmentLabel')}</Text>
-              <TextInput
-                style={inputStyle}
-                placeholder={t('editProfileScreen.departmentPlaceholder')}
-                placeholderTextColor="#6b7280"
-                value={department}
-                onChangeText={setDepartment}
-                textAlign={isHebrewUi ? 'right' : 'left'}
-              />
-            </>
-          )}
-
-          <TouchableOpacity
-            style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-            onPress={handleSave}
-            disabled={saving || !username.trim()}
-          >
-            {saving ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.saveButtonText}>{t('editProfileScreen.saveChanges')}</Text>
-            )}
-          </TouchableOpacity>
+      <AppScreen>
+        <AppHeader title={t('editProfileScreen.title')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
         </View>
-      </ScrollView>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>{t('editProfileScreen.profilePicture')}</Text>
+            <View style={styles.avatarSection}>
+              {profilePictureUrl ? (
+                <Image source={{ uri: profilePictureUrl }} style={[styles.avatar, { borderColor: colors.primary }]} />
+              ) : (
+                <View style={[styles.avatarPlaceholder, { backgroundColor: colors.primary }]}>
+                  <Text style={styles.avatarText}>
+                    {(fullName || username || 'U')[0].toUpperCase()}
+                  </Text>
+                </View>
+              )}
+              <View style={[styles.avatarButtons, isHebrewUi && styles.avatarButtonsRtl]}>
+                <TouchableOpacity
+                  style={[styles.uploadButton, { borderColor: colors.primary, backgroundColor: colors.surfaceMuted }]}
+                  onPress={handlePickImage}
+                  disabled={uploading}
+                >
+                  {uploading ? (
+                    <ActivityIndicator color={colors.primary} />
+                  ) : (
+                    <Text style={[styles.uploadButtonText, { color: colors.primary }, rtlText]}>
+                      {profilePictureUrl ? t('editProfileScreen.changePicture') : t('editProfileScreen.uploadPicture')}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+                {profilePictureUrl && (
+                  <TouchableOpacity
+                    style={[styles.deleteButton, { borderColor: colors.danger, backgroundColor: colors.dangerSurface }, isHebrewUi && styles.deleteButtonRtl]}
+                    onPress={handleDeletePicture}
+                  >
+                    <Ionicons name="trash-outline" size={16} color={colors.danger} />
+                    <Text style={[styles.deleteButtonText, { color: colors.danger }, rtlText]}>{t('editProfileScreen.deletePicture')}</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>{t('editProfileScreen.usernameLabel')}</Text>
+            <TextInput
+              style={[...inputStyle, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              placeholder={t('editProfileScreen.usernamePlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={username}
+              onChangeText={setUsername}
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
+
+            <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>{t('editProfileScreen.fullNameLabel')}</Text>
+            <TextInput
+              style={[...inputStyle, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              placeholder={t('editProfileScreen.fullNamePlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={fullName}
+              onChangeText={setFullName}
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
+
+            <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>{t('editProfileScreen.phoneLabel')}</Text>
+            <TextInput
+              style={[...inputStyle, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              placeholder={t('editProfileScreen.phonePlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              value={phone}
+              onChangeText={setPhone}
+              keyboardType="phone-pad"
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
+
+            <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>
+              {role === 'lecturer' ? t('editProfileScreen.institutionLecturerLabel') : t('editProfileScreen.universityLabel')}
+            </Text>
+            <TextInput
+              style={[...inputStyle, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+              placeholder={
+                role === 'lecturer'
+                  ? t('editProfileScreen.institutionPlaceholderLecturer')
+                  : t('editProfileScreen.institutionPlaceholderStudent')
+              }
+              placeholderTextColor={colors.textSecondary}
+              value={institution}
+              onChangeText={setInstitution}
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
+
+            {role === 'student' ? (
+              <>
+                <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>{t('editProfileScreen.fieldOfStudyLabel')}</Text>
+                <TextInput
+                  style={[...inputStyle, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+                  placeholder={t('editProfileScreen.fieldOfStudyPlaceholder')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={fieldOfStudy}
+                  onChangeText={setFieldOfStudy}
+                  textAlign={isHebrewUi ? 'right' : 'left'}
+                />
+              </>
+            ) : (
+              <>
+                <Text style={[styles.label, { color: colors.textPrimary }, rtlText]}>{t('editProfileScreen.departmentLabel')}</Text>
+                <TextInput
+                  style={[...inputStyle, { backgroundColor: colors.surfaceMuted, borderColor: colors.border, color: colors.textPrimary }]}
+                  placeholder={t('editProfileScreen.departmentPlaceholder')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={department}
+                  onChangeText={setDepartment}
+                  textAlign={isHebrewUi ? 'right' : 'left'}
+                />
+              </>
+            )}
+
+            <PrimaryButton
+              label={t('editProfileScreen.saveChanges')}
+              onPress={handleSave}
+              loading={saving}
+              disabled={saving || !username.trim()}
+              style={styles.saveButton}
+            />
+          </AppCard>
+        </ScrollView>
+      </AppScreen>
     </KeyboardAvoidingView>
   );
 }
@@ -315,60 +309,55 @@ export default function EditProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
   scrollContent: {
-    paddingHorizontal: 24,
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: 40,
+    paddingTop: 2,
+    gap: spacing.sm,
   },
   center: {
     justifyContent: 'center',
     alignItems: 'center',
   },
-  backButton: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    marginBottom: 12,
-    alignSelf: 'flex-start',
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+  },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
   },
   rtlText: {
     textAlign: 'right',
     writingDirection: 'rtl',
   },
-  title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#4b5563',
-    textAlign: 'center',
-    marginBottom: 24,
-  },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
+    borderRadius: radius.lg,
     padding: 20,
     borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
   },
   label: {
     fontSize: 13,
-    color: '#374151',
     marginTop: 12,
     marginBottom: 6,
     fontWeight: '500',
@@ -383,13 +372,11 @@ const styles = StyleSheet.create({
     borderRadius: 50,
     marginBottom: 12,
     borderWidth: 3,
-    borderColor: '#047857',
   },
   avatarPlaceholder: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: ACCENT_GREEN,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 12,
@@ -414,11 +401,8 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#047857',
-    backgroundColor: '#fff7ed',
   },
   uploadButtonText: {
-    color: '#047857',
     fontSize: 13,
     fontWeight: '600',
   },
@@ -442,13 +426,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   input: {
-    backgroundColor: '#f9fafb',
     borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
-    color: '#111827',
     borderWidth: 1,
-    borderColor: '#374151',
     fontSize: 14,
   },
   inputRtl: {
@@ -456,17 +437,8 @@ const styles = StyleSheet.create({
   },
   saveButton: {
     marginTop: 24,
-    backgroundColor: ACCENT_GREEN,
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
   },
   saveButtonDisabled: {
     opacity: 0.7,
-  },
-  saveButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });

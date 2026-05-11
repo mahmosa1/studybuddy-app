@@ -1,4 +1,13 @@
 // app/ai-practice-setup.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
+import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -6,13 +15,13 @@ import { collection, getDocs, query, where } from 'firebase/firestore';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-    ActivityIndicator,
-    Alert,
-    ScrollView,
-    StyleSheet,
-    Text,
-    TouchableOpacity,
-    View,
+  ActivityIndicator,
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
 
 type Course = {
@@ -26,6 +35,8 @@ type PracticeLanguage = 'hebrew' | 'english';
 export default function AIPracticeSetupScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
   const [courses, setCourses] = useState<Course[]>([]);
   const [selectedCourseId, setSelectedCourseId] = useState<string>('');
   const [practiceType, setPracticeType] = useState<PracticeType>('mixed');
@@ -249,25 +260,29 @@ export default function AIPracticeSetupScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color="#047857" size="large" />
-      </View>
+      <AppScreen>
+        <AppHeader title={t('practice.setup.title')} onBack={() => router.back()} />
+        <LoadingState label={t('common.loading')} />
+      </AppScreen>
     );
   }
 
   if (courses.length === 0) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.emptyText}>
-          {t('practice.setup.noCoursesFound')}
-        </Text>
-        <TouchableOpacity
-          style={styles.button}
-          onPress={() => router.back()}
-        >
-          <Text style={styles.buttonText}>{t('common.back')}</Text>
-        </TouchableOpacity>
-      </View>
+      <AppScreen>
+        <AppHeader title={t('practice.setup.title')} onBack={() => router.back()} />
+        <View style={styles.emptyWrap}>
+          <EmptyState
+            title={t('practice.setup.noCoursesFound')}
+            subtitle={t('practice.setup.subtitle')}
+          />
+          <PrimaryButton
+            label={t('common.back')}
+            onPress={() => router.back()}
+            style={styles.emptyBtn}
+          />
+        </View>
+      </AppScreen>
     );
   }
 
@@ -297,83 +312,78 @@ export default function AIPracticeSetupScreen() {
   };
 
   return (
-    <View style={styles.container}>
-      {/* Header with back button */}
-      <View style={styles.header}>
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
-        >
-          <Ionicons name="arrow-back" size={24} color="#ffffff" />
-        </TouchableOpacity>
-        <View style={styles.headerContent}>
-          <Ionicons name="sparkles" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{t('practice.setup.title')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('practice.setup.subtitle')}
-          </Text>
-        </View>
-      </View>
+    <AppScreen>
+      <AppHeader title={t('practice.setup.title')} onBack={() => router.back()} />
 
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
+        <View style={styles.heroWrap}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowAccent} />
+          <View style={styles.heroBadge}>
+            <Ionicons name="sparkles-outline" size={14} color={colors.accent} />
+            <Text style={styles.heroBadgeText}>{t('courses.hub.aiPracticeTitle')}</Text>
+          </View>
+          <SectionTitle title={t('practice.setup.title')} subtitle={t('practice.setup.subtitle')} />
+        </View>
 
-      <View style={styles.card}>
-        <Text style={styles.stepCounter}>
-          {t('practice.setup.stepOf', { current: currentStep, total: totalSteps })}
-        </Text>
-        <Text style={styles.stepTitle}>
-          {currentStep === 1
-            ? t('practice.setup.selectCourse')
-            : currentStep === 2
-            ? t('practice.setup.practiceType')
-            : currentStep === 3
-            ? t('practice.setup.numQuestions')
-            : currentStep === 4
-            ? t('practice.setup.practiceLanguage')
-            : currentStep === 5
-            ? t('practice.setup.adaptivePractice')
-            : t('practice.setup.examSimulator')}
-        </Text>
+        <AppCard style={styles.card}>
+          <View style={styles.cardAccentBar} />
+          <Text style={styles.stepCounter}>
+            {t('practice.setup.stepOf', { current: currentStep, total: totalSteps })}
+          </Text>
+          <Text style={styles.stepTitle}>
+            {currentStep === 1
+              ? t('practice.setup.selectCourse')
+              : currentStep === 2
+              ? t('practice.setup.practiceType')
+              : currentStep === 3
+              ? t('practice.setup.numQuestions')
+              : currentStep === 4
+              ? t('practice.setup.practiceLanguage')
+              : currentStep === 5
+              ? t('practice.setup.adaptivePractice')
+              : t('practice.setup.examSimulator')}
+          </Text>
 
-        {currentStep === 1 ? (
-          <>
-            <View style={styles.optionsContainer}>
-              {courses.map((course) => (
-                <TouchableOpacity
-                  key={course.id}
-                  style={[
-                    styles.optionButton,
-                    selectedCourseId === course.id && styles.optionButtonSelected,
-                  ]}
-                  onPress={() => setSelectedCourseId(course.id)}
-                >
-                  <Text
+          {currentStep === 1 ? (
+            <>
+              <View style={styles.optionsContainer}>
+                {courses.map((course) => (
+                  <TouchableOpacity
+                    key={course.id}
                     style={[
-                      styles.optionText,
-                      selectedCourseId === course.id && styles.optionTextSelected,
+                      styles.optionButton,
+                      selectedCourseId === course.id && styles.optionButtonSelected,
                     ]}
+                    onPress={() => setSelectedCourseId(course.id)}
                   >
-                    {course.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-            {checkingSelectedCourseFiles ? (
-              <Text style={styles.helperMuted}>{t('practice.setup.checkingCourseFiles')}</Text>
-            ) : selectedCourseId && selectedCourseFileCount <= 0 ? (
-              <Text style={styles.helperError}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
-            ) : selectedCourseId ? (
-              <Text style={styles.helperOk}>
-                {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
-              </Text>
-            ) : null}
-          </>
-        ) : null}
+                    <Text
+                      style={[
+                        styles.optionText,
+                        selectedCourseId === course.id && styles.optionTextSelected,
+                      ]}
+                    >
+                      {course.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              {checkingSelectedCourseFiles ? (
+                <Text style={styles.helperMuted}>{t('practice.setup.checkingCourseFiles')}</Text>
+              ) : selectedCourseId && selectedCourseFileCount <= 0 ? (
+                <Text style={styles.helperError}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
+              ) : selectedCourseId ? (
+                <Text style={styles.helperOk}>
+                  {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
+                </Text>
+              ) : null}
+            </>
+          ) : null}
 
-        {currentStep === 2 ? (
+          {currentStep === 2 ? (
           <View style={styles.optionsContainer}>
             {[
               { label: t('practice.setup.trueFalse'), value: 'true-false' },
@@ -399,9 +409,9 @@ export default function AIPracticeSetupScreen() {
               </TouchableOpacity>
             ))}
           </View>
-        ) : null}
+          ) : null}
 
-        {currentStep === 3 ? (
+          {currentStep === 3 ? (
           <View style={styles.optionsContainer}>
             {[5, 10, 20, 30].map((num) => (
               <TouchableOpacity
@@ -423,9 +433,9 @@ export default function AIPracticeSetupScreen() {
               </TouchableOpacity>
             ))}
           </View>
-        ) : null}
+          ) : null}
 
-        {currentStep === 4 ? (
+          {currentStep === 4 ? (
           <View style={styles.optionsContainer}>
             {[
               { label: t('profile.hebrew'), value: 'hebrew' as PracticeLanguage },
@@ -450,9 +460,9 @@ export default function AIPracticeSetupScreen() {
               </TouchableOpacity>
             ))}
           </View>
-        ) : null}
+          ) : null}
 
-        {currentStep === 5 ? (
+          {currentStep === 5 ? (
           <View style={styles.optionsContainer}>
             <TouchableOpacity
               style={[styles.optionButton, adaptiveMode && styles.optionButtonSelected]}
@@ -471,9 +481,9 @@ export default function AIPracticeSetupScreen() {
               </Text>
             </TouchableOpacity>
           </View>
-        ) : null}
+          ) : null}
 
-        {currentStep === 6 ? (
+          {currentStep === 6 ? (
           <>
             <View style={styles.optionsContainer}>
               <TouchableOpacity
@@ -512,143 +522,141 @@ export default function AIPracticeSetupScreen() {
               </>
             ) : null}
           </>
-        ) : null}
+          ) : null}
 
-        <View style={styles.stepActionsRow}>
-          {currentStep > 1 ? (
-            <TouchableOpacity style={[styles.button, styles.secondaryButton]} onPress={handlePrevStep}>
-              <Text style={styles.secondaryButtonText}>{t('practice.setup.backStep')}</Text>
-            </TouchableOpacity>
-          ) : <View style={styles.stepActionSpacer} />}
+          <View style={styles.stepActionsRow}>
+            {currentStep > 1 ? (
+              <PrimaryButton
+                label={t('practice.setup.backStep')}
+                variant="secondary"
+                onPress={handlePrevStep}
+                style={styles.actionBtn}
+              />
+            ) : <View style={styles.stepActionSpacer} />}
 
+            {currentStep < totalSteps ? (
+              <PrimaryButton
+                label={t('practice.setup.nextStep')}
+                onPress={handleNextStep}
+                disabled={!canContinueCurrentStep}
+                style={styles.actionBtn}
+              />
+            ) : (
+              <PrimaryButton
+                label={generating
+                  ? `${generationStage || `${t('common.loading')}...`} (${t('practice.setup.optimized')})`
+                  : t('practice.setup.generatePractice')}
+                onPress={handleGenerate}
+                disabled={!canGenerate}
+                loading={generating}
+                style={styles.actionBtn}
+              />
+            )}
+          </View>
           {currentStep < totalSteps ? (
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton, !canContinueCurrentStep && styles.buttonDisabled]}
-              onPress={handleNextStep}
-              disabled={!canContinueCurrentStep}
-            >
-              <Text style={styles.buttonText}>{t('practice.setup.nextStep')}</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton, !canGenerate && styles.buttonDisabled]}
-              onPress={handleGenerate}
-              disabled={!canGenerate}
-            >
-              {generating ? (
-                <>
-                  <ActivityIndicator color="#ffffff" size="small" style={{ marginRight: 8 }} />
-                  <Text style={styles.buttonText}>
-                    {generationStage || `${t('common.loading')}...`} ({t('practice.setup.optimized')})
-                  </Text>
-                </>
-              ) : (
-                <Text style={styles.buttonText}>{t('practice.setup.generatePractice')}</Text>
-              )}
-            </TouchableOpacity>
-          )}
-        </View>
-        {currentStep < totalSteps ? (
-          <Text style={styles.stepHint}>
-            {t('practice.setup.stepHint')}
-          </Text>
-        ) : null}
-      </View>
+            <Text style={styles.stepHint}>
+              {t('practice.setup.stepHint')}
+            </Text>
+          ) : null}
+        </AppCard>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
-    position: 'relative',
-  },
-  backButton: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerContent: {
-    alignItems: 'center',
-    marginTop: 10,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
+const makeStyles = (colors: any) => StyleSheet.create({
   scrollContent: {
-    paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
     paddingBottom: 40,
   },
-  center: {
+  emptyWrap: {
+    flex: 1,
     justifyContent: 'center',
+    paddingHorizontal: layout.screenPadding,
+  },
+  emptyBtn: {
+    marginTop: spacing.md,
+  },
+  heroWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  heroGlowPrimary: {
+    position: 'absolute',
+    width: 165,
+    height: 165,
+    borderRadius: 83,
+    top: -105,
+    right: -55,
+    backgroundColor: colors.primary,
+    opacity: 0.08,
+  },
+  heroGlowAccent: {
+    position: 'absolute',
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    bottom: -70,
+    left: -30,
+    backgroundColor: colors.accent,
+    opacity: 0.1,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceElevated,
+    marginBottom: spacing.sm,
+  },
+  heroBadgeText: {
+    color: colors.textSecondary,
+    ...typography.caption,
+    fontWeight: '700',
   },
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: '#374151',
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  cardAccentBar: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 2,
+    backgroundColor: colors.accent,
+    opacity: 0.45,
   },
   label: {
     fontSize: 13,
-    color: '#374151',
-    marginTop: 12,
+    color: colors.textSecondary,
+    marginTop: 10,
     marginBottom: 6,
-    fontWeight: '500',
+    fontWeight: '600',
   },
   stepCounter: {
     fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '600',
+    color: colors.textSecondary,
+    fontWeight: '700',
     marginBottom: 6,
   },
   stepTitle: {
-    fontSize: 18,
-    color: '#111827',
-    fontWeight: '700',
+    ...typography.h3,
+    color: colors.textPrimary,
     marginBottom: 12,
   },
   optionsContainer: {
@@ -660,94 +668,67 @@ const styles = StyleSheet.create({
   optionButton: {
     flex: 1,
     minWidth: '30%',
-    backgroundColor: '#f9fafb',
-    borderRadius: 10,
-    padding: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: 11,
+    paddingHorizontal: 12,
     borderWidth: 1,
-    borderColor: '#374151',
+    borderColor: colors.border,
     alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 42,
   },
   optionButtonSelected: {
-    backgroundColor: '#dbeafe',
-    borderColor: ACCENT_GREEN,
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
   },
   optionText: {
     fontSize: 14,
-    color: '#111827',
-  },
-  optionTextSelected: {
-    color: ACCENT_GREEN,
+    color: colors.textSecondary,
     fontWeight: '600',
   },
+  optionTextSelected: {
+    color: colors.textOnPrimary,
+    fontWeight: '700',
+  },
   stepActionsRow: {
-    marginTop: 16,
+    marginTop: 14,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
   },
   stepActionSpacer: {
     flex: 1,
   },
-  button: {
-    paddingVertical: 14,
-    borderRadius: 999,
-    alignItems: 'center',
-    justifyContent: 'center',
+  actionBtn: {
     flex: 1,
-  },
-  primaryButton: {
-    backgroundColor: ACCENT_GREEN,
-  },
-  secondaryButton: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-  },
-  secondaryButtonText: {
-    color: '#111827',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
   },
   stepHint: {
     marginTop: 10,
-    color: '#6b7280',
+    color: colors.textSecondary,
     fontSize: 12,
     textAlign: 'center',
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginBottom: 20,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
   },
   helperMuted: {
     marginTop: 2,
     marginBottom: 8,
     fontSize: 12,
-    color: '#6b7280',
+    color: colors.textSecondary,
     fontWeight: '500',
   },
   helperError: {
     marginTop: 2,
     marginBottom: 8,
     fontSize: 12,
-    color: '#b91c1c',
+    color: colors.danger,
     fontWeight: '600',
   },
   helperOk: {
     marginTop: 2,
     marginBottom: 8,
     fontSize: 12,
-    color: '#047857',
+    color: colors.primary,
     fontWeight: '600',
   },
 });

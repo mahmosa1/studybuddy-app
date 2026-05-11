@@ -2,6 +2,12 @@
 import { auth, db } from '@/lib/firebaseConfig';
 import { buildSystemUpdatesSignature, getTutorUpdatesSeenSignature } from '@/lib/profileSystemUpdates';
 import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -89,6 +95,7 @@ type TutorApprovedCourse = {
 
 export default function ProfileScreen() {
   const router = useRouter();
+  const { colors } = useAppTheme();
   const [loading, setLoading] = useState(true);
   const hasLoadedOnceRef = useRef(false);
   const [profile, setProfile] = useState<UserProfile | null>(null);
@@ -338,6 +345,14 @@ export default function ProfileScreen() {
     router.push(`/feed/post/${postId}` as any);
   };
 
+  const getPostThumbnail = (post: MyFeedPost) =>
+    post.attachments?.find((a) => {
+      const mime = String(a?.mimeType || '').toLowerCase();
+      const url = String(a?.url || '').toLowerCase();
+      return mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|heic)(\?|$)/i.test(url);
+    })?.url || null;
+  const getPostLeadImage = (post: MyFeedPost) => getPostThumbnail(post) || profile?.profilePictureUrl || null;
+
   const loadFollowsList = useCallback(
     async (type: 'followers' | 'following') => {
       const user = auth.currentUser;
@@ -538,51 +553,53 @@ export default function ProfileScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color="#047857" />
-      </View>
+      <AppScreen>
+        <View style={[styles.container, styles.center]}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </AppScreen>
     );
   }
 
   if (!profile) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.errorText}>Failed to load profile.</Text>
-      </View>
+      <AppScreen>
+        <View style={[styles.container, styles.center]}>
+          <Text style={[styles.errorText, { color: colors.textSecondary }]}>{t('common.error')}</Text>
+        </View>
+      </AppScreen>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header with gradient effect */}
-        <View style={styles.headerSection}>
-          <View style={styles.headerBackground} />
-          <Text style={[styles.headerTitle, isHebrewUi && styles.rtlText]}>{t('profile.title')}</Text>
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
         </View>
 
-        {/* Profile Card */}
-        <View style={styles.profileCard}>
+        <AppCard style={[styles.profileCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.profileCardTopActions}>
             <TouchableOpacity
-              style={styles.profileCardIconBtn}
+              style={[styles.profileCardIconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
               onPress={() => router.push('/profile/system-updates')}
               accessibilityRole="button"
               accessibilityLabel={t('profile.systemUpdatesButton')}
             >
-              <Ionicons name="notifications-outline" size={22} color="#047857" />
+              <Ionicons name="notifications-outline" size={22} color={colors.primary} />
               {tutorUpdatesUnread ? <View style={styles.updatesHeaderBadgeDot} /> : null}
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.profileCardIconBtn}
+              style={[styles.profileCardIconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
               onPress={() => router.push('/profile/settings')}
               accessibilityRole="button"
               accessibilityLabel={t('profile.settingsTitle')}
             >
-              <Ionicons name="settings-outline" size={22} color="#047857" />
+              <Ionicons name="settings-outline" size={22} color={colors.primary} />
             </TouchableOpacity>
           </View>
           {/* Avatar */}
@@ -590,11 +607,11 @@ export default function ProfileScreen() {
             {profile.profilePictureUrl ? (
               <Image
                 source={{ uri: profile.profilePictureUrl }}
-                style={styles.avatarImage}
+                style={[styles.avatarImage, { borderColor: colors.primary }]}
               />
             ) : (
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>{getInitials()}</Text>
+              <View style={[styles.avatarCircle, { borderColor: colors.primary, backgroundColor: colors.surfaceElevated }]}>
+                <Text style={[styles.avatarText, { color: colors.primary }]}>{getInitials()}</Text>
               </View>
             )}
             {/* Avatar Badge - Reserved for future tutor verification */}
@@ -605,27 +622,27 @@ export default function ProfileScreen() {
 
           {/* Name and Info */}
           <View style={styles.profileInfo}>
-            <Text style={styles.nameText}>
-              {profile.fullName ?? profile.username ?? 'Student'}
+            <Text style={[styles.nameText, { color: colors.textPrimary }]}>
+              {profile.fullName ?? profile.username ?? t('auth.student')}
             </Text>
-            <Text style={styles.usernameText}>@{profile.username || 'username'}</Text>
+            <Text style={[styles.usernameText, { color: colors.textSecondary }]}>@{profile.username || '...'}</Text>
 
             {/* Info Cards */}
             <View style={styles.infoCards}>
               {profile.fieldOfStudy && (
-                <View style={styles.infoCard}>
-                  <Ionicons name="school-outline" size={16} color="#047857" />
-                  <Text style={styles.infoText}>{profile.fieldOfStudy}</Text>
+                <View style={[styles.infoCard, { backgroundColor: colors.surfaceElevated }]}>
+                  <Ionicons name="school-outline" size={16} color={colors.primary} />
+                  <Text style={[styles.infoText, { color: colors.textPrimary }]}>{profile.fieldOfStudy}</Text>
                 </View>
               )}
               {profile.institution && (
-                <View style={styles.infoCard}>
-                  <Ionicons name="location-outline" size={16} color={ACCENT_GREEN} />
-                  <Text style={styles.infoText}>{profile.institution}</Text>
+                <View style={[styles.infoCard, { backgroundColor: colors.surfaceElevated }]}>
+                  <Ionicons name="location-outline" size={16} color={colors.accent} />
+                  <Text style={[styles.infoText, { color: colors.textPrimary }]}>{profile.institution}</Text>
                 </View>
               )}
               {profile.role && (
-                <View style={[styles.infoCard, styles.roleBadge]}>
+                <View style={[styles.infoCard, styles.roleBadge, { backgroundColor: colors.primary }]}>
                   <Ionicons name="person-circle-outline" size={16} color="#ffffff" />
                   <Text style={[styles.infoText, styles.roleText]}>
                     {t(`auth.${profile.role}`)}
@@ -636,55 +653,55 @@ export default function ProfileScreen() {
           </View>
 
           {/* Stats */}
-          <View style={styles.statsContainer}>
+          <View style={[styles.statsContainer, { borderColor: colors.border }]}>
             <TouchableOpacity
               style={styles.statCard}
               onPress={() => openFollowsModal('followers')}
             >
-              <Text style={styles.statNumber}>{followersCount}</Text>
-              <Text style={styles.statLabel}>{t('profile.followers')}</Text>
+              <Text style={[styles.statNumber, { color: colors.primary }]}>{followersCount}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t('profile.followers')}</Text>
             </TouchableOpacity>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
             <TouchableOpacity
               style={styles.statCard}
               onPress={() => openFollowsModal('following')}
             >
-              <Text style={styles.statNumber}>{followingCount}</Text>
-              <Text style={styles.statLabel}>{t('profile.following')}</Text>
+              <Text style={[styles.statNumber, { color: colors.primary }]}>{followingCount}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t('profile.following')}</Text>
             </TouchableOpacity>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
             <View style={styles.statCard}>
-              <Text style={styles.statNumber}>{courses.length}</Text>
-              <Text style={styles.statLabel}>{t('profile.courses')}</Text>
+              <Text style={[styles.statNumber, { color: colors.primary }]}>{courses.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }]}>{t('profile.courses')}</Text>
             </View>
           </View>
 
-        </View>
+        </AppCard>
 
         {profile?.role === 'student' && tutorApprovedCourses.length > 0 && (
-          <View style={styles.section}>
+          <AppCard style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
-              <Ionicons name="ribbon-outline" size={20} color={ACCENT_GREEN} />
-              <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>{t('profile.tutorApprovedTitle')}</Text>
+              <Ionicons name="ribbon-outline" size={20} color={colors.primary} />
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.tutorApprovedTitle')}</Text>
             </View>
-            <View style={styles.tutorApprovedCard}>
+            <View style={[styles.tutorApprovedCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
               {tutorApprovedCourses.map((c) => (
                 <View key={c.courseId} style={[styles.tutorApprovedRow, isHebrewUi && styles.rtlRow]}>
-                  <Ionicons name="checkmark-circle" size={18} color="#047857" />
-                  <Text style={[styles.tutorApprovedCourseName, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                  <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                  <Text style={[styles.tutorApprovedCourseName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
                     {c.courseName}
                   </Text>
                 </View>
               ))}
             </View>
-          </View>
+          </AppCard>
         )}
 
         {/* Courses Section */}
-        <View style={styles.section}>
+        <AppCard style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
-            <Ionicons name="book-outline" size={20} color={ACCENT_GREEN} />
-            <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>{t('profile.myCourses')}</Text>
+            <Ionicons name="book-outline" size={20} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.myCourses')}</Text>
           </View>
           {courses.length > 0 ? (
             <FlatList
@@ -696,45 +713,58 @@ export default function ProfileScreen() {
               contentContainerStyle={styles.coursesList}
             />
           ) : (
-            <View style={styles.emptyCoursesCard}>
-              <Ionicons name="book-outline" size={48} color="#4b5563" />
-              <Text style={styles.emptyCoursesText}>
+            <View style={[styles.emptyCoursesCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="book-outline" size={48} color={colors.textSecondary} />
+              <Text style={[styles.emptyCoursesText, { color: colors.textSecondary }]}>
                 {t('profile.noCoursesYet')}
               </Text>
             </View>
           )}
-        </View>
+        </AppCard>
 
         {/* My Feed Posts Section */}
-        <View style={styles.section}>
+        <AppCard style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
-            <Ionicons name="newspaper-outline" size={20} color={ACCENT_GREEN} />
-            <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>
+            <Ionicons name="newspaper-outline" size={20} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
               {t('profile.myFeedPosts')}
             </Text>
           </View>
           {myFeedPosts.length === 0 ? (
-            <View style={styles.emptyActivityCard}>
-              <Ionicons name="chatbox-ellipses-outline" size={40} color="#4b5563" />
-              <Text style={[styles.emptyActivityTitle, isHebrewUi && styles.rtlText]}>
+            <View style={[styles.emptyActivityCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="chatbox-ellipses-outline" size={40} color={colors.textSecondary} />
+              <Text style={[styles.emptyActivityTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
                 {t('profile.noFeedPostsYet')}
               </Text>
             </View>
           ) : (
-            <View style={styles.feedGrid}>
+            <View style={styles.feedList}>
               {myFeedPosts.map((post) => (
                 <TouchableOpacity
                   key={post.id}
-                  style={styles.feedSquare}
+                  style={[styles.feedRowCard, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
                   activeOpacity={0.85}
                   onPress={() => handleOpenPost(post.id)}
                 >
-                  <View style={styles.feedSquareTopRow}>
-                    <Text style={[styles.feedSquareTitle, isHebrewUi && styles.rtlText]} numberOfLines={3}>
-                      {post.title || post.content}
-                    </Text>
+                  <View style={[styles.feedRowTop, isHebrewUi && styles.rtlRow]}>
+                    <View style={[styles.feedRowLeadingWrap, isHebrewUi && styles.rtlRow]}>
+                      {getPostLeadImage(post) ? (
+                        <Image source={{ uri: getPostLeadImage(post)! }} style={styles.feedRowThumbnail} />
+                      ) : (
+                        <View style={[styles.feedRowIconBadge, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                          <Ionicons name="document-text-outline" size={14} color={colors.primary} />
+                        </View>
+                      )}
+                      <View style={[styles.feedRowChip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                        <Text style={[styles.feedRowChipText, { color: colors.textSecondary }]} numberOfLines={1}>
+                          {post.courseName
+                            ? `${t(`feed.postType.${String(post.type || 'summary').toLowerCase().replace(' ', '')}`)} • ${post.courseName}`
+                            : t(`feed.postType.${String(post.type || 'summary').toLowerCase().replace(' ', '')}`)}
+                        </Text>
+                      </View>
+                    </View>
                     <TouchableOpacity
-                      style={styles.feedSquareMenuBtn}
+                      style={styles.feedRowMenuBtn}
                       onPress={(e) => {
                         e.stopPropagation();
                         Alert.alert(
@@ -749,42 +779,70 @@ export default function ProfileScreen() {
                         );
                       }}
                     >
-                      <Ionicons name="ellipsis-vertical" size={14} color="#6b7280" />
+                      <Ionicons name="ellipsis-horizontal" size={16} color={colors.textSecondary} />
                     </TouchableOpacity>
                   </View>
-                  <Text style={[styles.feedSquareContentMeta, isHebrewUi && styles.rtlText]} numberOfLines={1}>
-                    {t(`feed.postType.${String(post.type || 'summary').toLowerCase().replace(' ', '')}`)}
-                  </Text>
-                  <View style={[styles.feedSquareStats, isHebrewUi && styles.rtlRow]}>
-                    <View style={styles.feedSquareStatItem}>
-                      <Ionicons name="heart" size={11} color="#ef4444" />
-                      <Text style={styles.feedSquareStatText}>{post.likesCount}</Text>
+
+                  <View style={styles.feedRowContent}>
+                    <Text style={[styles.feedRowTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                      {post.title || post.content}
+                    </Text>
+                    {!!post.content && (
+                      <Text style={[styles.feedRowPreview, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                        {post.content}
+                      </Text>
+                    )}
+                    {Array.isArray(post.tags) && post.tags.length > 0 ? (
+                      <View style={[styles.feedRowChips, isHebrewUi && styles.rtlRow]}>
+                        {post.tags.slice(0, 3).map((tag) => (
+                          <View key={`${post.id}-${tag}`} style={[styles.feedRowTagChip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                            <Text style={[styles.feedRowTagChipText, { color: colors.textSecondary }]} numberOfLines={1}>
+                              #{tag}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    ) : null}
+                  </View>
+                  <View style={[styles.feedRowMeta, { borderTopColor: colors.border }, isHebrewUi && styles.rtlRow]}>
+                    <View style={styles.feedRowMetaItem}>
+                      <Ionicons name="heart-outline" size={12} color={colors.textSecondary} />
+                      <Text style={[styles.feedRowMetaText, { color: colors.textSecondary }]}>{post.likesCount}</Text>
                     </View>
-                    <View style={styles.feedSquareStatItem}>
-                      <Ionicons name="chatbubble-ellipses-outline" size={11} color="#374151" />
-                      <Text style={styles.feedSquareStatText}>{post.commentsCount}</Text>
+                    <View style={styles.feedRowMetaItem}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={12} color={colors.textSecondary} />
+                      <Text style={[styles.feedRowMetaText, { color: colors.textSecondary }]}>{post.commentsCount}</Text>
                     </View>
+                    <View style={styles.feedRowMetaItem}>
+                      <Ionicons name="bookmark-outline" size={12} color={colors.textSecondary} />
+                      <Text style={[styles.feedRowMetaText, { color: colors.textSecondary }]}>{post.savesCount}</Text>
+                    </View>
+                    {!!post.createdAtLabel && (
+                      <Text style={[styles.feedRowMetaDate, { color: colors.textSecondary }]} numberOfLines={1}>
+                        {post.createdAtLabel}
+                      </Text>
+                    )}
                   </View>
                 </TouchableOpacity>
               ))}
             </View>
           )}
-        </View>
+        </AppCard>
 
         {/* Activity Section */}
-        <View style={styles.section}>
+        <AppCard style={[styles.section, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
-            <Ionicons name="time-outline" size={20} color={ACCENT_GREEN} />
-            <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>{t('profile.recentActivity')}</Text>
+            <Ionicons name="time-outline" size={20} color={colors.primary} />
+            <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.recentActivity')}</Text>
           </View>
-          <View style={styles.emptyActivityCard}>
-            <Ionicons name="document-text-outline" size={48} color="#4b5563" />
-            <Text style={[styles.emptyActivityTitle, isHebrewUi && styles.rtlText]}>{t('profile.noActivityYet')}</Text>
-            <Text style={[styles.emptyActivityText, isHebrewUi && styles.rtlText]}>
+          <View style={[styles.emptyActivityCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Ionicons name="document-text-outline" size={48} color={colors.textSecondary} />
+            <Text style={[styles.emptyActivityTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('profile.noActivityYet')}</Text>
+            <Text style={[styles.emptyActivityText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
               {t('profile.activityMessage')}
             </Text>
           </View>
-        </View>
+        </AppCard>
       </ScrollView>
 
       <Modal
@@ -793,105 +851,225 @@ export default function ProfileScreen() {
         animationType="slide"
         onRequestClose={() => setShowFollowsModal(false)}
       >
-        <View style={styles.followsScreen}>
-          <View style={styles.followsTopHeader}>
-            <TouchableOpacity
-              onPress={() => setShowFollowsModal(false)}
-              style={styles.modalCloseButton}
-            >
-              <Ionicons name="arrow-back" size={24} color="#111827" />
-            </TouchableOpacity>
-            <Text style={styles.followsTopTitle}>{profile?.username || 'username'}</Text>
-            <View style={{ width: 24 }} />
+        <AppScreen>
+          <AppHeader
+            title={profile?.username || 'username'}
+            onBack={() => setShowFollowsModal(false)}
+          />
+          <View style={[styles.followsTopDecorWrap, { borderBottomColor: colors.border }]}>
+            <View style={[styles.followsTopDecorPrimary, { backgroundColor: colors.primary }]} />
+            <View style={[styles.followsTopDecorAccent, { backgroundColor: colors.accent }]} />
           </View>
 
-          <View style={styles.followsTabsRow}>
-            <TouchableOpacity
-              style={styles.followTabItem}
-              onPress={() => {
-                setFollowsModalType('followers');
-                loadFollowsList('followers');
-              }}
+          <View style={styles.followsBody}>
+            <AppCard
+              style={[
+                styles.followsSegmentShell,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+              ]}
             >
-              <Text style={[styles.followTabNumber, followsModalType === 'followers' && styles.followTabNumberActive]}>
-                {followersCount}
-              </Text>
-              <Text style={[styles.followTabLabel, followsModalType === 'followers' && styles.followTabLabelActive]}>
-                {t('profile.followers')}
-              </Text>
-              {followsModalType === 'followers' && <View style={styles.followTabUnderline} />}
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.followTabItem}
-              onPress={() => {
-                setFollowsModalType('following');
-                loadFollowsList('following');
-              }}
-            >
-              <Text style={[styles.followTabNumber, followsModalType === 'following' && styles.followTabNumberActive]}>
-                {followingCount}
-              </Text>
-              <Text style={[styles.followTabLabel, followsModalType === 'following' && styles.followTabLabelActive]}>
-                {t('profile.following')}
-              </Text>
-              {followsModalType === 'following' && <View style={styles.followTabUnderline} />}
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.followsSearchWrap}>
-            <Ionicons name="search" size={16} color="#6b7280" />
-            <TextInput
-              style={styles.followsSearchInput}
-              placeholder={t('search.title')}
-              placeholderTextColor="#9ca3af"
-              value={followsSearch}
-              onChangeText={setFollowsSearch}
-            />
-          </View>
-
-          {followsLoading ? (
-            <View style={styles.followsStateWrap}>
-              <ActivityIndicator color="#047857" />
-            </View>
-          ) : filteredFollowsItems.length ? (
-            <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.followsListContent}>
-              {filteredFollowsItems.map((item) => (
+              <View style={[styles.followsSegmentRow, isHebrewUi && styles.rtlRow]}>
                 <TouchableOpacity
-                  key={item.uid}
-                  style={styles.followRow}
+                  style={[
+                    styles.followsSegmentBtn,
+                    followsModalType === 'followers' && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                    followsModalType !== 'followers' && {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
                   onPress={() => {
-                    setShowFollowsModal(false);
-                    router.push(`/user-profile/${item.uid}` as any);
+                    setFollowsModalType('followers');
+                    loadFollowsList('followers');
                   }}
-                  activeOpacity={0.8}
+                  activeOpacity={0.85}
                 >
-                  <View style={styles.followAvatarWrap}>
-                    {item.avatarUrl ? (
-                      <Image source={{ uri: item.avatarUrl }} style={styles.followAvatar} />
-                    ) : (
-                      <Ionicons name="person" size={18} color="#047857" />
-                    )}
-                  </View>
-                  <View style={styles.followTextWrap}>
-                    <Text style={styles.followName} numberOfLines={1}>{item.fullName}</Text>
-                    {!!item.username && (
-                      <Text style={styles.followUsername} numberOfLines={1}>@{item.username}</Text>
-                    )}
-                  </View>
-                  {followsModalType === 'following' && (
-                    <View style={styles.followingPill}>
-                      <Text style={styles.followingPillText}>{t('profile.following')}</Text>
-                    </View>
-                  )}
+                  <Text
+                    style={[
+                      styles.followsSegmentCount,
+                      {
+                        color:
+                          followsModalType === 'followers'
+                            ? colors.textOnPrimary
+                            : colors.textPrimary,
+                      },
+                    ]}
+                  >
+                    {followersCount}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.followsSegmentLabel,
+                      {
+                        color:
+                          followsModalType === 'followers'
+                            ? colors.textOnPrimary
+                            : colors.textSecondary,
+                      },
+                      isHebrewUi && styles.rtlText,
+                    ]}
+                  >
+                    {t('profile.followers')}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          ) : (
-            <View style={styles.followsStateWrap}>
-                <Text style={styles.followsEmptyText}>{t('search.noResults')}</Text>
-            </View>
-          )}
-        </View>
+                <TouchableOpacity
+                  style={[
+                    styles.followsSegmentBtn,
+                    followsModalType === 'following' && {
+                      backgroundColor: colors.primary,
+                      borderColor: colors.primary,
+                    },
+                    followsModalType !== 'following' && {
+                      backgroundColor: colors.surface,
+                      borderColor: colors.border,
+                    },
+                  ]}
+                  onPress={() => {
+                    setFollowsModalType('following');
+                    loadFollowsList('following');
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Text
+                    style={[
+                      styles.followsSegmentCount,
+                      {
+                        color:
+                          followsModalType === 'following'
+                            ? colors.textOnPrimary
+                            : colors.textPrimary,
+                      },
+                    ]}
+                  >
+                    {followingCount}
+                  </Text>
+                  <Text
+                    style={[
+                      styles.followsSegmentLabel,
+                      {
+                        color:
+                          followsModalType === 'following'
+                            ? colors.textOnPrimary
+                            : colors.textSecondary,
+                      },
+                      isHebrewUi && styles.rtlText,
+                    ]}
+                  >
+                    {t('profile.following')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </AppCard>
+
+            <AppCard style={[styles.followsSearchCard, { borderColor: colors.border }]}>
+              <View style={[styles.followsSearchInner, isHebrewUi && styles.rtlRow]}>
+                <Ionicons name="search" size={18} color={colors.textSecondary} />
+                <TextInput
+                  style={[styles.followsSearchInput, { color: colors.textPrimary }]}
+                  placeholder={t('search.title')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={followsSearch}
+                  onChangeText={setFollowsSearch}
+                  textAlign={isHebrewUi ? 'right' : 'left'}
+                />
+              </View>
+            </AppCard>
+
+            {followsLoading ? (
+              <View style={styles.followsStateWrap}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : filteredFollowsItems.length ? (
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                style={styles.followsListScroll}
+                contentContainerStyle={styles.followsListContent}
+              >
+                {filteredFollowsItems.map((item) => (
+                  <TouchableOpacity
+                    key={item.uid}
+                    onPress={() => {
+                      setShowFollowsModal(false);
+                      router.push(`/user-profile/${item.uid}` as any);
+                    }}
+                    activeOpacity={0.85}
+                    style={styles.followUserCardOuter}
+                  >
+                    <AppCard
+                      style={[
+                        styles.followUserCard,
+                        { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                      ]}
+                    >
+                      <View style={[styles.followUserRow, isHebrewUi && styles.rtlRow]}>
+                        <View style={[styles.followAvatarWrap, { borderColor: colors.border }]}>
+                          {item.avatarUrl ? (
+                            <Image source={{ uri: item.avatarUrl }} style={styles.followAvatar} />
+                          ) : (
+                            <Ionicons name="person" size={18} color={colors.primary} />
+                          )}
+                        </View>
+                        <View style={styles.followTextWrap}>
+                          <Text
+                            style={[styles.followName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                            numberOfLines={1}
+                          >
+                            {item.fullName}
+                          </Text>
+                          {!!item.username && (
+                            <Text
+                              style={[
+                                styles.followUsername,
+                                { color: colors.textSecondary },
+                                isHebrewUi && styles.rtlText,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              @{item.username}
+                            </Text>
+                          )}
+                        </View>
+                        {followsModalType === 'following' && (
+                          <View
+                            style={[
+                              styles.followingChip,
+                              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                            ]}
+                          >
+                            <Text style={[styles.followingChipText, { color: colors.textSecondary }]}>
+                              {t('profile.following')}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </AppCard>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            ) : (
+              <View style={styles.followsStateWrap}>
+                <AppCard
+                  style={[
+                    styles.followsEmptyCard,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                >
+                  <EmptyState
+                    title={t('search.noResults')}
+                    subtitle={
+                      followsModalType === 'followers'
+                        ? t('profile.followers')
+                        : t('profile.following')
+                    }
+                  />
+                </AppCard>
+              </View>
+            )}
+          </View>
+        </AppScreen>
       </Modal>
 
       {/* Edit Feed Post Modal */}
@@ -1087,13 +1265,13 @@ export default function ProfileScreen() {
           </View>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
-const ACCENT_GREEN = '#047857';
-const GREY = '#4b5563';
-const GREY_LIGHT = '#374151';
+const ACCENT_GREEN = '#635BFF';
+const GREY = '#64748B';
+const GREY_LIGHT = '#DDE3F0';
 
 const styles = StyleSheet.create({
   container: {
@@ -1101,47 +1279,40 @@ const styles = StyleSheet.create({
     backgroundColor: '#f9fafb',
   },
   scrollContent: {
+    paddingHorizontal: layout.screenPadding,
     paddingBottom: 40,
+    paddingTop: spacing.xs,
+    gap: spacing.sm,
+  },
+  topDecorWrap: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
+  },
+  topDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
   },
   center: {
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  headerSection: {
-    height: 160,
-    backgroundColor: '#047857',
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-    justifyContent: 'flex-end',
-    paddingBottom: 28,
-    paddingHorizontal: 24,
-    position: 'relative',
-    overflow: 'hidden',
-    shadowColor: '#047857',
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 16,
-  },
-  headerBackground: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: '#047857',
-    opacity: 0.1,
-  },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: '900',
-    color: '#ffffff',
-    textAlign: 'center',
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-    paddingHorizontal: 52,
   },
   profileCardTopActions: {
     flexDirection: 'row',
@@ -1178,49 +1349,43 @@ const styles = StyleSheet.create({
   },
   profileCard: {
     backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    marginTop: -70,
-    borderRadius: 32,
-    padding: 32,
-    shadowColor: '#000',
-    shadowOpacity: 0.15,
-    shadowRadius: 32,
-    shadowOffset: { width: 0, height: 16 },
-    elevation: 12,
-    marginBottom: 28,
-    borderWidth: 1.5,
-    borderColor: '#e0e7ff',
+    marginHorizontal: 0,
+    marginTop: 0,
+    borderRadius: radius.lg,
+    padding: 24,
+    marginBottom: 0,
+    borderWidth: 1,
     overflow: 'hidden',
   },
   avatarContainer: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   avatarCircle: {
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    borderWidth: 6,
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 4,
     borderColor: '#047857',
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#dbeafe',
     shadowColor: '#047857',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
-    elevation: 12,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 6,
   },
   avatarImage: {
-    width: 130,
-    height: 130,
-    borderRadius: 65,
-    borderWidth: 5,
+    width: 116,
+    height: 116,
+    borderRadius: 58,
+    borderWidth: 3,
     borderColor: '#047857',
   },
   avatarText: {
     color: '#047857',
-    fontSize: 46,
+    fontSize: 38,
     fontWeight: '800',
   },
   avatarBadge: {
@@ -1233,7 +1398,7 @@ const styles = StyleSheet.create({
   },
   profileInfo: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: 16,
   },
   nameText: {
     fontSize: 24,
@@ -1245,7 +1410,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#6b7280',
     fontWeight: '500',
-    marginBottom: 16,
+    marginBottom: 14,
   },
   infoCards: {
     flexDirection: 'row',
@@ -1276,11 +1441,11 @@ const styles = StyleSheet.create({
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    paddingVertical: 20,
+    paddingVertical: 16,
     borderTopWidth: 1,
     borderBottomWidth: 1,
     borderColor: '#374151',
-    marginBottom: 20,
+    marginBottom: 10,
   },
   statCard: {
     alignItems: 'center',
@@ -1302,8 +1467,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   section: {
-    marginHorizontal: 20,
-    marginBottom: 20,
+    marginHorizontal: 0,
+    marginBottom: 0,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -1453,69 +1618,112 @@ const styles = StyleSheet.create({
     color: '#ef4444',
     fontWeight: '700',
   },
-  feedGrid: {
+  feedList: {
+    gap: 10,
+  },
+  feedRowCard: {
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingTop: 10,
+    paddingBottom: 8,
+  },
+  feedRowTop: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
   },
-  feedSquare: {
-    width: '31%',
-    aspectRatio: 1,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 14,
-    padding: 10,
-    justifyContent: 'space-between',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  feedSquareTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    gap: 4,
-  },
-  feedSquareTitle: {
+  feedRowLeadingWrap: {
     flex: 1,
-    fontSize: 12,
-    lineHeight: 16,
-    color: '#111827',
-    fontWeight: '700',
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  feedSquareMenuBtn: {
-    width: 18,
-    height: 18,
+  feedRowThumbnail: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+  },
+  feedRowIconBadge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  feedSquareContentMeta: {
-    marginTop: 6,
-    fontSize: 11.5,
-    color: '#6b7280',
+  feedRowContent: {
+    flex: 1,
+    minWidth: 0,
+  },
+  feedRowTitle: {
+    fontSize: 14,
+    lineHeight: 19,
+    fontWeight: '700',
+  },
+  feedRowPreview: {
+    marginTop: 5,
+    fontSize: 12.5,
+    lineHeight: 17,
+    fontWeight: '500',
+  },
+  feedRowChips: {
+    marginTop: 7,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  feedRowChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    maxWidth: '100%',
+  },
+  feedRowChipText: {
+    fontSize: 11,
     fontWeight: '600',
   },
-  feedSquareStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#f3f4f6',
-    paddingTop: 6,
-    marginTop: 6,
+  feedRowTagChip: {
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
   },
-  feedSquareStatItem: {
+  feedRowTagChipText: {
+    fontSize: 10.5,
+    fontWeight: '600',
+  },
+  feedRowMenuBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: -2,
+  },
+  feedRowMeta: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  feedRowMetaItem: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
   },
-  feedSquareStatText: {
+  feedRowMetaText: {
+    fontSize: 11.5,
+    fontWeight: '600',
+  },
+  feedRowMetaDate: {
+    marginLeft: 'auto',
     fontSize: 11,
-    color: '#4b5563',
-    fontWeight: '700',
+    fontWeight: '500',
   },
   highlightsEmptyText: {
     fontSize: 13,
@@ -1619,60 +1827,77 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
   },
-  followsScreen: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    paddingTop: 58,
-  },
-  followsTopHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingBottom: 8,
-  },
-  followsTopTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  followsTabsRow: {
-    flexDirection: 'row',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-    marginTop: 4,
-  },
-  followTabItem: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 10,
+  followsTopDecorWrap: {
     position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: -2,
+    marginBottom: 2,
+    borderBottomWidth: 1,
   },
-  followTabNumber: {
-    color: '#6b7280',
-    fontSize: 20,
+  followsTopDecorPrimary: {
+    position: 'absolute',
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
+  },
+  followsTopDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  followsBody: {
+    flex: 1,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+  },
+  followsSegmentShell: {
+    padding: 4,
+  },
+  followsSegmentRow: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  followsSegmentBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: radius.md,
+    borderWidth: 1,
+  },
+  followsSegmentCount: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  followsSegmentLabel: {
+    marginTop: 2,
+    fontSize: 12,
     fontWeight: '700',
   },
-  followTabNumberActive: {
-    color: '#111827',
+  followsSearchCard: {
+    paddingVertical: 2,
+    paddingHorizontal: spacing.sm,
+    marginTop: spacing.xs,
   },
-  followTabLabel: {
-    marginTop: 2,
-    color: '#6b7280',
-    fontSize: 13,
-    fontWeight: '600',
+  followsSearchInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    minHeight: 44,
   },
-  followTabLabelActive: {
-    color: '#111827',
-  },
-  followTabUnderline: {
-    position: 'absolute',
-    left: 24,
-    right: 24,
-    bottom: 0,
-    height: 2.5,
-    borderRadius: 1.5,
-    backgroundColor: '#111827',
+  followsListScroll: {
+    flex: 1,
+    marginTop: spacing.sm,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1688,84 +1913,74 @@ const styles = StyleSheet.create({
   modalCloseButton: {
     padding: 4,
   },
-  followsSearchWrap: {
-    marginTop: 10,
-    marginBottom: 8,
-    marginHorizontal: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 12,
-    paddingHorizontal: 12,
-    height: 44,
-    backgroundColor: '#f9fafb',
-  },
   followsSearchInput: {
     flex: 1,
-    color: '#111827',
-    fontSize: 14,
-  },
-  followsStateWrap: {
-    minHeight: 180,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  followsListContent: {
-    paddingHorizontal: 16,
-    paddingBottom: 20,
-  },
-  followsEmptyText: {
-    color: '#6b7280',
     fontSize: 14,
     fontWeight: '500',
+    paddingVertical: 8,
   },
-  followRow: {
+  followsStateWrap: {
+    flex: 1,
+    minHeight: 200,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: spacing.sm,
+  },
+  followsListContent: {
+    paddingBottom: spacing.xxl,
+  },
+  followUserCardOuter: {
+    marginBottom: spacing.sm,
+  },
+  followUserCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+  },
+  followUserRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    paddingVertical: 11,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
+    gap: spacing.sm,
   },
   followAvatarWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#f3f4f6',
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 1,
   },
   followAvatar: {
     width: '100%',
     height: '100%',
-    borderRadius: 21,
+    borderRadius: 22,
   },
   followTextWrap: {
     flex: 1,
+    minWidth: 0,
   },
   followName: {
-    color: '#111827',
     fontSize: 15,
     fontWeight: '700',
   },
   followUsername: {
-    marginTop: 1,
-    color: '#6b7280',
+    marginTop: 2,
     fontSize: 13,
+    fontWeight: '500',
   },
-  followingPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderRadius: 10,
-    backgroundColor: '#f3f4f6',
+  followingChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: radius.md,
+    borderWidth: 1,
   },
-  followingPillText: {
-    color: '#111827',
-    fontSize: 13,
+  followingChipText: {
+    fontSize: 12,
     fontWeight: '700',
+  },
+  followsEmptyCard: {
+    width: '100%',
+    paddingVertical: spacing.sm,
   },
   modalLabel: {
     fontSize: 15,

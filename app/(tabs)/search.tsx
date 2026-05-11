@@ -1,4 +1,8 @@
 // app/(tabs)/search.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
 import { submitTutorSupportRequest, TutorSupportRequestStatus } from '@/lib/tutorSupportRequestService';
 import { useUser } from '@/lib/UserContext';
@@ -39,6 +43,7 @@ type UserResult = {
   institution?: string;
   fieldOfStudy?: string;
   profilePictureUrl?: string | null;
+  role?: string;
 };
 
 type StudyBuddyResult = {
@@ -66,13 +71,13 @@ type TutorResult = {
 export default function SearchScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
   const { role } = useUser();
   const isHebrewUi = i18n.language === 'he';
   const [mode, setMode] = useState<SearchMode>('users');
   const [query, setQuery] = useState('');
   const [preferredTime, setPreferredTime] = useState('');
   const [showPreferredTimeOptions, setShowPreferredTimeOptions] = useState(false);
-  const [showModeOptions, setShowModeOptions] = useState(false);
   const [userResults, setUserResults] = useState<UserResult[]>([]);
   const [studyBuddyResults, setStudyBuddyResults] = useState<StudyBuddyResult[]>([]);
   const [tutorResults, setTutorResults] = useState<TutorResult[]>([]);
@@ -85,7 +90,7 @@ export default function SearchScreen() {
     }
   }, [role, mode]);
 
-  const modeOptions: Array<{ key: SearchMode; label: string; icon: string }> = [
+  const modeOptions: { key: SearchMode; label: string; icon: string }[] = [
     { key: 'users', label: t('search.users'), icon: 'people-outline' },
     ...(role !== 'lecturer'
       ? [
@@ -149,6 +154,7 @@ export default function SearchScreen() {
               institution: data.institution,
               fieldOfStudy: data.fieldOfStudy,
               profilePictureUrl: data.profilePictureUrl,
+              role: data.role,
             });
           }
         });
@@ -337,48 +343,96 @@ export default function SearchScreen() {
     return () => clearTimeout(debounce);
   }, [query, performSearch]);
 
-  const renderUserResult = ({ item }: { item: UserResult }) => (
-    <TouchableOpacity
-      style={styles.resultCard}
-      onPress={() => router.push(`/user-profile/${item.id}` as any)}
-      activeOpacity={0.7}
-    >
-      <View style={styles.resultRow}>
-        {item.profilePictureUrl ? (
-          <Image
-            source={{ uri: item.profilePictureUrl }}
-            style={styles.resultAvatar}
-          />
-        ) : (
-          <View style={styles.resultAvatarPlaceholder}>
-            <Text style={styles.resultAvatarText}>
-              {(item.username || item.fullName || 'U')[0].toUpperCase()}
-            </Text>
-          </View>
-        )}
-        <View style={styles.resultInfo}>
-          <Text style={styles.resultTitle}>
-            {item.fullName || item.username || 'User'}
-          </Text>
-          <View style={styles.resultMeta}>
-            {item.fieldOfStudy && (
-              <View style={styles.resultTag}>
-                <Ionicons name="school-outline" size={14} color={ACCENT_GREEN} />
-                <Text style={styles.resultSubtitle}>{item.fieldOfStudy}</Text>
+  const roleLabel = (r?: string) => {
+    if (!r) return '';
+    if (r === 'student') return t('auth.student', { defaultValue: 'Student' });
+    if (r === 'lecturer') return t('auth.lecturer', { defaultValue: 'Lecturer' });
+    return r;
+  };
+
+  const renderUserResult = ({ item }: { item: UserResult }) => {
+    const displayName = item.fullName || item.username || 'User';
+    const metaChips: { key: string; label: string; subtle?: boolean }[] = [];
+    if (item.role && item.role !== 'admin') {
+      metaChips.push({ key: 'role', label: roleLabel(item.role) });
+    }
+    if (item.fieldOfStudy) {
+      metaChips.push({ key: 'field', label: item.fieldOfStudy, subtle: true });
+    }
+    if (item.institution) {
+      metaChips.push({ key: 'inst', label: item.institution, subtle: true });
+    }
+    const chipsToShow = metaChips.slice(0, 2);
+    const showUsernameLine =
+      !!item.username && (!!item.fullName ? item.username !== item.fullName : displayName !== item.username);
+
+    return (
+      <TouchableOpacity
+        onPress={() => router.push(`/user-profile/${item.id}` as any)}
+        activeOpacity={0.88}
+        style={styles.resultCardWrap}
+      >
+        <AppCard style={[styles.resultCard, styles.userResultCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={[styles.resultRow, styles.resultRowUser, styles.resultRowAlignStart, isHebrewUi && styles.rtlRow]}>
+            {item.profilePictureUrl ? (
+              <Image source={{ uri: item.profilePictureUrl }} style={[styles.resultAvatar, { borderColor: colors.border }]} />
+            ) : (
+              <View style={[styles.resultAvatarPlaceholder, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                <Text style={[styles.resultAvatarText, { color: colors.primary }]}>
+                  {(item.username || item.fullName || 'U')[0].toUpperCase()}
+                </Text>
               </View>
             )}
-            {item.institution && (
-              <View style={styles.resultTag}>
-                <Ionicons name="location-outline" size={14} color={ACCENT_GREEN} />
-                <Text style={styles.resultSubtitle}>{item.institution}</Text>
-              </View>
-            )}
+            <View style={styles.resultInfo}>
+              <Text
+                style={[
+                  styles.userResultName,
+                  { color: colors.textPrimary },
+                  !isHebrewUi && { letterSpacing: -0.15 },
+                  isHebrewUi && styles.rtlText,
+                ]}
+                numberOfLines={1}
+              >
+                {displayName}
+              </Text>
+              {showUsernameLine ? (
+                <Text style={[styles.userResultUsername, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  @{item.username}
+                </Text>
+              ) : null}
+              {chipsToShow.length > 0 ? (
+                <View style={[styles.userChipsRow, isHebrewUi && styles.rtlRow]}>
+                  {chipsToShow.map((c) => (
+                    <View
+                      key={c.key}
+                      style={[
+                        styles.userMetaChip,
+                        {
+                          backgroundColor: colors.chipBg,
+                          borderColor: colors.border,
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.userMetaChipText,
+                          { color: c.subtle ? colors.textSecondary : colors.textPrimary },
+                          isHebrewUi && styles.rtlText,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {c.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : null}
+            </View>
           </View>
-        </View>
-        <Ionicons name="chevron-forward" size={20} color="#4b5563" />
-      </View>
-    </TouchableOpacity>
-  );
+        </AppCard>
+      </TouchableOpacity>
+    );
+  };
 
   const handleWhatsAppMessage = (phone: string, userName: string) => {
     // Remove any non-digit characters and ensure proper format
@@ -469,242 +523,279 @@ export default function SearchScreen() {
   };
 
   const renderTutorResult = ({ item }: { item: TutorResult }) => (
-    <View style={styles.resultCard}>
-      <View style={styles.studyBuddyHeader}>
-        <TouchableOpacity onPress={() => router.push(`/user-profile/${item.id}` as any)} activeOpacity={0.8}>
+    <AppCard style={[styles.tutorCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+      <View style={[styles.tutorTopRow, styles.resultRowAlignStart, isHebrewUi && styles.rtlRow]}>
+        <TouchableOpacity onPress={() => router.push(`/user-profile/${item.id}` as any)} activeOpacity={0.85}>
           {item.profilePictureUrl ? (
-            <Image source={{ uri: item.profilePictureUrl }} style={styles.studyBuddyAvatarImage} />
+            <Image source={{ uri: item.profilePictureUrl }} style={[styles.tutorAvatarImg, { borderColor: colors.border }]} />
           ) : (
-            <View style={styles.studyBuddyAvatar}>
-              <Text style={styles.studyBuddyInitial}>
-                {(item.username || item.fullName || 'U')[0].toUpperCase()}
-              </Text>
+            <View style={[styles.tutorAvatarPh, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Text style={[styles.tutorInitial, { color: colors.primary }]}>{(item.username || item.fullName || 'U')[0].toUpperCase()}</Text>
             </View>
           )}
         </TouchableOpacity>
-        <View style={styles.studyBuddyInfo}>
-          <Text style={styles.resultTitle}>{item.fullName || item.username || 'Tutor'}</Text>
-          <View style={styles.studyBuddyTags}>
-            <View style={styles.studyBuddyTag}>
-              <Ionicons name="book" size={12} color={ACCENT_GREEN} />
-              <Text style={styles.studyBuddyTagText}>{item.courseName}</Text>
+        <View style={styles.tutorInfo}>
+          <Text style={[styles.resultTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+            {item.fullName || item.username || 'Tutor'}
+          </Text>
+          {!!item.username && item.fullName && item.username !== item.fullName ? (
+            <Text style={[styles.resultUsername, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+              @{item.username}
+            </Text>
+          ) : null}
+          <View style={[styles.tutorChipsRow, isHebrewUi && styles.rtlRow]}>
+            <View style={[styles.chip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="book-outline" size={12} color={colors.primary} />
+              <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                {item.courseName}
+              </Text>
             </View>
-            <View style={styles.studyBuddyTag}>
-              <Ionicons name="ribbon-outline" size={12} color={ACCENT_GREEN} />
-              <Text style={styles.studyBuddyTagText}>{t('search.tutorLabel')}</Text>
+            <View style={[styles.chip, { borderColor: colors.primary, backgroundColor: colors.surfaceElevated }]}>
+              <Ionicons name="ribbon-outline" size={12} color={colors.primary} />
+              <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('search.tutorLabel')}</Text>
             </View>
           </View>
         </View>
       </View>
       {item.requestStatus === 'accepted' ? (
-        <View style={styles.tutorParticipatingBadge}>
-          <Ionicons name="checkmark-circle" size={16} color="#047857" />
-          <Text style={styles.tutorParticipatingText}>{t('search.tutorRequestAcceptedState')}</Text>
+        <View style={[styles.tutorParticipatingBadge, { backgroundColor: `${colors.success}18`, borderColor: colors.success }]}>
+          <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+          <Text style={[styles.tutorParticipatingText, { color: colors.success }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+            {t('search.tutorRequestAcceptedState')}
+          </Text>
         </View>
       ) : item.requestStatus === 'pending' ? (
-        <View style={styles.tutorPendingBadge}>
-          <Ionicons name="time-outline" size={16} color="#b45309" />
-          <Text style={styles.tutorPendingText}>{t('search.tutorRequestPendingState')}</Text>
+        <View style={[styles.tutorPendingBadge, { backgroundColor: `${colors.warning}22`, borderColor: colors.warning }]}>
+          <Ionicons name="time-outline" size={14} color={colors.warning} />
+          <Text style={[styles.tutorPendingText, { color: colors.warning }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+            {t('search.tutorRequestPendingState')}
+          </Text>
         </View>
       ) : (
-        <TouchableOpacity style={styles.requestTutorButton} onPress={() => handleRequestTutorSupport(item)}>
-          <Ionicons name="paper-plane-outline" size={16} color="#ffffff" />
-          <Text style={styles.requestTutorButtonText}>{t('search.requestTutorSupport')}</Text>
+        <TouchableOpacity style={[styles.requestTutorButton, { backgroundColor: colors.primary }]} onPress={() => handleRequestTutorSupport(item)} activeOpacity={0.88}>
+          <Ionicons name="paper-plane-outline" size={15} color={colors.textOnPrimary} />
+          <Text style={[styles.requestTutorButtonText, { color: colors.textOnPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+            {t('search.requestTutorSupport')}
+          </Text>
         </TouchableOpacity>
       )}
-    </View>
+    </AppCard>
   );
 
   const renderStudyBuddyResult = ({ item }: { item: StudyBuddyResult }) => {
+    const showHighMatch = (item.matchScore ?? 0) >= 5;
     return (
-      <View style={styles.resultCard}>
-        <View style={styles.studyBuddyHeader}>
+      <AppCard style={[styles.buddyCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+        <View style={[styles.buddyTopRow, styles.resultRowAlignStart, isHebrewUi && styles.rtlRow]}>
           {item.profilePictureUrl ? (
-            <Image
-              source={{ uri: item.profilePictureUrl }}
-              style={styles.studyBuddyAvatarImage}
-            />
+            <Image source={{ uri: item.profilePictureUrl }} style={[styles.buddyAvatarImg, { borderColor: colors.border }]} />
           ) : (
-            <View style={styles.studyBuddyAvatar}>
-              <Text style={styles.studyBuddyInitial}>
-                {(item.username || item.fullName || 'U')[0].toUpperCase()}
-              </Text>
+            <View style={[styles.buddyAvatarPh, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Text style={[styles.buddyInitial, { color: colors.primary }]}>{(item.username || item.fullName || 'U')[0].toUpperCase()}</Text>
             </View>
           )}
-          <View style={styles.studyBuddyInfo}>
-            <Text style={styles.resultTitle}>
+          <View style={styles.buddyMain}>
+            <Text style={[styles.resultTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
               {item.fullName || item.username || 'User'}
             </Text>
-            <View style={styles.studyBuddyTags}>
-              {item.course && (
-                <View style={styles.studyBuddyTag}>
-                  <Ionicons name="book" size={12} color={ACCENT_GREEN} />
-                  <Text style={styles.studyBuddyTagText}>{item.course}</Text>
+            {!!item.username && item.fullName && item.username !== item.fullName ? (
+              <Text style={[styles.resultUsername, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                @{item.username}
+              </Text>
+            ) : null}
+            {showHighMatch ? (
+              <View style={[styles.buddyMatchPill, { backgroundColor: `${colors.success}16`, borderColor: colors.success }]}>
+                <Ionicons name="sparkles" size={12} color={colors.success} />
+                <Text style={[styles.buddyMatchPillText, { color: colors.success }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {t('search.highCompatibility')}
+                </Text>
+              </View>
+            ) : null}
+            <View style={[styles.buddyChipsRow, isHebrewUi && styles.rtlRow]}>
+              {item.course ? (
+                <View style={[styles.chip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                  <Ionicons name="book-outline" size={12} color={colors.primary} />
+                  <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                    {item.course}
+                  </Text>
                 </View>
-              )}
-              {item.availability && (
-                <View style={styles.studyBuddyTag}>
-                  <Ionicons name="time" size={12} color={ACCENT_GREEN} />
-                  <Text style={styles.studyBuddyTagText}>
+              ) : null}
+              {item.availability ? (
+                <View style={[styles.chip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+                  <Ionicons name="time-outline" size={12} color={colors.accent} />
+                  <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                     {t(`profile.time.${item.availability.toLowerCase()}`, { defaultValue: item.availability })}
                   </Text>
                 </View>
-              )}
+              ) : null}
             </View>
+            {item.institution ? (
+              <View style={[styles.buddyInstitutionRow, isHebrewUi && styles.rtlRow]}>
+                <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
+                <Text style={[styles.buddyInstitutionText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {item.institution}
+                </Text>
+              </View>
+            ) : null}
           </View>
         </View>
-        {item.institution && (
-          <View style={styles.studyBuddyFooter}>
-            <Ionicons name="location-outline" size={14} color="#6b7280" />
-            <Text style={styles.studyBuddyFooterText}>{item.institution}</Text>
-          </View>
-        )}
         {item.phone ? (
-          <TouchableOpacity
-            style={styles.whatsappButton}
-            onPress={() => handleWhatsAppMessage(item.phone!, item.fullName || item.username || 'User')}
-          >
-            <Ionicons name="logo-whatsapp" size={18} color="#ffffff" />
-            <Text style={styles.whatsappButtonText}>{t('search.openWhatsApp')}</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.noPhoneMessage}>
-            <Ionicons name="information-circle-outline" size={16} color="#6b7280" />
-            <Text style={styles.noPhoneText}>{t('search.noPhoneNumber')}</Text>
+          <View style={[styles.buddyActionsRow, isHebrewUi && styles.rtlRow]}>
+            <TouchableOpacity
+              style={[styles.whatsappButton, styles.buddyActionHalf]}
+              onPress={() => handleWhatsAppMessage(item.phone!, item.fullName || item.username || 'User')}
+              activeOpacity={0.88}
+            >
+              <Ionicons name="logo-whatsapp" size={16} color="#ffffff" />
+              <Text style={styles.whatsappButtonText} numberOfLines={1}>
+                {t('search.openWhatsApp')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.chatButton, styles.buddyActionHalf, { backgroundColor: colors.primary }]}
+              onPress={() => openDirectChat(item.id, item.fullName || item.username || 'User')}
+              activeOpacity={0.88}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textOnPrimary} />
+              <Text style={[styles.chatButtonText, { color: colors.textOnPrimary }]} numberOfLines={1}>
+                {t('search.sendInAppMessage')}
+              </Text>
+            </TouchableOpacity>
           </View>
+        ) : (
+          <>
+            <View style={[styles.noPhoneMessage, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="information-circle-outline" size={14} color={colors.textSecondary} />
+              <Text style={[styles.noPhoneText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('search.noPhoneNumber')}</Text>
+            </View>
+            <TouchableOpacity
+              style={[styles.chatButton, styles.chatButtonFull, { backgroundColor: colors.primary }]}
+              onPress={() => openDirectChat(item.id, item.fullName || item.username || 'User')}
+              activeOpacity={0.88}
+            >
+              <Ionicons name="chatbubble-ellipses-outline" size={15} color={colors.textOnPrimary} />
+              <Text style={[styles.chatButtonText, { color: colors.textOnPrimary }]} numberOfLines={1}>
+                {t('search.sendInAppMessage')}
+              </Text>
+            </TouchableOpacity>
+          </>
         )}
-        <TouchableOpacity
-          style={styles.chatButton}
-          onPress={() => openDirectChat(item.id, item.fullName || item.username || 'User')}
-        >
-          <Ionicons name="chatbubble-ellipses-outline" size={16} color="#ffffff" />
-          <Text style={styles.chatButtonText}>{t('search.sendInAppMessage')}</Text>
-        </TouchableOpacity>
-      </View>
+      </AppCard>
     );
   };
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <View style={[styles.pageHeader, { borderBottomColor: colors.border }]}>
+        <Text style={[styles.pageTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('search.title')}</Text>
+        <Text style={[styles.pageSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('search.discoverSubtitle')}</Text>
+      </View>
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+      </View>
+
       <ScrollView
+        style={{ flex: 1 }}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Header Section */}
-        <View style={styles.headerSection}>
-          <View style={styles.headerBackground} />
-          <View style={styles.headerContent}>
-            <View style={styles.headerIconContainer}>
-              <Ionicons name="search" size={32} color={ACCENT_GREEN} />
-            </View>
-            <Text style={styles.title}>{t('search.discover')}</Text>
-            <Text style={styles.subtitle}>
-              {t('search.discoverSubtitle')}
-            </Text>
-          </View>
-        </View>
-
-        {/* Search method selector */}
-        <View style={styles.modeContainer}>
-          <TouchableOpacity
-            style={styles.modePickerButton}
-            onPress={() => setShowModeOptions(true)}
+        <AppCard style={[styles.modeCard, { borderColor: colors.border }]}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={[styles.modeSegments, isHebrewUi && styles.modeSegmentsRtl]}
           >
-            <View style={styles.modePickerLeft}>
-              <Ionicons
-                name={
-                  mode === 'users'
-                    ? 'people-outline'
-                    : mode === 'studybuddy'
-                    ? 'people-circle-outline'
-                    : 'ribbon-outline'
-                }
-                size={20}
-                color="#3b82f6"
-              />
-              <Text style={styles.modePickerLabel}>
-                {modeOptions.find((m) => m.key === mode)?.label || t('search.users')}
-              </Text>
-            </View>
-            <Ionicons name="chevron-down" size={18} color="#6b7280" />
-          </TouchableOpacity>
-        </View>
+            {modeOptions.map((m) => {
+              const selected = mode === m.key;
+              return (
+                <TouchableOpacity
+                  key={m.key}
+                  onPress={() => setMode(m.key)}
+                  activeOpacity={0.88}
+                  style={[
+                    styles.modeSegment,
+                    {
+                      backgroundColor: selected ? colors.primary : colors.surfaceMuted,
+                      borderColor: selected ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Ionicons name={m.icon as any} size={16} color={selected ? colors.textOnPrimary : colors.textSecondary} />
+                  <Text
+                    style={[
+                      styles.modeSegmentLabel,
+                      { color: selected ? colors.textOnPrimary : colors.textPrimary },
+                      isHebrewUi && styles.rtlText,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    {m.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </AppCard>
 
-        {/* Filters / inputs */}
-        <View style={styles.formBox}>
-          <View style={[styles.searchInlineRow, isHebrewUi && styles.searchInlineRowRtl]}>
-            <View style={[styles.inputContainer, isHebrewUi && styles.inputContainerRtl]}>
-              <Ionicons
-                name="search-outline"
-                size={20}
-                color="#3b82f6"
-                style={[styles.inputIcon, isHebrewUi && styles.inputIconRtl]}
-              />
+        <AppCard style={[styles.formCard, { borderColor: colors.border }]}>
+          <View style={[styles.searchBarShell, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+            <View style={[styles.searchBarInner, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="search-outline" size={18} color={colors.textSecondary} style={styles.searchBarIcon} />
               <TextInput
-                style={[styles.input, isHebrewUi ? styles.inputTextRtl : styles.inputTextLtr]}
+                style={[styles.searchBarInput, { color: colors.textPrimary }, isHebrewUi ? styles.inputTextRtl : styles.inputTextLtr]}
                 value={query}
                 onChangeText={setQuery}
                 placeholder={
                   mode === 'users'
                     ? t('search.searchPlaceholder')
                     : mode === 'studybuddy'
-                    ? t('search.searchPlaceholderBuddy')
-                    : t('search.searchPlaceholderTutor')
+                      ? t('search.searchPlaceholderBuddy')
+                      : t('search.searchPlaceholderTutor')
                 }
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textSecondary}
                 textAlign={isHebrewUi ? 'right' : 'left'}
+                returnKeyType="search"
+                onSubmitEditing={handleSearch}
               />
             </View>
-            <TouchableOpacity
-              style={[styles.searchIconButton, loading && styles.searchButtonDisabled]}
-              onPress={handleSearch}
-              disabled={loading}
-            >
-              {loading ? (
-                <ActivityIndicator color="#ffffff" />
-              ) : (
-                <Ionicons name="search" size={20} color="#ffffff" />
-              )}
-            </TouchableOpacity>
           </View>
 
-          {mode === 'studybuddy' && (
+          {mode === 'studybuddy' ? (
             <View style={styles.preferredTimeContainer}>
               <TouchableOpacity
-                style={styles.preferredTimeButton}
+                style={[styles.preferredTimeButton, { borderColor: colors.border, backgroundColor: colors.surface }]}
                 onPress={() => setShowPreferredTimeOptions(!showPreferredTimeOptions)}
+                activeOpacity={0.88}
               >
-                <Ionicons name="time-outline" size={20} color="#ef4444" />
-                <Text style={[
-                  styles.preferredTimeButtonText,
-                  !preferredTime && styles.preferredTimeButtonTextPlaceholder
-                ]}>
-                  {preferredTime 
+                <Ionicons name="time-outline" size={18} color={colors.primary} />
+                <Text
+                  style={[
+                    styles.preferredTimeButtonText,
+                    { color: preferredTime ? colors.textPrimary : colors.textSecondary },
+                    isHebrewUi && styles.rtlText,
+                  ]}
+                >
+                  {preferredTime
                     ? t(`profile.time.${preferredTime.toLowerCase()}`, { defaultValue: preferredTime })
                     : t('profile.preferredTime')}
                 </Text>
-                <Ionicons 
-                  name={showPreferredTimeOptions ? "chevron-up" : "chevron-down"} 
-                  size={20} 
-                  color="#6b7280" 
+                <Ionicons
+                  name={showPreferredTimeOptions ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={colors.textSecondary}
                 />
               </TouchableOpacity>
-              <Modal
-                visible={showPreferredTimeOptions}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowPreferredTimeOptions(false)}
-              >
-                <TouchableOpacity
-                  style={styles.modalOverlay}
-                  activeOpacity={1}
-                  onPress={() => setShowPreferredTimeOptions(false)}
-                >
-                  <View style={styles.modalContent}>
-                    <View style={styles.modalHeader}>
-                      <Text style={styles.modalTitle}>{t('profile.preferredTime')}</Text>
-                      <TouchableOpacity onPress={() => setShowPreferredTimeOptions(false)}>
-                        <Ionicons name="close" size={24} color="#6b7280" />
+              <Modal visible={showPreferredTimeOptions} transparent animationType="fade" onRequestClose={() => setShowPreferredTimeOptions(false)}>
+                <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowPreferredTimeOptions(false)}>
+                  <View style={[styles.modalContent, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                    <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+                      <Text style={[styles.modalTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                        {t('profile.preferredTime')}
+                      </Text>
+                      <TouchableOpacity onPress={() => setShowPreferredTimeOptions(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="close" size={22} color={colors.textSecondary} />
                       </TouchableOpacity>
                     </View>
                     <ScrollView style={styles.optionsList}>
@@ -713,7 +804,8 @@ export default function SearchScreen() {
                           key={time}
                           style={[
                             styles.listOptionButton,
-                            preferredTime === time && styles.listOptionButtonSelected,
+                            { borderBottomColor: colors.border },
+                            preferredTime === time && { backgroundColor: colors.surfaceElevated },
                           ]}
                           onPress={() => {
                             setPreferredTime(preferredTime === time ? '' : time);
@@ -723,14 +815,14 @@ export default function SearchScreen() {
                           <Text
                             style={[
                               styles.listOptionText,
-                              preferredTime === time && styles.listOptionTextSelected,
+                              { color: colors.textPrimary },
+                              preferredTime === time && { color: colors.primary, fontWeight: '700' as const },
+                              isHebrewUi && styles.rtlText,
                             ]}
                           >
                             {t(`profile.time.${time.toLowerCase()}`, { defaultValue: time })}
                           </Text>
-                          {preferredTime === time && (
-                            <Ionicons name="checkmark" size={20} color={ACCENT_GREEN} />
-                          )}
+                          {preferredTime === time ? <Ionicons name="checkmark" size={20} color={colors.primary} /> : null}
                         </TouchableOpacity>
                       ))}
                     </ScrollView>
@@ -738,307 +830,193 @@ export default function SearchScreen() {
                 </TouchableOpacity>
               </Modal>
             </View>
-          )}
+          ) : null}
+        </AppCard>
 
-        </View>
-
-        <Modal
-          visible={showModeOptions}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setShowModeOptions(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowModeOptions(false)}
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalHeader}>
-                <Text style={styles.modalTitle}>{t('search.chooseSearchMethod')}</Text>
-                <TouchableOpacity onPress={() => setShowModeOptions(false)}>
-                  <Ionicons name="close" size={24} color="#6b7280" />
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={styles.optionsList}>
-                {modeOptions.map((m) => (
-                  <TouchableOpacity
-                    key={m.key}
-                    style={[
-                      styles.listOptionButton,
-                      mode === m.key && styles.listOptionButtonSelected,
-                    ]}
-                    onPress={() => {
-                      setMode(m.key);
-                      setShowModeOptions(false);
-                    }}
-                  >
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                      <Ionicons name={m.icon as any} size={18} color={mode === m.key ? ACCENT_GREEN : '#6b7280'} />
-                      <Text
-                        style={[
-                          styles.listOptionText,
-                          mode === m.key && styles.listOptionTextSelected,
-                        ]}
-                      >
-                        {m.label}
-                      </Text>
-                    </View>
-                    {mode === m.key && <Ionicons name="checkmark" size={20} color={ACCENT_GREEN} />}
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            </View>
-          </TouchableOpacity>
-        </Modal>
-
-        {/* Results */}
         {loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator color={PRIMARY_GREEN} size="large" />
-            <Text style={styles.loadingText}>{t('search.searching')}</Text>
-          </View>
+          <AppCard style={[styles.stateCard, { borderColor: colors.border }]}>
+            <ActivityIndicator color={colors.primary} size="small" />
+            <Text style={[styles.loadingText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('search.searching')}</Text>
+          </AppCard>
         ) : mode === 'users' ? (
           userResults.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="search-outline" size={64} color="#4b5563" />
-              <Text style={styles.emptyTitle}>{t('search.noResults')}</Text>
-              <Text style={styles.emptyText}>
-                {t('search.noResultsMessage')}
-              </Text>
-            </View>
+            <AppCard style={[styles.stateCard, { borderColor: colors.border }]}>
+              <Ionicons name="search-outline" size={32} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('search.noResults')}</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('search.noResultsMessage')}</Text>
+            </AppCard>
           ) : (
-            <View style={styles.resultsContainer}>
-              <Text style={styles.resultsHeader}>
-                {userResults.length === 1 
+            <View style={styles.resultsBlock}>
+              <Text style={[styles.resultsHeader, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {userResults.length === 1
                   ? t('search.resultsFound', { count: userResults.length })
                   : t('search.resultsFoundPlural', { count: userResults.length })}
               </Text>
               {userResults.map((item) => (
-                <View key={item.id}>
-                  {renderUserResult({ item })}
-                </View>
+                <View key={item.id}>{renderUserResult({ item })}</View>
               ))}
             </View>
           )
         ) : mode === 'studybuddy' ? (
           studyBuddyResults.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={64} color="#4b5563" />
-              <Text style={styles.emptyTitle}>{t('search.noStudyBuddies')}</Text>
-              <Text style={styles.emptyText}>
-                {t('search.noStudyBuddiesMessage')}
-              </Text>
-            </View>
+            <AppCard style={[styles.stateCard, { borderColor: colors.border }]}>
+              <Ionicons name="people-outline" size={32} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+              <Text style={[styles.emptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('search.noStudyBuddies')}</Text>
+              <Text style={[styles.emptyText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('search.noStudyBuddiesMessage')}</Text>
+            </AppCard>
           ) : (
-            <View style={styles.resultsContainer}>
-              <Text style={styles.resultsHeader}>
-                {studyBuddyResults.length === 1 
+            <View style={styles.resultsBlock}>
+              <Text style={[styles.resultsHeader, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {studyBuddyResults.length === 1
                   ? t('search.resultsFound', { count: studyBuddyResults.length })
                   : t('search.resultsFoundPlural', { count: studyBuddyResults.length })}
               </Text>
-              {studyBuddyResults.length >= 3 && (
-                <View style={styles.matchSuggestionBanner}>
-                  <Ionicons name="sparkles-outline" size={16} color="#047857" />
-                  <Text style={styles.matchSuggestionText}>
+              {studyBuddyResults.length >= 3 ? (
+                <View style={[styles.matchSuggestionBanner, { backgroundColor: `${colors.success}14`, borderColor: colors.success }]}>
+                  <Ionicons name="sparkles-outline" size={16} color={colors.success} />
+                  <Text style={[styles.matchSuggestionText, { color: colors.success }, isHebrewUi && styles.rtlText]}>
                     {t('search.matchSuggestionTop3', { count: 3 })}
                   </Text>
                 </View>
-              )}
+              ) : null}
               {studyBuddyResults.map((item) => (
-                <View key={item.id}>
+                <View key={item.id} style={styles.cardSpacer}>
                   {renderStudyBuddyResult({ item })}
                 </View>
               ))}
             </View>
           )
+        ) : tutorResults.length === 0 ? (
+          <AppCard style={[styles.stateCard, { borderColor: colors.border }]}>
+            <Ionicons name="ribbon-outline" size={32} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+            <Text style={[styles.emptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('search.noTutorResults')}</Text>
+            <Text style={[styles.emptyText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('search.noTutorResultsMessage')}</Text>
+          </AppCard>
         ) : (
-          tutorResults.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="ribbon-outline" size={64} color="#4b5563" />
-              <Text style={styles.emptyTitle}>{t('search.noTutorResults')}</Text>
-              <Text style={styles.emptyText}>
-                {t('search.noTutorResultsMessage')}
-              </Text>
-            </View>
-          ) : (
-            <View style={styles.resultsContainer}>
-              <Text style={styles.resultsHeader}>
-                {tutorResults.length === 1
-                  ? t('search.resultsFound', { count: tutorResults.length })
-                  : t('search.resultsFoundPlural', { count: tutorResults.length })}
-              </Text>
-              {tutorResults.map((item) => (
-                <View key={`${item.id}-${item.courseId}`}>
-                  {renderTutorResult({ item })}
-                </View>
-              ))}
-            </View>
-          )
+          <View style={styles.resultsBlock}>
+            <Text style={[styles.resultsHeader, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {tutorResults.length === 1
+                ? t('search.resultsFound', { count: tutorResults.length })
+                : t('search.resultsFoundPlural', { count: tutorResults.length })}
+            </Text>
+            {tutorResults.map((item) => (
+              <View key={`${item.id}-${item.courseId}`} style={styles.cardSpacer}>
+                {renderTutorResult({ item })}
+              </View>
+            ))}
+          </View>
         )}
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-const GREY = '#4b5563';
-const GREY_LIGHT = '#374151';
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
+  pageHeader: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: layout.headerTopPadding,
+    paddingBottom: layout.headerBottomPadding,
+    borderBottomWidth: 1,
   },
-  scrollContent: {
-    paddingBottom: 40,
+  pageTitle: {
+    fontSize: 20,
+    fontWeight: '800',
   },
-  headerSection: {
-    height: 200,
-    backgroundColor: PRIMARY_GREEN,
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-    justifyContent: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 70,
+  pageSubtitle: {
+    marginTop: 4,
+    fontSize: 13,
+    fontWeight: '600',
+    lineHeight: 18,
+  },
+  topDecorWrap: {
     position: 'relative',
     overflow: 'hidden',
-    marginBottom: 24,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 16,
+    height: 22,
+    marginHorizontal: layout.screenPadding,
+    marginTop: 0,
+    marginBottom: 0,
+    borderBottomWidth: 1,
   },
-  headerBackground: {
+  topDecorPrimary: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0.1,
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
   },
-  headerContent: {
+  topDecorAccent: {
+    position: 'absolute',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  scrollContent: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
+    paddingBottom: spacing.xl,
+  },
+  modeCard: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  modeSegments: {
+    flexDirection: 'row',
     alignItems: 'center',
-  },
-  headerIconContainer: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    backgroundColor: '#ffffff',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 12,
-    borderWidth: 3,
-    borderColor: ACCENT_GREEN,
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 10,
+    gap: spacing.xs,
+    paddingVertical: 0,
+    flexGrow: 1,
   },
-  title: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 6,
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: '#ffffff',
-    opacity: 0.95,
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  modeContainer: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 8,
-    marginHorizontal: 24,
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    justifyContent: 'center',
-  },
-  modePickerButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 16,
-    gap: 8,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  modePickerLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  modePickerLabel: {
-    color: '#111827',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  formBox: {
-    backgroundColor: '#ffffff',
-    borderRadius: 28,
-    padding: 24,
-    marginHorizontal: 24,
-    marginBottom: 24,
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-    shadowColor: '#000',
-    shadowOpacity: 0.12,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
-    overflow: 'hidden',
-  },
-  inputContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 52,
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  inputContainerRtl: {
+  modeSegmentsRtl: {
     flexDirection: 'row-reverse',
   },
-  inputIcon: {
-    marginRight: 8,
+  modeSegment: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    minHeight: 36,
+    borderRadius: radius.md,
+    borderWidth: 1,
   },
-  inputIconRtl: {
-    marginRight: 0,
-    marginLeft: 8,
+  modeSegmentLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    maxWidth: 120,
+    textAlign: 'center',
   },
-  input: {
+  formCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+    marginBottom: spacing.sm,
+  },
+  searchBarShell: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  searchBarInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 44,
+    paddingHorizontal: spacing.sm,
+  },
+  searchBarIcon: {
+    marginEnd: spacing.xs,
+  },
+  searchBarInput: {
     flex: 1,
-    paddingVertical: 12,
-    color: '#111827',
+    paddingVertical: 10,
     fontSize: 15,
+    fontWeight: '600',
   },
   inputTextRtl: {
     writingDirection: 'rtl',
@@ -1048,425 +1026,447 @@ const styles = StyleSheet.create({
     writingDirection: 'ltr',
     textAlign: 'left',
   },
-  searchInlineRow: {
+  preferredTimeContainer: {
+    marginTop: spacing.sm,
+  },
+  preferredTimeButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    marginBottom: 14,
-  },
-  searchInlineRowRtl: {
-    flexDirection: 'row-reverse',
-  },
-  searchIconButton: {
-    width: 34,
-    height: 44,
-    borderRadius: 12,
-    backgroundColor: PRIMARY_GREEN,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: PRIMARY_GREEN,
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
-    elevation: 6,
-  },
-  searchButton: {
-    marginTop: 12,
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 18,
-    borderRadius: 18,
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: 10,
-    shadowColor: PRIMARY_GREEN,
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 8,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    gap: spacing.sm,
   },
-  searchButtonText: {
-    color: '#ffffff',
-    fontWeight: '700',
-    fontSize: 16,
-  },
-  searchButtonDisabled: {
-    opacity: 0.7,
-  },
-  matchSuggestionBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#ecfdf5',
-    borderWidth: 1,
-    borderColor: '#bbf7d0',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    marginBottom: 10,
-  },
-  matchSuggestionText: {
-    color: '#047857',
-    fontSize: 12,
+  preferredTimeButtonText: {
+    flex: 1,
+    fontSize: 14,
     fontWeight: '600',
   },
-  loadingContainer: {
-    marginTop: 20,
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingVertical: 40,
+  },
+  modalContent: {
+    borderRadius: radius.lg,
+    width: '88%',
+    maxHeight: '72%',
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+    flex: 1,
+    marginEnd: spacing.sm,
+  },
+  optionsList: {
+    maxHeight: 320,
+  },
+  listOptionButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  listOptionText: {
+    fontSize: 15,
+    fontWeight: '600',
+    flex: 1,
+    marginEnd: spacing.sm,
+  },
+  stateCard: {
+    alignItems: 'center',
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    marginTop: spacing.xs,
   },
   loadingText: {
-    marginTop: 12,
-    fontSize: 14,
-    color: '#6b7280',
-    fontWeight: '500',
-  },
-  emptyState: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 48,
-    alignItems: 'center',
-    marginHorizontal: 24,
-    marginTop: 20,
-    borderWidth: 2,
-    borderColor: '#e5e7eb',
-    borderStyle: 'dashed',
+    marginTop: spacing.sm,
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginTop: 16,
-    marginBottom: 8,
+    fontSize: 15,
+    fontWeight: '800',
+    marginTop: spacing.sm,
+    marginBottom: 2,
+    textAlign: 'center',
   },
   emptyText: {
-    fontSize: 14,
-    color: '#6b7280',
+    fontSize: 12,
+    fontWeight: '600',
     textAlign: 'center',
-    fontWeight: '500',
+    lineHeight: 17,
   },
-  resultsContainer: {
-    marginHorizontal: 24,
-    marginTop: 12,
+  resultsBlock: {
+    marginTop: 0,
   },
   resultsHeader: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
+    fontSize: 13,
+    fontWeight: '800',
+    marginTop: 2,
+    marginBottom: 2,
+    letterSpacing: 0.15,
+  },
+  cardSpacer: {
+    marginBottom: spacing.xs,
+  },
+  resultCardWrap: {
+    marginBottom: spacing.xs,
   },
   resultCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  userResultCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   resultRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.sm,
+  },
+  resultRowUser: {
+    gap: spacing.md,
+  },
+  resultRowAlignStart: {
+    alignItems: 'flex-start',
   },
   resultAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
   },
   resultAvatarPlaceholder: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: ACCENT_GREEN,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: '#ffffff',
   },
   resultAvatarText: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 18,
+    fontWeight: '800',
   },
   resultInfo: {
     flex: 1,
+    minWidth: 0,
   },
   resultTitle: {
-    color: '#111827',
-    fontSize: 16,
-    fontWeight: '700',
-    marginBottom: 6,
+    fontSize: 15,
+    fontWeight: '800',
+    marginBottom: 0,
   },
-  resultMeta: {
-    gap: 4,
+  userResultName: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontWeight: '800',
   },
-  resultTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  resultSubtitle: {
-    color: '#6b7280',
+  userResultUsername: {
     fontSize: 13,
-    fontWeight: '500',
+    fontWeight: '600',
+    marginTop: 4,
+    marginBottom: 2,
   },
-  studyBuddyHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
+  resultUsername: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 2,
+    marginBottom: 0,
   },
-  studyBuddyAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: ACCENT_GREEN,
-    borderWidth: 2,
-    borderColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  studyBuddyAvatarImage: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
-    marginRight: 12,
-  },
-  studyBuddyInitial: {
-    color: '#ffffff',
-    fontSize: 24,
-    fontWeight: '700',
-  },
-  studyBuddyInfo: {
-    flex: 1,
-  },
-  studyBuddyTags: {
+  userChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 6,
     marginTop: 8,
-  },
-  studyBuddyTag: {
-    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#ffffff',
+  },
+  userMetaChip: {
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
-    gap: 4,
-    borderWidth: 1.5,
-    borderColor: ACCENT_GREEN,
+    borderRadius: radius.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '100%',
   },
-  studyBuddyTagText: {
-    color: ACCENT_GREEN,
+  userMetaChipText: {
     fontSize: 12,
     fontWeight: '600',
+    flexShrink: 1,
   },
-  studyBuddyFooter: {
+  resultSubtitle: {
+    fontSize: 11,
+    fontWeight: '600',
+    flexShrink: 1,
+  },
+  buddyCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  buddyTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: 0,
+  },
+  buddyMain: {
+    flex: 1,
+    minWidth: 0,
+  },
+  buddyMatchPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: '#374151',
+    alignSelf: 'flex-start',
+    gap: 5,
+    marginTop: 5,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: radius.pill,
+    borderWidth: 1,
   },
-  studyBuddyFooterText: {
-    color: '#6b7280',
-    fontSize: 13,
-    fontWeight: '500',
+  buddyMatchPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
   },
-  studyBuddyTouchable: {
+  buddyChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  buddyInstitutionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  buddyInstitutionText: {
+    fontSize: 11,
+    fontWeight: '600',
     flex: 1,
+  },
+  buddyActionsRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  buddyActionHalf: {
+    flex: 1,
+    minWidth: 0,
+    marginTop: 0,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+  },
+  buddyAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  buddyAvatarPh: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  buddyInitial: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  tutorCard: {
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  tutorTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    marginBottom: spacing.xs,
+  },
+  tutorChipsRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 5,
+    marginTop: 6,
+    alignItems: 'center',
+  },
+  tutorAvatarImg: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+  },
+  tutorAvatarPh: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  tutorInitial: {
+    fontSize: 18,
+    fontWeight: '800',
+  },
+  tutorInfo: {
+    flex: 1,
+    minWidth: 0,
+  },
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    maxWidth: '100%',
+  },
+  chipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   whatsappButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: '#25D366',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 12,
-    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+    gap: 6,
   },
   whatsappButtonText: {
     color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   chatButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    marginTop: 10,
-    gap: 8,
+    paddingVertical: 10,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+    gap: 6,
+  },
+  chatButtonFull: {
+    alignSelf: 'stretch',
   },
   chatButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '700',
+    flexShrink: 1,
   },
   requestTutorButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: PRIMARY_GREEN,
-    borderRadius: 12,
-    paddingVertical: 12,
-    gap: 8,
+    borderRadius: radius.md,
+    paddingVertical: 10,
+    gap: 6,
+    marginTop: spacing.xs,
   },
   requestTutorButtonText: {
-    color: '#ffffff',
     fontSize: 14,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   tutorParticipatingBadge: {
-    marginTop: 8,
-    borderRadius: 12,
-    backgroundColor: '#ecfdf5',
+    marginTop: spacing.xs,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#a7f3d0',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   tutorParticipatingText: {
-    color: '#047857',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
+    flex: 1,
   },
   tutorPendingBadge: {
-    marginTop: 8,
-    borderRadius: 12,
-    backgroundColor: '#fffbeb',
+    marginTop: spacing.xs,
+    borderRadius: radius.md,
     borderWidth: 1,
-    borderColor: '#fcd34d',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
   },
   tutorPendingText: {
-    color: '#b45309',
-    fontSize: 14,
-    fontWeight: '700',
+    fontSize: 12,
+    fontWeight: '800',
+    flex: 1,
   },
   noPhoneMessage: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    backgroundColor: '#f3f4f6',
-    borderRadius: 12,
-    marginTop: 12,
-    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    marginTop: spacing.sm,
+    gap: 6,
+    borderWidth: 1,
   },
   noPhoneText: {
-    color: '#6b7280',
-    fontSize: 13,
-    fontStyle: 'italic',
-  },
-  preferredTimeContainer: {
-    marginBottom: 14,
-  },
-  preferredTimeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 18,
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-    paddingHorizontal: 16,
-    paddingVertical: 12,
-    gap: 10,
-  },
-  preferredTimeButtonText: {
-    flex: 1,
-    fontSize: 15,
-    color: '#111827',
-    fontWeight: '500',
-  },
-  preferredTimeButtonTextPlaceholder: {
-    color: '#6b7280',
-    fontWeight: '400',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    width: '85%',
-    maxHeight: '70%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e7eb',
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  optionsList: {
-    maxHeight: 300,
-  },
-  listOptionButton: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#f3f4f6',
-  },
-  listOptionButtonSelected: {
-    backgroundColor: '#f0fdf4',
-  },
-  listOptionText: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#111827',
-  },
-  listOptionTextSelected: {
-    color: ACCENT_GREEN,
+    fontSize: 12,
     fontWeight: '600',
+    fontStyle: 'italic',
+    flex: 1,
+    textAlign: 'center',
+  },
+  matchSuggestionBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 6,
+    marginBottom: spacing.xs,
+  },
+  matchSuggestionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });
-
-export { };
 
