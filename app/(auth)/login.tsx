@@ -1,4 +1,9 @@
 // app/(auth)/login.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
@@ -7,6 +12,7 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
+  I18nManager,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -15,7 +21,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View
+  View,
 } from 'react-native';
 
 import { auth, db } from '@/lib/firebaseConfig';
@@ -24,6 +30,7 @@ import { saveLanguage } from '@/lib/i18n';
 export default function LoginScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -147,527 +154,469 @@ export default function LoginScreen() {
     }
   };
 
+  const langButtonEdge = I18nManager.isRTL ? { left: layout.screenPadding } : { right: layout.screenPadding };
+
   // Show loading while checking authentication
   if (checkingAuth) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={PRIMARY_GREEN} />
-      </View>
+      <AppScreen>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </AppScreen>
     );
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#f9fafb' }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <AppScreen>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Language Switcher Button - Top Right */}
-        <View style={styles.languageButtonContainer}>
-          <TouchableOpacity
-            style={styles.languageButton}
-            onPress={() => setShowLanguageModal(true)}
-          >
-            <Ionicons name="globe-outline" size={16} color={PRIMARY_GREEN} />
-            <Text style={styles.languageButtonText}>
-              {currentLanguage === 'he' ? 'HE' : 'EN'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Header with gradient */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="school" size={48} color="#ffffff" />
-          </View>
-          <Text style={styles.headerTitle}>{t('home.title')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('home.tagline')}
-          </Text>
-        </View>
-
-        {/* Card with form */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="log-in" size={24} color={PRIMARY_GREEN} />
-            </View>
-            <Text style={styles.cardTitle}>{t('auth.login')}</Text>
-          </View>
-          <Text style={styles.cardSubtitle}>
-            {t('auth.login')} {t('common.to')} {t('home.title')}
-          </Text>
-
-          <View style={styles.inputGroup}>
-            <Ionicons name="mail-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.email')}</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={t('auth.email')}
-                placeholderTextColor="#6b7280"
-                value={email}
-                onChangeText={setEmail}
-                keyboardType="email-address"
-                autoCapitalize="none"
-              />
-            </View>
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.languageButtonContainer, langButtonEdge]}>
+            <TouchableOpacity
+              style={[
+                styles.languageButton,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => setShowLanguageModal(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="globe-outline" size={15} color={colors.primary} />
+              <Text style={[styles.languageButtonText, { color: colors.textPrimary }]}>
+                {currentLanguage === 'he' ? 'HE' : 'EN'}
+              </Text>
+            </TouchableOpacity>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Ionicons name="lock-closed-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.password')}</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={t('auth.password')}
-                placeholderTextColor="#6b7280"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
+          <View style={styles.hero}>
+            <View
+              style={[
+                styles.logoRing,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={[styles.logoInner, { backgroundColor: colors.surfaceMuted }]}>
+                <Ionicons name="school" size={30} color={colors.primary} />
+              </View>
             </View>
+            <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>{t('home.title')}</Text>
+            <Text style={[styles.heroTagline, { color: colors.textSecondary }]}>{t('home.tagline')}</Text>
           </View>
 
-          {error && (
-            <View style={styles.errorContainer}>
-              <Ionicons name="alert-circle-outline" size={16} color="#ef4444" />
-              <Text style={styles.errorText}>{error}</Text>
+          <AppCard style={styles.formCard}>
+            <View style={styles.cardTitleRow}>
+              <View style={[styles.cardIconWrap, { backgroundColor: colors.surfaceMuted }]}>
+                <Ionicons name="log-in-outline" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.cardTitleTextCol}>
+                <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{t('auth.login')}</Text>
+                <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
+                  {t('auth.login')} {t('common.to')} {t('home.title')}
+                </Text>
+              </View>
             </View>
-          )}
 
-          {/* Forgot Password Link */}
-          <TouchableOpacity
-            style={styles.forgotPasswordContainer}
-            onPress={() => router.push('/(auth)/forgot-password' as any)}
-          >
-            <Text style={styles.forgotPasswordText}>
-              {t('auth.forgotPassword')}
-            </Text>
-          </TouchableOpacity>
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Ionicons name="mail-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
+                <TextInput
+                  style={[styles.input, { color: colors.textPrimary }]}
+                  placeholder={t('auth.email')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={email}
+                  onChangeText={setEmail}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
+            </View>
 
-          <TouchableOpacity
-            style={[styles.button, loading && styles.buttonDisabled]}
-            onPress={handleLogin}
-            disabled={loading}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <>
-                <Ionicons name="log-in-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                <Text style={styles.buttonText}>{t('auth.login')}</Text>
-              </>
+            <View style={styles.fieldBlock}>
+              <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.password')}</Text>
+              <View
+                style={[
+                  styles.inputRow,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <Ionicons name="lock-closed-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
+                <TextInput
+                  style={[styles.input, { color: colors.textPrimary }]}
+                  placeholder={t('auth.password')}
+                  placeholderTextColor={colors.textSecondary}
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry
+                />
+              </View>
+            </View>
+
+            {error && (
+              <View
+                style={[
+                  styles.errorContainer,
+                  {
+                    backgroundColor: colors.dangerSurface,
+                    borderColor: colors.dangerBorder,
+                  },
+                ]}
+              >
+                <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+                <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+              </View>
             )}
+
+            <TouchableOpacity
+              style={styles.forgotPasswordContainer}
+              onPress={() => router.push('/(auth)/forgot-password' as any)}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+            >
+              <Text style={[styles.forgotPasswordText, { color: colors.primary }]}>{t('auth.forgotPassword')}</Text>
+            </TouchableOpacity>
+
+            <PrimaryButton
+              label={t('auth.login')}
+              onPress={handleLogin}
+              disabled={loading}
+              loading={loading}
+              style={styles.loginButton}
+            />
+          </AppCard>
+
+          <TouchableOpacity onPress={() => router.push('/(auth)/register-role')} style={styles.linkWrapper} activeOpacity={0.75}>
+            <Text style={[styles.linkText, { color: colors.textSecondary }]}>
+              {t('auth.dontHaveAccount')}{' '}
+              <Text style={[styles.linkTextBold, { color: colors.primary }]}>{t('auth.register')}</Text>
+            </Text>
           </TouchableOpacity>
-        </View>
+        </ScrollView>
 
-        <TouchableOpacity
-          onPress={() => router.push('/(auth)/register-role')}
-          style={styles.linkWrapper}
+        <Modal
+          visible={showLanguageModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowLanguageModal(false)}
         >
-          <Text style={styles.linkText}>
-            {t('auth.dontHaveAccount')}{' '}
-            <Text style={styles.linkTextBold}>{t('auth.register')}</Text>
-          </Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* Language Selection Modal */}
-      <Modal
-        visible={showLanguageModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowLanguageModal(false)}
-      >
-        <TouchableOpacity
-          style={styles.modalBackdrop}
-          activeOpacity={1}
-          onPress={() => setShowLanguageModal(false)}
-        >
-          <View style={styles.languageModalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t('profile.selectLanguage')}</Text>
-              <TouchableOpacity
-                onPress={() => setShowLanguageModal(false)}
-                style={styles.modalCloseButton}
-              >
-                <Ionicons name="close" size={24} color="#111827" />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.languageOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.languageOption,
-                  currentLanguage === 'en' && styles.languageOptionSelected,
-                ]}
-                onPress={async () => {
-                  await i18n.changeLanguage('en');
-                  await saveLanguage('en');
-                  setCurrentLanguage('en');
-                  setShowLanguageModal(false);
-                }}
-              >
-                <Ionicons
-                  name={currentLanguage === 'en' ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={24}
-                  color={currentLanguage === 'en' ? PRIMARY_GREEN : '#6b7280'}
-                />
-                <Text
+          <TouchableOpacity
+            style={styles.modalBackdrop}
+            activeOpacity={1}
+            onPress={() => setShowLanguageModal(false)}
+          >
+            <View
+              style={[
+                styles.languageModalContent,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={[styles.modalTitle, { color: colors.textPrimary }]}>{t('profile.selectLanguage')}</Text>
+                <TouchableOpacity onPress={() => setShowLanguageModal(false)} style={styles.modalCloseButton} hitSlop={12}>
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <View style={styles.languageOptions}>
+                <TouchableOpacity
                   style={[
-                    styles.languageOptionText,
-                    currentLanguage === 'en' && styles.languageOptionTextSelected,
+                    styles.languageOption,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
+                    currentLanguage === 'en' && {
+                      borderColor: colors.primary,
+                      backgroundColor: colors.chipBg,
+                    },
                   ]}
+                  onPress={async () => {
+                    await i18n.changeLanguage('en');
+                    await saveLanguage('en');
+                    setCurrentLanguage('en');
+                    setShowLanguageModal(false);
+                  }}
                 >
-                  {t('profile.english')}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.languageOption,
-                  currentLanguage === 'he' && styles.languageOptionSelected,
-                ]}
-                onPress={async () => {
-                  await i18n.changeLanguage('he');
-                  await saveLanguage('he');
-                  setCurrentLanguage('he');
-                  setShowLanguageModal(false);
-                }}
-              >
-                <Ionicons
-                  name={currentLanguage === 'he' ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={24}
-                  color={currentLanguage === 'he' ? PRIMARY_GREEN : '#6b7280'}
-                />
-                <Text
+                  <Ionicons
+                    name={currentLanguage === 'en' ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={currentLanguage === 'en' ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.languageOptionText,
+                      { color: colors.textPrimary },
+                      currentLanguage === 'en' && { color: colors.primary, fontWeight: '600' },
+                    ]}
+                  >
+                    {t('profile.english')}
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[
-                    styles.languageOptionText,
-                    currentLanguage === 'he' && styles.languageOptionTextSelected,
+                    styles.languageOption,
+                    {
+                      backgroundColor: colors.surfaceMuted,
+                      borderColor: colors.border,
+                    },
+                    currentLanguage === 'he' && {
+                      borderColor: colors.primary,
+                      backgroundColor: colors.chipBg,
+                    },
                   ]}
+                  onPress={async () => {
+                    await i18n.changeLanguage('he');
+                    await saveLanguage('he');
+                    setCurrentLanguage('he');
+                    setShowLanguageModal(false);
+                  }}
                 >
-                  {t('profile.hebrew')}
-                </Text>
-              </TouchableOpacity>
+                  <Ionicons
+                    name={currentLanguage === 'he' ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={22}
+                    color={currentLanguage === 'he' ? colors.primary : colors.textSecondary}
+                  />
+                  <Text
+                    style={[
+                      styles.languageOptionText,
+                      { color: colors.textPrimary },
+                      currentLanguage === 'he' && { color: colors.primary, fontWeight: '600' },
+                    ]}
+                  >
+                    {t('profile.hebrew')}
+                  </Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
-        </TouchableOpacity>
-      </Modal>
-    </KeyboardAvoidingView>
+          </TouchableOpacity>
+        </Modal>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-const GREY = '#4b5563';
-const GREY_LIGHT = '#374151';
-
 const styles = StyleSheet.create({
-  container: {
+  flex: {
     flex: 1,
-    backgroundColor: '#f9fafb',
   },
   center: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 40,
-  },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 100,
-    paddingBottom: 50,
-    alignItems: 'center',
-    borderBottomLeftRadius: 40,
-    borderBottomRightRadius: 40,
-    marginBottom: -40,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.4,
-    shadowRadius: 24,
-    elevation: 16,
-    overflow: 'hidden',
-  },
-  logoContainer: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: ACCENT_GREEN,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
-  },
-  headerTitle: {
-    fontSize: 36,
-    fontWeight: '900',
-    color: '#ffffff',
-    marginBottom: 8,
-    letterSpacing: -0.5,
-    textShadowColor: 'rgba(0, 0, 0, 0.1)',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
-  headerSubtitle: {
-    fontSize: 16,
-    color: '#ffffff',
-    opacity: 0.95,
-    textAlign: 'center',
-    paddingHorizontal: 20,
-    fontWeight: '500',
-    letterSpacing: 0.2,
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 32,
-    padding: 32,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.15,
-    shadowRadius: 32,
-    elevation: 12,
-    marginTop: 30,
-    borderWidth: 1.5,
-    borderColor: '#e0e7ff',
-    overflow: 'hidden',
-  },
-  cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
-  },
-  cardTitle: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#111827',
-    marginLeft: 12,
-    letterSpacing: -0.3,
-  },
-  cardSubtitle: {
-    fontSize: 15,
-    color: '#6b7280',
-    marginBottom: 28,
-    fontWeight: '500',
-    lineHeight: 22,
-  },
-  inputGroup: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  inputIcon: {
-    marginTop: 28,
-    marginRight: 12,
-  },
-  inputWrapper: {
-    flex: 1,
-  },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
-  },
-  input: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    color: '#111827',
-    borderWidth: 1.5,
-    borderColor: '#374151',
-    fontSize: 16,
-    fontWeight: '500',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  errorContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#fef2f2',
-    borderRadius: 10,
-    padding: 12,
-    marginTop: 8,
-    borderWidth: 1,
-    borderColor: '#fecaca',
-  },
-  errorText: {
-    marginLeft: 8,
-    color: '#ef4444',
-    fontSize: 13,
-    flex: 1,
-  },
-  button: {
-    flexDirection: 'row',
-    marginTop: 28,
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 18,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 8,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  },
-  buttonDisabled: {
-    opacity: 0.7,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  linkWrapper: {
-    marginTop: 24,
-    alignItems: 'center',
-    marginHorizontal: 20,
-  },
-  linkText: {
-    color: '#6b7280',
-    fontSize: 14,
-  },
-  linkTextBold: {
-    color: ACCENT_GREEN,
-    fontWeight: '700',
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
   },
   languageButtonContainer: {
     position: 'absolute',
-    top: 60,
-    right: 16,
+    top: spacing.xs,
     zIndex: 10,
-  },
-  languageButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: PRIMARY_GREEN,
   },
   languageButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    width: 50,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderWidth: 1.5,
-    borderColor: PRIMARY_GREEN,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    gap: 4,
+    minWidth: 48,
+    height: 34,
+    paddingHorizontal: spacing.xs,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  languageButtonText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl + spacing.md,
+    paddingBottom: spacing.md,
+  },
+  logoRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  logoInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    ...typography.h1,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  heroTagline: {
+    ...typography.body,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    lineHeight: 20,
+  },
+  formCard: {
+    marginTop: -spacing.sm,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  cardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginEnd: spacing.md,
+  },
+  cardTitleTextCol: {
+    flex: 1,
+  },
+  cardTitle: {
+    ...typography.h3,
+    marginBottom: 2,
+  },
+  cardSubtitle: {
+    ...typography.caption,
+    lineHeight: 18,
+  },
+  fieldBlock: {
+    marginBottom: spacing.md,
+  },
+  label: {
+    ...typography.caption,
+    marginBottom: spacing.xs,
+    fontWeight: '600',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+  },
+  inputRowIcon: {
+    marginEnd: spacing.sm,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+  },
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.xs,
+    borderWidth: 1,
+  },
+  errorText: {
+    marginStart: spacing.sm,
+    fontSize: 13,
+    flex: 1,
+  },
+  forgotPasswordContainer: {
+    alignSelf: 'flex-end',
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  loginButton: {
+    marginTop: spacing.xs,
+  },
+  linkWrapper: {
+    marginTop: spacing.xl,
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  linkText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
+  linkTextBold: {
+    fontWeight: '700',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(15, 23, 42, 0.45)',
     justifyContent: 'center',
     alignItems: 'center',
-  },
-  modalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 24,
-    width: '85%',
-    maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
+    padding: layout.screenPadding,
   },
   languageModalContent: {
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
-    padding: 24,
-    width: '85%',
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '100%',
     maxWidth: 400,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
+    borderWidth: 1,
   },
   modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
-    color: '#111827',
   },
   modalCloseButton: {
     padding: 4,
   },
   languageOptions: {
-    gap: 12,
+    gap: spacing.sm,
   },
   languageOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 20,
-    borderRadius: 16,
-    backgroundColor: '#f9fafb',
-    borderWidth: 1.5,
-    borderColor: '#e5e7eb',
-  },
-  languageOptionSelected: {
-    backgroundColor: '#f0fdf4',
-    borderColor: PRIMARY_GREEN,
-    borderWidth: 2,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
   },
   languageOptionText: {
     fontSize: 16,
     fontWeight: '500',
-    color: '#111827',
-    marginLeft: 12,
-  },
-  languageOptionTextSelected: {
-    color: PRIMARY_GREEN,
-    fontWeight: '600',
-  },
-  forgotPasswordContainer: {
-    alignItems: 'flex-end',
-    marginTop: 8,
-    marginBottom: 8,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    color: PRIMARY_GREEN,
-    fontWeight: '600',
+    marginStart: spacing.md,
   },
 });

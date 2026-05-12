@@ -1,11 +1,16 @@
 // app/(auth)/forgot-password.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { sendPasswordResetEmail } from 'firebase/auth';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
+  I18nManager,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -18,12 +23,11 @@ import {
 
 import { auth } from '@/lib/firebaseConfig';
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#10b981';
-
 export default function ForgotPasswordScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const isHebrewUi = i18n.language === 'he';
 
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
@@ -52,7 +56,7 @@ export default function ForgotPasswordScreen() {
     } catch (err: any) {
       console.error('Password reset error:', err);
       let errorMessage = t('auth.passwordResetFailed') || 'Failed to send password reset email';
-      
+
       if (err.code === 'auth/user-not-found') {
         errorMessage = t('auth.userNotFound') || 'No account found with this email address';
       } else if (err.code === 'auth/invalid-email') {
@@ -60,318 +64,349 @@ export default function ForgotPasswordScreen() {
       } else if (err.code === 'auth/too-many-requests') {
         errorMessage = t('auth.tooManyRequests') || 'Too many requests. Please try again later';
       }
-      
+
       setError(errorMessage);
     } finally {
       setLoading(false);
     }
   };
 
+  const backButtonEdge = I18nManager.isRTL ? { right: layout.screenPadding } : { left: layout.screenPadding };
+
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: '#f9fafb' }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        style={{ flex: 1 }}
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <AppScreen>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Back Button */}
-        <TouchableOpacity
-          style={styles.backButton}
-          onPress={() => router.back()}
+        <ScrollView
+          style={styles.flex}
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
         >
-          <Ionicons name="arrow-back" size={24} color={PRIMARY_GREEN} />
-        </TouchableOpacity>
-
-        {/* Header with gradient */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="lock-closed" size={48} color="#ffffff" />
+          <View style={[styles.backButtonContainer, backButtonEdge]}>
+            <TouchableOpacity
+              style={[
+                styles.backButton,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => router.back()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name={I18nManager.isRTL ? 'chevron-forward' : 'chevron-back'}
+                size={22}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
           </View>
-          <Text style={styles.headerTitle}>{t('auth.forgotPassword')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('auth.forgotPasswordSubtitle')}
-          </Text>
-        </View>
 
-        {/* Card with form */}
-        <View style={styles.card}>
-          {success ? (
-            <View style={styles.successContainer}>
-              <View style={styles.successIconContainer}>
-                <Ionicons name="checkmark-circle" size={64} color={ACCENT_GREEN} />
+          <View style={styles.hero}>
+            <View
+              style={[
+                styles.logoRing,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={[styles.logoInner, { backgroundColor: colors.surfaceMuted }]}>
+                <Ionicons name="lock-closed" size={30} color={colors.primary} />
               </View>
-              <Text style={styles.successTitle}>{t('auth.passwordResetSent')}</Text>
-              <Text style={styles.successText}>
-                {t('auth.passwordResetSentMessage', { email })}
-              </Text>
-              <TouchableOpacity
-                style={styles.backToLoginButton}
-                onPress={() => router.push('/(auth)/login' as any)}
-              >
-                <Text style={styles.backToLoginButtonText}>{t('auth.backToLogin')}</Text>
-              </TouchableOpacity>
             </View>
-          ) : (
-            <>
-              <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>{t('auth.resetPassword')}</Text>
-                <Text style={styles.cardSubtitle}>
-                  {t('auth.resetPasswordSubtitle')}
-                </Text>
-              </View>
+            <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>{t('auth.forgotPassword')}</Text>
+            <Text style={[styles.heroTagline, { color: colors.textSecondary }]}>{t('auth.forgotPasswordSubtitle')}</Text>
+          </View>
 
-              <View style={styles.inputGroup}>
-                <Ionicons name="mail-outline" size={20} color="#6b7280" style={styles.inputIcon} />
-                <View style={styles.inputWrapper}>
-                  <Text style={styles.label}>{t('auth.email')}</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder={t('auth.emailPlaceholder')}
-                    placeholderTextColor="#6b7280"
-                    value={email}
-                    onChangeText={(text) => {
-                      setEmail(text);
-                      setError(null);
-                    }}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoComplete="email"
-                  />
-                </View>
-              </View>
-
-              {error && (
-                <View style={styles.errorContainer}>
-                  <Ionicons name="alert-circle-outline" size={16} color="#ef4444" />
-                  <Text style={styles.errorText}>{error}</Text>
-                </View>
-              )}
-
-              <TouchableOpacity
-                style={[styles.button, loading && styles.buttonDisabled]}
-                onPress={handleResetPassword}
-                disabled={loading}
+          <AppCard style={styles.formCard}>
+            {success ? (
+              <View
+                style={[
+                  styles.successPanel,
+                  {
+                    backgroundColor: colors.surfaceMuted,
+                    borderColor: colors.border,
+                  },
+                ]}
               >
-                {loading ? (
-                  <ActivityIndicator color="#ffffff" />
-                ) : (
-                  <>
-                    <Ionicons name="mail-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                    <Text style={styles.buttonText}>{t('auth.sendResetLink')}</Text>
-                  </>
+                <View
+                  style={[
+                    styles.successIconWrap,
+                    { backgroundColor: colors.surface, borderColor: colors.border },
+                  ]}
+                >
+                  <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+                </View>
+                <Text style={[styles.successTitle, { color: colors.textPrimary }]}>{t('auth.passwordResetSent')}</Text>
+                <Text style={[styles.successText, { color: colors.textSecondary }]}>
+                  {t('auth.passwordResetSentMessage', { email })}
+                </Text>
+                <PrimaryButton
+                  label={t('auth.backToLogin')}
+                  onPress={() => router.push('/(auth)/login' as any)}
+                  style={styles.successButton}
+                />
+              </View>
+            ) : (
+              <>
+                <View style={styles.cardTitleRow}>
+                  <View style={[styles.cardIconWrap, { backgroundColor: colors.surfaceMuted }]}>
+                    <Ionicons name="key-outline" size={20} color={colors.primary} />
+                  </View>
+                  <View style={styles.cardTitleTextCol}>
+                    <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{t('auth.resetPassword')}</Text>
+                    <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>
+                      {t('auth.resetPasswordSubtitle')}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.fieldBlock}>
+                  <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.email')}</Text>
+                  <View
+                    style={[
+                      styles.inputRow,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.border,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="mail-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
+                    <TextInput
+                      style={[
+                        styles.input,
+                        {
+                          color: colors.textPrimary,
+                          textAlign: isHebrewUi ? 'right' : 'left',
+                          writingDirection: isHebrewUi ? 'rtl' : 'ltr',
+                        },
+                      ]}
+                      placeholder={t('auth.emailPlaceholder')}
+                      placeholderTextColor={colors.textSecondary}
+                      value={email}
+                      onChangeText={(text) => {
+                        setEmail(text);
+                        setError(null);
+                      }}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoComplete="email"
+                    />
+                  </View>
+                </View>
+
+                {error && (
+                  <View
+                    style={[
+                      styles.errorContainer,
+                      {
+                        backgroundColor: colors.dangerSurface,
+                        borderColor: colors.dangerBorder,
+                      },
+                    ]}
+                  >
+                    <Ionicons name="alert-circle-outline" size={16} color={colors.danger} />
+                    <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+                  </View>
                 )}
-              </TouchableOpacity>
 
-              <TouchableOpacity
-                onPress={() => router.push('/(auth)/login' as any)}
-                style={styles.linkWrapper}
-              >
-                <Text style={styles.linkText}>
-                  {t('auth.rememberPassword')}{' '}
-                  <Text style={styles.linkTextBold}>{t('auth.backToLogin')}</Text>
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+                <PrimaryButton
+                  label={t('auth.sendResetLink')}
+                  onPress={handleResetPassword}
+                  disabled={loading}
+                  loading={loading}
+                  style={styles.submitButton}
+                />
+
+                <TouchableOpacity
+                  onPress={() => router.push('/(auth)/login' as any)}
+                  style={styles.linkWrapper}
+                  activeOpacity={0.75}
+                >
+                  <Text style={[styles.linkText, { color: colors.textSecondary }]}>
+                    {t('auth.rememberPassword')}{' '}
+                    <Text style={[styles.linkTextBold, { color: colors.primary }]}>{t('auth.backToLogin')}</Text>
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </AppCard>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 40,
-  },
-  backButton: {
-    position: 'absolute',
-    top: 50,
-    left: 20,
-    zIndex: 10,
-    padding: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
-  },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 80,
-    paddingBottom: 40,
-    paddingHorizontal: 24,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 8,
-    textAlign: 'center',
-  },
-  headerSubtitle: {
-    fontSize: 15,
-    color: 'rgba(255, 255, 255, 0.9)',
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    marginTop: -20,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  cardHeader: {
-    marginBottom: 24,
-  },
-  cardTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  cardSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    lineHeight: 20,
-  },
-  inputGroup: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 20,
-  },
-  inputIcon: {
-    marginTop: 32,
-    marginRight: 12,
-  },
-  inputWrapper: {
+  flex: {
     flex: 1,
   },
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
+  },
+  backButtonContainer: {
+    position: 'absolute',
+    top: spacing.xs,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 34,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl + spacing.md,
+    paddingBottom: spacing.md,
+  },
+  logoRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  logoInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    ...typography.h1,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  heroTagline: {
+    ...typography.body,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    lineHeight: 20,
+  },
+  formCard: {
+    marginTop: -spacing.sm,
+  },
+  cardTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: spacing.lg,
+  },
+  cardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginEnd: spacing.md,
+  },
+  cardTitleTextCol: {
+    flex: 1,
+  },
+  cardTitle: {
+    ...typography.h3,
+    marginBottom: 2,
+  },
+  cardSubtitle: {
+    ...typography.caption,
+    lineHeight: 18,
+  },
+  fieldBlock: {
+    marginBottom: spacing.md,
+  },
   label: {
-    fontSize: 14,
+    ...typography.caption,
+    marginBottom: spacing.xs,
     fontWeight: '600',
-    color: '#111827',
-    marginBottom: 8,
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+  },
+  inputRowIcon: {
+    marginEnd: spacing.sm,
   },
   input: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 14,
-    fontSize: 15,
-    color: '#111827',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
   },
   errorContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fee2e2',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 16,
-    gap: 8,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+    borderWidth: 1,
   },
   errorText: {
-    flex: 1,
-    color: '#dc2626',
+    marginStart: spacing.sm,
     fontSize: 13,
-    lineHeight: 18,
+    flex: 1,
   },
-  button: {
-    flexDirection: 'row',
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 8,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  submitButton: {
+    marginTop: spacing.xs,
   },
   linkWrapper: {
-    marginTop: 20,
+    marginTop: spacing.lg,
     alignItems: 'center',
+    paddingHorizontal: spacing.sm,
   },
   linkText: {
     fontSize: 14,
-    color: '#6b7280',
+    textAlign: 'center',
   },
   linkTextBold: {
-    color: PRIMARY_GREEN,
-    fontWeight: '600',
+    fontWeight: '700',
   },
-  successContainer: {
+  successPanel: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.lg,
     alignItems: 'center',
-    paddingVertical: 20,
   },
-  successIconContainer: {
-    marginBottom: 20,
+  successIconWrap: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+    borderWidth: 1,
   },
   successTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
+    ...typography.h3,
     textAlign: 'center',
+    marginBottom: spacing.sm,
   },
   successText: {
-    fontSize: 14,
-    color: '#6b7280',
+    ...typography.body,
     textAlign: 'center',
     lineHeight: 20,
-    marginBottom: 24,
+    marginBottom: spacing.lg,
   },
-  backToLoginButton: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 14,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  backToLoginButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
+  successButton: {
+    alignSelf: 'stretch',
+    width: '100%',
   },
 });
-

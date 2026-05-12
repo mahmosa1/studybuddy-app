@@ -1,262 +1,237 @@
 // app/(auth)/register-role.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { I18nManager, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function RegisterRoleScreen() {
   const router = useRouter();
   const { t } = useTranslation();
+  const { colors } = useAppTheme();
+  const isRtl = I18nManager.isRTL;
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Ionicons name="school" size={48} color="#ffffff" />
+        <View style={styles.hero}>
+          <View
+            style={[
+              styles.logoRing,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View style={[styles.logoInner, { backgroundColor: colors.surfaceMuted }]}>
+              <Ionicons name="school" size={30} color={colors.primary} />
+            </View>
           </View>
-          <Text style={styles.headerTitle}>{t('auth.studybuddy')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('auth.tagline')}
-          </Text>
+          <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>{t('auth.studybuddy')}</Text>
+          <Text style={[styles.heroTagline, { color: colors.textSecondary }]}>{t('auth.tagline')}</Text>
         </View>
 
-        {/* Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <View style={styles.iconContainer}>
-              <Ionicons name="person-add" size={24} color={PRIMARY_GREEN} />
+        <AppCard style={styles.formCard}>
+          <View style={styles.cardTitleRow}>
+            <View style={[styles.cardIconWrap, { backgroundColor: colors.surfaceMuted }]}>
+              <Ionicons name="person-add-outline" size={20} color={colors.primary} />
             </View>
-            <Text style={styles.cardTitle}>{t('auth.createAccount')}</Text>
+            <View style={styles.cardTitleTextCol}>
+              <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>{t('auth.createAccount')}</Text>
+              <Text style={[styles.cardSubtitle, { color: colors.textSecondary }]}>{t('auth.chooseRole')}</Text>
+            </View>
           </View>
-          <Text style={styles.cardSubtitle}>
-            {t('auth.chooseRole')}
-          </Text>
 
           <TouchableOpacity
-            style={styles.studentButton}
+            style={[
+              styles.roleCard,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+              },
+            ]}
             onPress={() => router.push('/(auth)/register-student')}
+            activeOpacity={0.75}
           >
-            <View style={styles.buttonContent}>
-              <View style={styles.buttonIconContainer}>
-                <Ionicons name="school-outline" size={24} color="#ffffff" />
+            <View style={[styles.roleRow, isRtl && styles.roleRowRtl]}>
+              <View style={[styles.roleIconWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="school-outline" size={22} color={colors.primary} />
               </View>
-              <View style={styles.buttonTextContainer}>
-                <Text style={styles.buttonTextPrimary}>{t('auth.iAmStudent')}</Text>
-                <Text style={styles.buttonSubtext}>{t('auth.studentDescription')}</Text>
+              <View style={styles.roleTextCol}>
+                <Text style={[styles.roleTitle, { color: colors.textPrimary }]}>{t('auth.iAmStudent')}</Text>
+                <Text style={[styles.roleDesc, { color: colors.textSecondary }]}>{t('auth.studentDescription')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color="#ffffff" />
+              <Ionicons
+                name={isRtl ? 'chevron-back' : 'chevron-forward'}
+                size={20}
+                color={colors.textSecondary}
+              />
             </View>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.lecturerButton}
+            style={[
+              styles.roleCard,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+              },
+            ]}
             onPress={() => router.push('/(auth)/register-lecturer')}
+            activeOpacity={0.75}
           >
-            <View style={styles.buttonContent}>
-              <View style={[styles.buttonIconContainer, styles.lecturerIconContainer]}>
-                <Ionicons name="person-outline" size={24} color={ACCENT_GREEN} />
+            <View style={[styles.roleRow, isRtl && styles.roleRowRtl]}>
+              <View style={[styles.roleIconWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                <Ionicons name="person-outline" size={22} color={colors.accent} />
               </View>
-              <View style={styles.buttonTextContainer}>
-                <Text style={styles.buttonTextSecondary}>{t('auth.iAmLecturer')}</Text>
-                <Text style={styles.buttonSubtextSecondary}>{t('auth.lecturerDescription')}</Text>
+              <View style={styles.roleTextCol}>
+                <Text style={[styles.roleTitle, { color: colors.textPrimary }]}>{t('auth.iAmLecturer')}</Text>
+                <Text style={[styles.roleDesc, { color: colors.textSecondary }]}>{t('auth.lecturerDescription')}</Text>
               </View>
-              <Ionicons name="chevron-forward" size={20} color={ACCENT_GREEN} />
+              <Ionicons
+                name={isRtl ? 'chevron-back' : 'chevron-forward'}
+                size={20}
+                color={colors.textSecondary}
+              />
             </View>
           </TouchableOpacity>
-        </View>
+        </AppCard>
 
-        {/* Link back to login */}
         <TouchableOpacity
           onPress={() => router.push('/(auth)/login')}
           style={styles.linkWrapper}
+          activeOpacity={0.75}
         >
-          <Text style={styles.linkText}>
+          <Text style={[styles.linkText, { color: colors.textSecondary }]}>
             {t('auth.alreadyHaveAccount')}{' '}
-            <Text style={styles.linkTextBold}>{t('auth.login')}</Text>
+            <Text style={[styles.linkTextBold, { color: colors.primary }]}>{t('auth.login')}</Text>
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   scrollContent: {
-    paddingBottom: 40,
+    flexGrow: 1,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
   },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 80,
-    paddingBottom: 40,
+  hero: {
     alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
+    paddingTop: spacing.xxl + spacing.md,
+    paddingBottom: spacing.md,
   },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: ACCENT_GREEN,
+  logoRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    alignItems: 'center',
     justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  logoInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
     alignItems: 'center',
-    marginBottom: 16,
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.4,
-    shadowRadius: 16,
-    elevation: 12,
+    justifyContent: 'center',
   },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
-  headerSubtitle: {
-    fontSize: 15,
-    color: '#ffffff',
-    opacity: 0.9,
+  heroTitle: {
+    ...typography.h1,
     textAlign: 'center',
-    paddingHorizontal: 20,
+    marginBottom: spacing.sm,
   },
-  card: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 5,
-    marginTop: 20,
+  heroTagline: {
+    ...typography.body,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    lineHeight: 20,
   },
-  cardHeader: {
+  formCard: {
+    marginTop: -spacing.sm,
+  },
+  cardTitleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: spacing.lg,
   },
-  iconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#ffffff',
-    justifyContent: 'center',
+  cardIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
     alignItems: 'center',
-    marginRight: 12,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
+    justifyContent: 'center',
+    marginEnd: spacing.md,
+  },
+  cardTitleTextCol: {
+    flex: 1,
   },
   cardTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginLeft: 10,
+    ...typography.h3,
+    marginBottom: 2,
   },
   cardSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 24,
+    ...typography.caption,
+    lineHeight: 18,
   },
-  studentButton: {
-    backgroundColor: PRIMARY_GREEN,
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+  roleCard: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
-  lecturerButton: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 16,
-    borderWidth: 2,
-    borderColor: PRIMARY_GREEN,
-  },
-  buttonContent: {
+  roleRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: spacing.md,
   },
-  buttonIconContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: ACCENT_GREEN,
-    justifyContent: 'center',
+  roleRowRtl: {
+    flexDirection: 'row-reverse',
+  },
+  roleIconWrap: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.md,
     alignItems: 'center',
-    marginRight: 16,
-    borderWidth: 2,
-    borderColor: '#ffffff',
+    justifyContent: 'center',
+    borderWidth: 1,
   },
-  lecturerIconContainer: {
-    backgroundColor: '#ffffff',
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
-  },
-  buttonTextContainer: {
+  roleTextCol: {
     flex: 1,
   },
-  buttonTextPrimary: {
-    color: '#ffffff',
-    fontSize: 18,
+  roleTitle: {
+    fontSize: 16,
     fontWeight: '700',
     marginBottom: 4,
   },
-  buttonTextSecondary: {
-    color: PRIMARY_GREEN,
-    fontSize: 18,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  buttonSubtext: {
-    color: 'rgba(255, 255, 255, 0.9)',
+  roleDesc: {
     fontSize: 13,
-  },
-  buttonSubtextSecondary: {
-    color: '#6b7280',
-    fontSize: 13,
+    fontWeight: '500',
+    lineHeight: 18,
   },
   linkWrapper: {
-    marginTop: 24,
+    marginTop: spacing.xl,
     alignItems: 'center',
-    marginHorizontal: 20,
+    paddingHorizontal: spacing.sm,
   },
   linkText: {
-    color: '#6b7280',
     fontSize: 14,
+    textAlign: 'center',
   },
   linkTextBold: {
-    color: ACCENT_GREEN,
     fontWeight: '700',
   },
 });

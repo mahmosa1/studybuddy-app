@@ -3,8 +3,7 @@ import { db } from '@/lib/firebaseConfig';
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
-import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
-import { spacing } from '@/frontend/styles/designSystem';
+import { radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import {
@@ -43,12 +42,14 @@ type UserItem = {
   studentCardUrl?: string | null;
   lecturerIdUrl?: string | null;
   profilePictureUrl?: string | null;
+  verificationSelfieUrl?: string | null;
 };
 
 export default function PendingApprovalsScreen() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { colors } = useAppTheme();
   const isRtl = I18nManager.isRTL;
+  const isHebrewUi = i18n.language === 'he';
   const router = useRouter();
   const [pendingUsers, setPendingUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -78,6 +79,7 @@ export default function PendingApprovalsScreen() {
           studentCardUrl: data.studentCardUrl,
           lecturerIdUrl: data.lecturerIdUrl,
           profilePictureUrl: data.profilePictureUrl,
+          verificationSelfieUrl: data.verificationSelfieUrl,
         });
       });
 
@@ -144,26 +146,29 @@ export default function PendingApprovalsScreen() {
       <View style={[styles.cardAccentLine, { backgroundColor: colors.warning }]} />
       <View style={[styles.cardHeader, isRtl && styles.rtlRow]}>
         {item.profilePictureUrl ? (
-          <Image source={{ uri: item.profilePictureUrl }} style={[styles.profileImage, { borderColor: colors.warning }]} />
+          <Image source={{ uri: item.profilePictureUrl }} style={[styles.profileImage, { borderColor: colors.border }]} />
         ) : (
-          <View style={[styles.profilePlaceholder, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-            <Ionicons name={item.role === 'lecturer' ? 'person' : 'school'} size={24} color={colors.textSecondary} />
+          <View style={[styles.profilePlaceholder, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+            <Ionicons name={item.role === 'lecturer' ? 'person' : 'school'} size={22} color={colors.textSecondary} />
           </View>
         )}
         <View style={styles.userInfo}>
           <Text style={[styles.email, { color: colors.textPrimary }, isRtl && styles.rtlText]}>{item.email}</Text>
-          <Text style={[styles.smallText, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
-            {item.fullName ?? t('admin.noName')} · {item.username ?? t('admin.noUsername')}
+          <Text style={[styles.namePrimary, { color: colors.textPrimary }, isRtl && styles.rtlText]}>
+            {item.fullName ?? t('admin.noName')}
           </Text>
-          <View style={[styles.roleBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
-            <Ionicons name={item.role === 'lecturer' ? 'person-outline' : 'school-outline'} size={12} color={colors.primary} />
-            <Text style={[styles.roleText, { color: colors.primary }]}>{t(`auth.${item.role}`)}</Text>
+          <Text style={[styles.usernameSecondary, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
+            {item.username ?? t('admin.noUsername')}
+          </Text>
+          <View style={[styles.roleBadge, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name={item.role === 'lecturer' ? 'person-outline' : 'school-outline'} size={11} color={colors.textSecondary} />
+            <Text style={[styles.roleText, { color: colors.textSecondary }]}>{t(`auth.${item.role}`)}</Text>
           </View>
         </View>
       </View>
 
-      <View style={[styles.statusPill, { borderColor: colors.warning, backgroundColor: colors.surfaceMuted }, isRtl && styles.rtlRow]}>
-        <Ionicons name="time-outline" size={12} color={colors.warning} />
+      <View style={[styles.statusPill, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }, isRtl && styles.rtlRow]}>
+        <Ionicons name="time-outline" size={11} color={colors.warning} />
         <Text style={[styles.statusPillText, { color: colors.warning }]}>{t('admin.pendingApproval')}</Text>
       </View>
 
@@ -171,41 +176,73 @@ export default function PendingApprovalsScreen() {
         <Text style={[styles.documentsTitle, { color: colors.textPrimary }]}>{t('admin.documents')}</Text>
         <View style={styles.documentsList}>
           {item.role === 'student' ? (
-            <View style={[styles.documentItem, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
-              <Ionicons name="card-outline" size={16} color={colors.textSecondary} />
+            <View style={[styles.documentItem, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+              <Ionicons name="card-outline" size={15} color={colors.textSecondary} />
               <Text style={[styles.documentText, { color: colors.textSecondary }]}>
                 {t('admin.studentCard')}: {item.studentCardUrl ? t('admin.uploaded') : t('admin.missing')}
               </Text>
               {item.studentCardUrl && (
-                <TouchableOpacity onPress={() => setPreviewUrl(item.studentCardUrl!)} style={[styles.viewButton, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
-                  <Ionicons name="eye-outline" size={14} color={colors.primary} />
-                  <Text style={[styles.viewButtonText, { color: colors.primary }]}>{t('admin.view')}</Text>
+                <TouchableOpacity
+                  onPress={() => setPreviewUrl(item.studentCardUrl!)}
+                  style={styles.viewLink}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.65}
+                >
+                  <Ionicons name="eye-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.viewLinkText, { color: colors.textSecondary }]}>{t('admin.view')}</Text>
                 </TouchableOpacity>
               )}
             </View>
           ) : item.role === 'lecturer' ? (
-            <View style={[styles.documentItem, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
-              <Ionicons name="id-card-outline" size={16} color={colors.textSecondary} />
+            <View style={[styles.documentItem, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+              <Ionicons name="id-card-outline" size={15} color={colors.textSecondary} />
               <Text style={[styles.documentText, { color: colors.textSecondary }]}>
                 {t('admin.lecturerID')}: {item.lecturerIdUrl ? t('admin.uploaded') : t('admin.missing')}
               </Text>
               {item.lecturerIdUrl && (
-                <TouchableOpacity onPress={() => setPreviewUrl(item.lecturerIdUrl!)} style={[styles.viewButton, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
-                  <Ionicons name="eye-outline" size={14} color={colors.primary} />
-                  <Text style={[styles.viewButtonText, { color: colors.primary }]}>{t('admin.view')}</Text>
+                <TouchableOpacity
+                  onPress={() => setPreviewUrl(item.lecturerIdUrl!)}
+                  style={styles.viewLink}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  activeOpacity={0.65}
+                >
+                  <Ionicons name="eye-outline" size={14} color={colors.textSecondary} />
+                  <Text style={[styles.viewLinkText, { color: colors.textSecondary }]}>{t('admin.view')}</Text>
                 </TouchableOpacity>
               )}
             </View>
           ) : null}
-          <View style={[styles.documentItem, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
-            <Ionicons name="image-outline" size={16} color={colors.textSecondary} />
+          {item.verificationSelfieUrl ? (
+            <View style={[styles.documentItem, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+              <Ionicons name="camera-outline" size={15} color={colors.textSecondary} />
+              <Text style={[styles.documentText, { color: colors.textSecondary }]}>
+                {isHebrewUi ? 'תמונת אימות פנים' : 'Face Verification Selfie'}
+              </Text>
+              <TouchableOpacity
+                onPress={() => setPreviewUrl(item.verificationSelfieUrl!)}
+                style={styles.viewLink}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.65}
+              >
+                <Ionicons name="eye-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.viewLinkText, { color: colors.textSecondary }]}>{t('admin.view')}</Text>
+              </TouchableOpacity>
+            </View>
+          ) : null}
+          <View style={[styles.documentItem, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }, isRtl && styles.rtlRow]}>
+            <Ionicons name="image-outline" size={15} color={colors.textSecondary} />
             <Text style={[styles.documentText, { color: colors.textSecondary }]}>
               {t('admin.profilePicture')}: {item.profilePictureUrl ? t('admin.uploaded') : t('admin.missing')}
             </Text>
             {item.profilePictureUrl && (
-              <TouchableOpacity onPress={() => setPreviewUrl(item.profilePictureUrl!)} style={[styles.viewButton, { backgroundColor: colors.surface, borderColor: colors.primary }]}>
-                <Ionicons name="eye-outline" size={14} color={colors.primary} />
-                <Text style={[styles.viewButtonText, { color: colors.primary }]}>{t('admin.view')}</Text>
+              <TouchableOpacity
+                onPress={() => setPreviewUrl(item.profilePictureUrl!)}
+                style={styles.viewLink}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                activeOpacity={0.65}
+              >
+                <Ionicons name="eye-outline" size={14} color={colors.textSecondary} />
+                <Text style={[styles.viewLinkText, { color: colors.textSecondary }]}>{t('admin.view')}</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -215,16 +252,16 @@ export default function PendingApprovalsScreen() {
       <View style={[styles.actionsRow, { borderTopColor: colors.border }, isRtl && styles.rtlRow]}>
         <TouchableOpacity style={[styles.actionButton, { backgroundColor: colors.primary }]} onPress={() => handleApprove(item.uid)} disabled={updatingUid === item.uid}>
           {updatingUid === item.uid ? <ActivityIndicator color={colors.textOnPrimary} /> : <>
-            <Ionicons name="checkmark-circle" size={18} color={colors.textOnPrimary} />
+            <Ionicons name="checkmark-circle" size={17} color={colors.textOnPrimary} />
             <Text style={[styles.actionText, { color: colors.textOnPrimary }]}>{t('admin.approve')}</Text>
           </>}
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.actionButton, styles.outlineActionButton, { backgroundColor: colors.surfaceElevated, borderColor: colors.danger }]}
+          style={[styles.actionButton, styles.outlineActionButton, { backgroundColor: colors.surface, borderColor: colors.danger }]}
           onPress={() => openRejectModal(item.uid)}
           disabled={updatingUid === item.uid}
         >
-          <Ionicons name="close-circle" size={18} color={colors.danger} />
+          <Ionicons name="close-circle" size={17} color={colors.danger} />
           <Text style={[styles.actionText, { color: colors.danger }]}>{t('admin.reject')}</Text>
         </TouchableOpacity>
       </View>
@@ -238,11 +275,7 @@ export default function PendingApprovalsScreen() {
         <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
           <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
-          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-            <Ionicons name="shield-checkmark-outline" size={14} color={colors.primary} />
-            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.pendingApprovals')}</Text>
-          </View>
-          <SectionTitle title={t('admin.pendingApprovals')} subtitle={t('admin.reviewPendingRegistrations')} />
+          <Text style={[styles.heroSubtitle, { color: colors.textSecondary }]}>{t('admin.reviewPendingRegistrations')}</Text>
           <View style={styles.adminHeaderActions}>
             <TouchableOpacity style={[styles.diagnosticsButton, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]} onPress={() => router.push('/admin/tutor-applications')}>
               <Ionicons name="school-outline" size={16} color={colors.primary} />
@@ -353,9 +386,8 @@ const styles = StyleSheet.create({
   heroWrap: { position: 'relative', overflow: 'hidden', borderRadius: 16, borderWidth: 1, padding: spacing.md, marginTop: spacing.sm, marginBottom: spacing.md },
   heroGlowPrimary: { position: 'absolute', width: 130, height: 130, borderRadius: 65, top: -72, right: -38, opacity: 0.08 },
   heroGlowAccent: { position: 'absolute', width: 100, height: 100, borderRadius: 50, bottom: -52, left: -26, opacity: 0.1 },
-  heroBadge: { alignSelf: 'flex-start', flexDirection: 'row', alignItems: 'center', borderRadius: 999, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 6, gap: 6, marginBottom: spacing.sm },
-  heroBadgeText: { fontSize: 12, fontWeight: '700' },
-  adminHeaderActions: { marginTop: 14, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, width: '100%', paddingHorizontal: 8 },
+  heroSubtitle: { fontSize: 14, fontWeight: '500', lineHeight: 20, marginBottom: spacing.md },
+  adminHeaderActions: { marginTop: 0, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 10, width: '100%', paddingHorizontal: 8 },
   diagnosticsButton: { marginTop: 0, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 8, flexDirection: 'row', alignItems: 'center', gap: 6 },
   diagnosticsButtonText: { fontSize: 13, fontWeight: '700' },
   loadingContainer: { alignItems: 'center', paddingVertical: 40, marginTop: 40, paddingHorizontal: 20 },
@@ -366,28 +398,29 @@ const styles = StyleSheet.create({
   usersList: { paddingTop: 8 },
   sectionTitle: { fontSize: 18, fontWeight: '700', marginBottom: 16, paddingHorizontal: 4 },
   card: { overflow: 'hidden', borderRadius: 16, padding: 16, marginBottom: 16 },
-  cardAccentLine: { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.6 },
-  cardHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
-  profileImage: { width: 60, height: 60, borderRadius: 30, marginRight: 12, borderWidth: 2 },
-  profilePlaceholder: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginRight: 12, borderWidth: 2 },
-  userInfo: { flex: 1 },
-  email: { fontSize: 16, fontWeight: '700', marginBottom: 4 },
-  smallText: { fontSize: 13, marginBottom: 6 },
-  roleBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: 999, borderWidth: 1, paddingHorizontal: 8, paddingVertical: 4, marginTop: 4 },
-  roleText: { fontSize: 10, fontWeight: '700', marginLeft: 4 },
-  statusPill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginBottom: 16, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, borderWidth: 1 },
-  statusPillText: { fontSize: 12, fontWeight: '600', marginLeft: 6 },
-  documentsSection: { marginBottom: 16, paddingTop: 12, borderTopWidth: 1 },
-  documentsTitle: { fontSize: 14, fontWeight: '700', marginBottom: 12 },
-  documentsList: { gap: 10 },
-  documentItem: { flexDirection: 'row', alignItems: 'center', borderRadius: 10, padding: 12, borderWidth: 1 },
-  documentText: { flex: 1, fontSize: 13, marginLeft: 10 },
-  viewButton: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8, borderWidth: 1 },
-  viewButtonText: { fontSize: 12, fontWeight: '600', marginLeft: 4 },
-  actionsRow: { flexDirection: 'row', gap: 8, paddingTop: 10, borderTopWidth: 1 },
-  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 12, minHeight: 38, gap: 6 },
+  cardAccentLine: { position: 'absolute', top: 0, left: 0, right: 0, height: 2, opacity: 0.35 },
+  cardHeader: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 12 },
+  profileImage: { width: 56, height: 56, borderRadius: 28, marginEnd: 12, borderWidth: 1 },
+  profilePlaceholder: { width: 56, height: 56, borderRadius: 28, justifyContent: 'center', alignItems: 'center', marginEnd: 12, borderWidth: 1 },
+  userInfo: { flex: 1, minWidth: 0 },
+  email: { fontSize: 15, fontWeight: '700', marginBottom: 2 },
+  namePrimary: { fontSize: 14, fontWeight: '600', marginBottom: 2 },
+  usernameSecondary: { fontSize: 12, fontWeight: '500', marginBottom: 6 },
+  roleBadge: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', borderRadius: radius.pill, borderWidth: 1, paddingHorizontal: 6, paddingVertical: 3, marginTop: 2, gap: 4 },
+  roleText: { fontSize: 10, fontWeight: '600' },
+  statusPill: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginBottom: 12, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.md, borderWidth: 1, gap: 5 },
+  statusPillText: { fontSize: 11, fontWeight: '500' },
+  documentsSection: { marginBottom: 12, paddingTop: 10, borderTopWidth: 1 },
+  documentsTitle: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
+  documentsList: { gap: 6 },
+  documentItem: { flexDirection: 'row', alignItems: 'center', borderRadius: radius.md, paddingVertical: 8, paddingHorizontal: 10, borderWidth: 1, gap: 8 },
+  documentText: { flex: 1, fontSize: 12, minWidth: 0 },
+  viewLink: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 4 },
+  viewLinkText: { fontSize: 11, fontWeight: '600' },
+  actionsRow: { flexDirection: 'row', gap: 10, paddingTop: 12, borderTopWidth: 1 },
+  actionButton: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', borderRadius: 12, minHeight: 40, gap: 6 },
   outlineActionButton: { borderWidth: 1 },
-  actionText: { fontSize: 15, fontWeight: '600' },
+  actionText: { fontSize: 14, fontWeight: '600' },
   modalBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center' },
   modalContent: { width: '95%', maxHeight: '90%', borderRadius: 20, backgroundColor: '#000000', padding: 16, alignItems: 'center' },
   modalImage: { width: '100%', height: 400, borderRadius: 12, backgroundColor: '#1a1a1a' },

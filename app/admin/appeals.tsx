@@ -2,7 +2,6 @@
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
-import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
 import { spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
@@ -332,21 +331,17 @@ export default function AdminAppealsScreen() {
 
   return (
     <AppScreen>
-      <AppHeader title={t('admin.appealsManagement')} onBack={() => router.back()} />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
-          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
-          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
-            <Ionicons name="chatbubble-ellipses-outline" size={14} color={colors.primary} />
-            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.appeals')}</Text>
-          </View>
-          <SectionTitle title={t('admin.appealsManagement')} subtitle={t('admin.appealsManagementDescription')} />
+      <View style={styles.screenInner}>
+        <View pointerEvents="none" style={styles.pageDecor}>
+          <View style={[styles.decorGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.decorGlowAccent, { backgroundColor: colors.accent }]} />
         </View>
-
+        <AppHeader title={t('admin.appealsManagement')} onBack={() => router.back()} />
+        <ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Pending Appeals Count */}
         {!loading && appeals.length > 0 && (
           <View style={styles.countContainer}>
@@ -540,98 +535,52 @@ export default function AdminAppealsScreen() {
           </View>
         </View>
       </Modal>
+      </View>
     </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#2563eb';
 const ACCENT_GREEN = '#2563eb';
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: 40,
+  screenInner: {
+    flex: 1,
   },
-  heroWrap: {
-    position: 'relative',
+  pageDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 260,
+    zIndex: 0,
     overflow: 'hidden',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
   },
-  heroGlowPrimary: {
+  decorGlowPrimary: {
     position: 'absolute',
     width: 130,
     height: 130,
     borderRadius: 65,
-    top: -72,
-    right: -38,
+    top: -56,
+    right: -36,
     opacity: 0.08,
   },
-  heroGlowAccent: {
+  decorGlowAccent: {
     position: 'absolute',
     width: 100,
     height: 100,
     borderRadius: 50,
-    bottom: -52,
-    left: -26,
+    top: 72,
+    left: -28,
     opacity: 0.1,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
-    marginBottom: spacing.sm,
+  mainScroll: {
+    flex: 1,
+    zIndex: 1,
   },
-  heroBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  backButtonHeader: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 5,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    textAlign: 'center',
-    paddingHorizontal: 20,
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 40,
   },
   countContainer: {
     paddingHorizontal: 20,

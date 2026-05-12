@@ -2,16 +2,24 @@
 import { supabase } from './supabaseClient';
 
 /**
- * העלאת תמונה (תעודת סטודנט / תמונת פרופיל) לסופאבייס
+ * העלאת תמונה (תעודת סטודנט / תמונת פרופיל / מסמכי מרצה / אימות פנים) לסופאבייס
  * מחזירה URL פומבי או null במקרה של שגיאה.
  *
  * folder:
  *  - 'student-cards'
  *  - 'profile-pictures'
+ *  - 'lecturer-ids'
+ *  - 'lecturer-profile-pictures'
+ *  - 'verification-selfies'
  */
 export async function uploadImageToSupabase(
   uri: string,
-  folder: 'student-cards' | 'profile-pictures',
+  folder:
+    | 'student-cards'
+    | 'profile-pictures'
+    | 'lecturer-ids'
+    | 'lecturer-profile-pictures'
+    | 'verification-selfies',
 ): Promise<string | null> {
   try {
     // 1. מושכים את הקובץ מה-URI המקומי (file://...)

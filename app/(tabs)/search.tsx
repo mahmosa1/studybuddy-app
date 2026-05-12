@@ -343,26 +343,8 @@ export default function SearchScreen() {
     return () => clearTimeout(debounce);
   }, [query, performSearch]);
 
-  const roleLabel = (r?: string) => {
-    if (!r) return '';
-    if (r === 'student') return t('auth.student', { defaultValue: 'Student' });
-    if (r === 'lecturer') return t('auth.lecturer', { defaultValue: 'Lecturer' });
-    return r;
-  };
-
   const renderUserResult = ({ item }: { item: UserResult }) => {
     const displayName = item.fullName || item.username || 'User';
-    const compact: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; tone: 'muted' | 'accent' }[] = [];
-    if (item.role && item.role !== 'admin') {
-      compact.push({ key: 'r', icon: 'person-outline', label: roleLabel(item.role), tone: 'muted' });
-    }
-    if (item.fieldOfStudy) {
-      compact.push({ key: 'f', icon: 'school-outline', label: item.fieldOfStudy, tone: 'muted' });
-    }
-    if (item.institution) {
-      compact.push({ key: 'i', icon: 'location-outline', label: item.institution, tone: 'accent' });
-    }
-    const chipsToShow = compact.slice(0, 2);
     const showUsernameLine =
       !!item.username && (!!item.fullName ? item.username !== item.fullName : displayName !== item.username);
 
@@ -373,7 +355,7 @@ export default function SearchScreen() {
         style={styles.resultCardWrap}
       >
         <AppCard style={[styles.resultCard, styles.userResultCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-          <View style={[styles.resultRow, styles.resultRowUser, styles.resultRowAlignStart, isHebrewUi && styles.rtlRow]}>
+          <View style={[styles.resultRow, styles.resultRowUser, isHebrewUi && styles.rtlRow]}>
             {item.profilePictureUrl ? (
               <Image source={{ uri: item.profilePictureUrl }} style={[styles.resultAvatar, { borderColor: colors.border }]} />
             ) : (
@@ -399,32 +381,6 @@ export default function SearchScreen() {
                 <Text style={[styles.userResultUsername, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                   @{item.username}
                 </Text>
-              ) : null}
-              {chipsToShow.length > 0 ? (
-                <View style={[styles.userChipsRow, isHebrewUi && styles.rtlRow]}>
-                  {chipsToShow.map((c) => (
-                    <View
-                      key={c.key}
-                      style={[
-                        styles.searchCompactChip,
-                        { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                        isHebrewUi && styles.searchCompactChipRtl,
-                      ]}
-                    >
-                      <Ionicons
-                        name={c.icon}
-                        size={11}
-                        color={c.tone === 'accent' ? colors.accent : colors.primary}
-                      />
-                      <Text
-                        style={[styles.searchCompactChipText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}
-                        numberOfLines={1}
-                      >
-                        {c.label}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
               ) : null}
             </View>
           </View>
@@ -653,15 +609,21 @@ export default function SearchScreen() {
                   </Text>
                 </View>
               ) : null}
+              {item.institution ? (
+                <View
+                  style={[
+                    styles.searchCompactChip,
+                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    isHebrewUi && styles.searchCompactChipRtl,
+                  ]}
+                >
+                  <Ionicons name="location-outline" size={11} color={colors.accent} />
+                  <Text style={[styles.searchCompactChipText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                    {item.institution}
+                  </Text>
+                </View>
+              ) : null}
             </View>
-            {item.institution ? (
-              <View style={[styles.buddyInstitutionRow, isHebrewUi && styles.rtlRow]}>
-                <Ionicons name="location-outline" size={12} color={colors.textSecondary} />
-                <Text style={[styles.buddyInstitutionText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
-                  {item.institution}
-                </Text>
-              </View>
-            ) : null}
           </View>
         </View>
         {item.phone ? (
@@ -1151,15 +1113,15 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   resultCardWrap: {
-    marginBottom: spacing.xs,
+    marginBottom: 3,
   },
   resultCard: {
-    paddingVertical: spacing.sm,
+    paddingVertical: 4,
     paddingHorizontal: spacing.sm,
   },
   userResultCard: {
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    paddingHorizontal: spacing.sm,
   },
   resultRow: {
     flexDirection: 'row',
@@ -1167,27 +1129,27 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   resultRowUser: {
-    gap: spacing.md,
+    gap: 6,
   },
   resultRowAlignStart: {
     alignItems: 'flex-start',
   },
   resultAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
   },
   resultAvatarPlaceholder: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     borderWidth: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   resultAvatarText: {
-    fontSize: 18,
+    fontSize: 14,
     fontWeight: '800',
   },
   resultInfo: {
@@ -1200,28 +1162,21 @@ const styles = StyleSheet.create({
     marginBottom: 0,
   },
   userResultName: {
-    fontSize: 17,
-    lineHeight: 22,
+    fontSize: 15,
+    lineHeight: 19,
     fontWeight: '800',
   },
   userResultUsername: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
-    marginTop: 4,
-    marginBottom: 2,
+    marginTop: 1,
+    marginBottom: 0,
   },
   resultUsername: {
     fontSize: 12,
     fontWeight: '600',
     marginTop: 2,
     marginBottom: 0,
-  },
-  userChipsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 5,
-    marginTop: 6,
-    alignItems: 'center',
   },
   searchCompactChip: {
     flexDirection: 'row',
@@ -1247,7 +1202,7 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   buddyCard: {
-    paddingVertical: spacing.sm,
+    paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
   },
   buddyTopRow: {
@@ -1265,7 +1220,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     alignSelf: 'flex-start',
     gap: 5,
-    marginTop: 5,
+    marginTop: 4,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: radius.pill,
@@ -1280,19 +1235,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 5,
-    marginTop: 6,
+    marginTop: 4,
     alignItems: 'center',
-  },
-  buddyInstitutionRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-  },
-  buddyInstitutionText: {
-    fontSize: 11,
-    fontWeight: '600',
-    flex: 1,
   },
   buddyActionsRow: {
     flexDirection: 'row',

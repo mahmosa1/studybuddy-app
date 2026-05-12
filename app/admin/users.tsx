@@ -2,7 +2,6 @@
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
-import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
 import { spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { db } from '@/lib/firebaseConfig';
@@ -333,22 +332,18 @@ export default function AdminUsersManagementScreen() {
 
   return (
     <AppScreen>
-      <AppHeader title={t('admin.userManagement')} onBack={() => router.back()} />
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
-          <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
-          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
-            <Ionicons name="shield-checkmark-outline" size={14} color={colors.primary} />
-            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>{t('admin.userManagement')}</Text>
-          </View>
-          <SectionTitle title={t('admin.userManagement')} subtitle={t('admin.userManagementDescription')} />
+      <View style={styles.screenInner}>
+        <View pointerEvents="none" style={styles.pageDecor}>
+          <View style={[styles.decorGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.decorGlowAccent, { backgroundColor: colors.accent }]} />
         </View>
-
-        <AppCard style={[styles.searchPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+        <AppHeader title={t('admin.userManagement')} onBack={() => router.back()} />
+        <ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <AppCard style={[styles.searchPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.searchBox, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }, isRtl && styles.rtlRow]}>
             <Ionicons
               name="search-outline"
@@ -442,56 +437,50 @@ export default function AdminUsersManagementScreen() {
           </View>
         )}
       </ScrollView>
+      </View>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollContent: {
-    paddingHorizontal: spacing.md,
-    paddingBottom: spacing.lg,
+  screenInner: {
+    flex: 1,
   },
-  heroWrap: {
-    position: 'relative',
+  pageDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 260,
+    zIndex: 0,
     overflow: 'hidden',
-    borderRadius: 16,
-    borderWidth: 1,
-    padding: spacing.md,
-    marginTop: spacing.sm,
-    marginBottom: spacing.md,
   },
-  heroGlowPrimary: {
+  decorGlowPrimary: {
     position: 'absolute',
     width: 130,
     height: 130,
     borderRadius: 65,
-    top: -72,
-    right: -38,
+    top: -56,
+    right: -36,
     opacity: 0.08,
   },
-  heroGlowAccent: {
+  decorGlowAccent: {
     position: 'absolute',
     width: 100,
     height: 100,
     borderRadius: 50,
-    bottom: -52,
-    left: -26,
+    top: 72,
+    left: -28,
     opacity: 0.1,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderRadius: 999,
-    borderWidth: 1,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    gap: 6,
-    marginBottom: spacing.sm,
+  mainScroll: {
+    flex: 1,
+    zIndex: 1,
   },
-  heroBadgeText: {
-    fontSize: 12,
-    fontWeight: '700',
+  scrollContent: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.lg,
   },
   searchPanel: {
     marginBottom: spacing.sm,

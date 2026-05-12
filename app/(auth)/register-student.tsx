@@ -1,4 +1,9 @@
 // app/(auth)/register-student.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
@@ -6,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
+  I18nManager,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -23,16 +29,25 @@ import { auth, db } from '@/lib/firebaseConfig';
 import { uploadImageToSupabase } from '@/lib/upload';
 import { createUserWithEmailAndPassword } from 'firebase/auth';
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function RegisterStudentScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
+  const isHebrewUi = i18n.language === 'he';
+  const isRtl = I18nManager.isRTL;
+
+  const inputAlign = { textAlign: (isHebrewUi ? 'right' : 'left') as 'right' | 'left', writingDirection: (isHebrewUi ? 'rtl' : 'ltr') as 'rtl' | 'ltr' };
 
   const [username, setUsername] = useState('');
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [phone, setPhone] = useState('');
   const [institution, setInstitution] = useState('');
   const [fieldOfStudy, setFieldOfStudy] = useState('');
@@ -40,10 +55,17 @@ export default function RegisterStudentScreen() {
   // Supabase image URLs
   const [studentCardUrl, setStudentCardUrl] = useState<string | null>(null);
   const [profilePictureUrl, setProfilePictureUrl] = useState<string | null>(null);
+  const [verificationSelfieUrl, setVerificationSelfieUrl] = useState<string | null>(null);
 
   const [uploadingCard, setUploadingCard] = useState(false);
   const [uploadingProfile, setUploadingProfile] = useState(false);
+  const [uploadingSelfie, setUploadingSelfie] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [currentStep, setCurrentStep] = useState(1);
+
+  const TOTAL_STEPS = 4;
+
+  const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
 
   const pickAndUploadImage = async (type: 'card' | 'profile') => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -97,6 +119,43 @@ export default function RegisterStudentScreen() {
     }
   };
 
+  const captureVerificationSelfieAndUpload = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert(
+        isHebrewUi ? 'נדרש אישור מצלמה' : 'Camera permission required',
+        isHebrewUi
+          ? 'אישור המצלמה נדרש כדי לצלם תמונת אימות פנים לבדיקה ידנית. אפשר להפעיל אותו בהגדרות המכשיר.'
+          : 'Camera access is required to take a face verification photo for manual review. You can enable it in your device settings.',
+      );
+      return;
+    }
+
+    const result = await ImagePicker.launchCameraAsync({
+      mediaTypes: 'images',
+      allowsEditing: true,
+      quality: 0.8,
+    });
+
+    if (result.canceled) return;
+
+    const uri = result.assets[0].uri;
+    setUploadingSelfie(true);
+    try {
+      const url = await uploadImageToSupabase(uri, 'verification-selfies');
+      if (!url) {
+        Alert.alert('Upload failed', 'Could not upload image. Please try again.');
+        return;
+      }
+      setVerificationSelfieUrl(url);
+    } catch (err) {
+      console.log('Verification selfie upload error:', err);
+      Alert.alert('Error', 'Unexpected error while uploading image.');
+    } finally {
+      setUploadingSelfie(false);
+    }
+  };
+
   const handleSubmit = async () => {
     if (!email || !password || !username) {
       Alert.alert('Missing fields', 'Username, email and password are required.');
@@ -112,6 +171,14 @@ export default function RegisterStudentScreen() {
       Alert.alert(
         'Student card required',
         'Please upload your student card before continuing.',
+      );
+      return;
+    }
+
+    if (!verificationSelfieUrl) {
+      Alert.alert(
+        'Face verification required',
+        'Please upload a face verification selfie for manual review before continuing.',
       );
       return;
     }
@@ -134,6 +201,7 @@ export default function RegisterStudentScreen() {
         fieldOfStudy,
         studentCardUrl,
         profilePictureUrl,
+        verificationSelfieUrl,
         createdAt: serverTimestamp(),
       });
 
@@ -157,74 +225,146 @@ export default function RegisterStudentScreen() {
     }
   };
 
-  return (
-    <KeyboardAvoidingView
-      style={{ flex: 1 }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+  const goToPreviousStep = () => setCurrentStep((s) => Math.max(1, s - 1));
+
+  const tryAdvanceStep = () => {
+    if (currentStep === 1) {
+      if (!fullName.trim() || !username.trim() || !email.trim() || !password || !confirmPassword) {
+        Alert.alert(
+          isHebrewUi ? 'שדות חסרים' : 'Missing fields',
+          isHebrewUi ? 'מלא/י את כל השדות כדי להמשיך.' : 'Please fill in all fields before continuing.',
+        );
+        return;
+      }
+      if (!isValidEmail(email)) {
+        Alert.alert(
+          isHebrewUi ? 'אימייל לא תקין' : 'Invalid email',
+          isHebrewUi ? 'הזן/י כתובת אימייל תקינה.' : 'Please enter a valid email address.',
+        );
+        return;
+      }
+      if (password.length < 6) {
+        Alert.alert(
+          isHebrewUi ? 'סיסמה קצרה מדי' : 'Password too short',
+          isHebrewUi
+            ? 'הסיסמה חייבת להכיל לפחות 6 תווים.'
+            : 'Password must be at least 6 characters.',
+        );
+        return;
+      }
+      if (password !== confirmPassword) {
+        Alert.alert(
+          isHebrewUi ? 'הסיסמאות אינן תואמות' : 'Passwords do not match',
+          isHebrewUi
+            ? 'ודאי שהסיסמה ואימות הסיסמה זהים.'
+            : 'Make sure the password and password verification are the same.',
+        );
+        return;
+      }
+    } else if (currentStep === 2) {
+      if (!institution.trim() || !fieldOfStudy.trim() || !phone.trim()) {
+        Alert.alert(
+          'Missing fields',
+          'Please fill in your university, field of study, and phone number before continuing.',
+        );
+        return;
+      }
+    } else if (currentStep === 3) {
+      if (!studentCardUrl) {
+        Alert.alert(
+          'Student card required',
+          'Please upload your student card before continuing.',
+        );
+        return;
+      }
+      if (!verificationSelfieUrl) {
+        Alert.alert(
+          isHebrewUi ? 'נדרשת תמונת אימות פנים' : 'Face verification required',
+          isHebrewUi
+            ? 'יש להעלות תמונת סלפי ברורה לבדיקה ידנית.'
+            : 'Please upload a clear face photo for manual review.',
+        );
+        return;
+      }
+    }
+    setCurrentStep((s) => Math.min(TOTAL_STEPS, s + 1));
+  };
+
+  const renderStepIndicator = () => (
+    <View style={styles.stepIndicatorWrap}>
+      <Text style={[styles.stepIndicatorLabel, { color: colors.textSecondary }]}>
+        {t('practice.setup.stepOf', { current: currentStep, total: TOTAL_STEPS })}
+      </Text>
+      <View style={[styles.stepDotsRow, isRtl && styles.stepDotsRowRtl]}>
+        {[1, 2, 3, 4].map((step) => (
+          <View
+            key={step}
+            style={[
+              styles.stepDot,
+              { backgroundColor: step <= currentStep ? colors.primary : colors.border },
+            ]}
+          />
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderSummaryRow = (label: string, value: string) => (
+    <View style={[styles.summaryRow, isRtl && styles.summaryRowRtl]}>
+      <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>{label}</Text>
+      <Text
+        style={[
+          styles.summaryValue,
+          { color: colors.textPrimary, textAlign: isRtl ? 'left' : 'right' },
+        ]}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonHeader}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <View style={styles.logoContainer}>
-            <Ionicons name="school" size={40} color="#ffffff" />
-          </View>
-          <Text style={styles.headerTitle}>{t('auth.studentRegistration')}</Text>
-          <Text style={styles.headerSubtitle}>
-            {t('auth.fillDetails')}
-          </Text>
-        </View>
+        {value}
+      </Text>
+    </View>
+  );
 
-        <View style={styles.card}>
+  const renderCurrentStep = () => {
+    if (currentStep === 1) {
+      return (
+        <AppCard style={styles.sectionCard}>
+          <Text style={[styles.sectionHeading, { color: colors.textPrimary }]}>{t('auth.register')}</Text>
 
-          {/* Username */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="person-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.username')} *</Text>
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.fullName')}</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="person-circle-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
               <TextInput
-                style={styles.input}
-                placeholder={t('auth.usernamePlaceholder')}
-                placeholderTextColor="#6b7280"
-                value={username}
-                onChangeText={setUsername}
-              />
-            </View>
-          </View>
-
-          {/* Full name */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="person-circle-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.fullName')}</Text>
-              <TextInput
-                style={styles.input}
+                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
                 placeholder={t('auth.fullNamePlaceholder')}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textSecondary}
                 value={fullName}
                 onChangeText={setFullName}
               />
             </View>
           </View>
 
-          {/* Email */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="mail-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.email')} *</Text>
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.username')} *</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="person-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
+                placeholder={t('auth.usernamePlaceholder')}
+                placeholderTextColor={colors.textSecondary}
+                value={username}
+                onChangeText={setUsername}
+              />
+            </View>
+          </View>
+
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.email')} *</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="mail-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
+              <TextInput
+                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
                 placeholder={t('auth.emailPlaceholder')}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textSecondary}
                 value={email}
                 onChangeText={setEmail}
                 keyboardType="email-address"
@@ -233,352 +373,598 @@ export default function RegisterStudentScreen() {
             </View>
           </View>
 
-          {/* Password */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="lock-closed-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.password')} *</Text>
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.password')} *</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, styles.inputWithTrailingToggle, { color: colors.textPrimary }, inputAlign]}
                 placeholder={t('auth.passwordPlaceholder')}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textSecondary}
                 value={password}
                 onChangeText={setPassword}
-                secureTextEntry
+                secureTextEntry={!showPassword}
               />
+              <TouchableOpacity
+                onPress={() => setShowPassword((v) => !v)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.inputRowSuffix}
+                activeOpacity={0.65}
+                accessibilityRole="button"
+                accessibilityLabel={isHebrewUi ? 'הצג או הסתר סיסמה' : 'Show or hide password'}
+              >
+                <Ionicons
+                  name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={showPassword ? colors.primary : colors.textSecondary}
+                />
+              </TouchableOpacity>
             </View>
           </View>
 
-          {/* Confirm password */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="lock-closed-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.confirmPassword')} *</Text>
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              {isHebrewUi ? 'אימות סיסמה' : t('auth.confirmPassword')} *
+            </Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
               <TextInput
-                style={styles.input}
-                placeholder={t('auth.confirmPasswordPlaceholder')}
-                placeholderTextColor="#6b7280"
+                style={[styles.input, styles.inputWithTrailingToggle, { color: colors.textPrimary }, inputAlign]}
+                placeholder={isHebrewUi ? 'הקלד שוב את הסיסמה' : t('auth.confirmPasswordPlaceholder')}
+                placeholderTextColor={colors.textSecondary}
                 value={confirmPassword}
                 onChangeText={setConfirmPassword}
-                secureTextEntry
+                secureTextEntry={!showConfirmPassword}
               />
+              <TouchableOpacity
+                onPress={() => setShowConfirmPassword((v) => !v)}
+                hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                style={styles.inputRowSuffix}
+                activeOpacity={0.65}
+                accessibilityRole="button"
+                accessibilityLabel={isHebrewUi ? 'הצג או הסתר אימות סיסמה' : 'Show or hide confirm password'}
+              >
+                <Ionicons
+                  name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                  size={20}
+                  color={showConfirmPassword ? colors.primary : colors.textSecondary}
+                />
+              </TouchableOpacity>
             </View>
           </View>
+        </AppCard>
+      );
+    }
 
-          {/* Phone */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="call-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.phoneNumber')}</Text>
-              <TextInput
-                style={styles.input}
-                placeholder={t('auth.phonePlaceholder')}
-                placeholderTextColor="#6b7280"
-                value={phone}
-                onChangeText={setPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
-          </View>
+    if (currentStep === 2) {
+      return (
+        <AppCard style={styles.sectionCard}>
+          <Text style={[styles.sectionHeading, { color: colors.textPrimary }]}>{t('auth.institution')}</Text>
 
-          {/* Institution */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="business-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.university')}</Text>
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.university')}</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="business-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
                 placeholder={t('auth.universityPlaceholder')}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textSecondary}
                 value={institution}
                 onChangeText={setInstitution}
               />
             </View>
           </View>
 
-          {/* Field of study */}
-          <View style={styles.inputGroup}>
-            <Ionicons name="book-outline" size={18} color="#6b7280" style={styles.inputIcon} />
-            <View style={styles.inputWrapper}>
-              <Text style={styles.label}>{t('auth.fieldOfStudy')}</Text>
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.fieldOfStudy')}</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="book-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
               <TextInput
-                style={styles.input}
+                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
                 placeholder={t('auth.fieldOfStudyPlaceholder')}
-                placeholderTextColor="#6b7280"
+                placeholderTextColor={colors.textSecondary}
                 value={fieldOfStudy}
                 onChangeText={setFieldOfStudy}
               />
             </View>
           </View>
 
-          {/* Student card */}
+          <View style={styles.fieldBlock}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.phoneNumber')}</Text>
+            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="call-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
+              <TextInput
+                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
+                placeholder={t('auth.phonePlaceholder')}
+                placeholderTextColor={colors.textSecondary}
+                value={phone}
+                onChangeText={setPhone}
+                keyboardType="phone-pad"
+              />
+            </View>
+          </View>
+        </AppCard>
+      );
+    }
+
+    if (currentStep === 3) {
+      return (
+        <AppCard style={styles.sectionCard}>
           <View style={styles.uploadSection}>
-            <Text style={styles.label}>{t('auth.uploadStudentCard')} *</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.profilePicture')} ({t('common.optional')})</Text>
             <TouchableOpacity
               style={[
                 styles.uploadButton,
-                studentCardUrl && styles.uploadButtonFilled,
+                {
+                  borderColor: profilePictureUrl ? colors.success : colors.border,
+                  backgroundColor: profilePictureUrl ? colors.surface : colors.surfaceMuted,
+                },
               ]}
-              onPress={() => pickAndUploadImage('card')}
-              disabled={uploadingCard}
+              onPress={() => pickAndUploadImage('profile')}
+              disabled={uploadingProfile}
+              activeOpacity={0.75}
             >
-              {uploadingCard ? (
-                <ActivityIndicator color="#ffffff" />
+              {uploadingProfile ? (
+                <ActivityIndicator color={colors.primary} />
               ) : (
-                <>
+                <View style={[styles.uploadButtonInner, isRtl && styles.uploadButtonInnerRtl]}>
                   <Ionicons
-                    name={studentCardUrl ? 'checkmark-circle' : 'cloud-upload-outline'}
+                    name={profilePictureUrl ? 'checkmark-circle' : 'image-outline'}
                     size={20}
-                    color={studentCardUrl ? '#ffffff' : ACCENT_GREEN}
-                    style={{ marginRight: 8 }}
+                    color={profilePictureUrl ? colors.success : colors.primary}
                   />
                   <Text
                     style={[
                       styles.uploadText,
-                      studentCardUrl && styles.uploadTextFilled,
+                      { color: profilePictureUrl ? colors.success : colors.textPrimary },
+                    ]}
+                  >
+                    {profilePictureUrl ? t('auth.profilePictureUploaded') : t('auth.uploadProfilePicture')}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {profilePictureUrl && (
+              <View style={[styles.previewContainer, { borderColor: colors.border }]}>
+                <Image source={{ uri: profilePictureUrl }} style={[styles.previewSmall, { borderColor: colors.border }]} />
+              </View>
+            )}
+          </View>
+
+          <View style={styles.uploadSection}>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.uploadStudentCard')} *</Text>
+            <TouchableOpacity
+              style={[
+                styles.uploadButton,
+                {
+                  borderColor: studentCardUrl ? colors.success : colors.border,
+                  backgroundColor: studentCardUrl ? colors.surface : colors.surfaceMuted,
+                },
+              ]}
+              onPress={() => pickAndUploadImage('card')}
+              disabled={uploadingCard}
+              activeOpacity={0.75}
+            >
+              {uploadingCard ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <View style={[styles.uploadButtonInner, isRtl && styles.uploadButtonInnerRtl]}>
+                  <Ionicons
+                    name={studentCardUrl ? 'checkmark-circle' : 'cloud-upload-outline'}
+                    size={20}
+                    color={studentCardUrl ? colors.success : colors.primary}
+                  />
+                  <Text
+                    style={[
+                      styles.uploadText,
+                      { color: studentCardUrl ? colors.success : colors.textPrimary },
                     ]}
                   >
                     {studentCardUrl ? t('auth.studentCardUploaded') : t('auth.uploadStudentCard')}
                   </Text>
-                </>
+                </View>
               )}
             </TouchableOpacity>
 
             {studentCardUrl && (
-              <View style={styles.previewContainer}>
+              <View style={[styles.previewContainer, { borderColor: colors.border }]}>
                 <Image source={{ uri: studentCardUrl }} style={styles.preview} />
               </View>
             )}
           </View>
 
-          {/* Profile picture */}
           <View style={styles.uploadSection}>
-            <Text style={styles.label}>{t('auth.profilePicture')} ({t('common.optional')})</Text>
+            <Text style={[styles.label, { color: colors.textSecondary }]}>
+              {isHebrewUi ? 'תמונת אימות פנים *' : 'Face Verification Selfie *'}
+            </Text>
+            <Text style={[styles.uploadCaption, { color: colors.textSecondary }]}>
+              {isHebrewUi ? 'תמונת אימות פנים לבדיקה ידנית' : 'Face verification image for manual review'}
+            </Text>
+            <Text style={[styles.uploadHelperText, { color: colors.textSecondary }]}>
+              {isHebrewUi
+                ? 'צלמי תמונת סלפי חדשה מהמצלמה כדי שנוכל לוודא שהמסמך שייך לך.'
+                : 'Take a new selfie with the camera so we can verify the document belongs to you.'}
+            </Text>
             <TouchableOpacity
               style={[
                 styles.uploadButton,
-                profilePictureUrl && styles.uploadButtonFilled,
+                {
+                  borderColor: verificationSelfieUrl ? colors.success : colors.border,
+                  backgroundColor: verificationSelfieUrl ? colors.surface : colors.surfaceMuted,
+                },
               ]}
-              onPress={() => pickAndUploadImage('profile')}
-              disabled={uploadingProfile}
+              onPress={captureVerificationSelfieAndUpload}
+              disabled={uploadingSelfie}
+              activeOpacity={0.75}
             >
-              {uploadingProfile ? (
-                <ActivityIndicator color="#ffffff" />
+              {uploadingSelfie ? (
+                <ActivityIndicator color={colors.primary} />
               ) : (
-                <>
+                <View style={[styles.uploadButtonInner, isRtl && styles.uploadButtonInnerRtl]}>
                   <Ionicons
-                    name={profilePictureUrl ? 'checkmark-circle' : 'image-outline'}
+                    name={verificationSelfieUrl ? 'checkmark-circle' : 'camera-outline'}
                     size={20}
-                    color={profilePictureUrl ? '#ffffff' : ACCENT_GREEN}
-                    style={{ marginRight: 8 }}
+                    color={verificationSelfieUrl ? colors.success : colors.primary}
                   />
                   <Text
                     style={[
                       styles.uploadText,
-                      profilePictureUrl && styles.uploadTextFilled,
+                      { color: verificationSelfieUrl ? colors.success : colors.textPrimary },
                     ]}
                   >
-                    {profilePictureUrl
-                      ? t('auth.profilePictureUploaded')
-                      : t('auth.uploadProfilePicture')}
+                    {verificationSelfieUrl
+                      ? isHebrewUi
+                        ? 'הועלה'
+                        : 'Uploaded'
+                      : isHebrewUi
+                        ? 'צלמי סלפי אימות'
+                        : 'Take Verification Selfie'}
                   </Text>
-                </>
+                </View>
               )}
             </TouchableOpacity>
 
-            {profilePictureUrl && (
-              <View style={styles.previewContainer}>
-                <Image source={{ uri: profilePictureUrl }} style={styles.previewSmall} />
+            {verificationSelfieUrl && (
+              <View style={[styles.previewContainer, { borderColor: colors.border }]}>
+                <Image source={{ uri: verificationSelfieUrl }} style={styles.preview} />
               </View>
             )}
           </View>
+        </AppCard>
+      );
+    }
 
-          {/* Submit */}
-          <TouchableOpacity
-            style={[styles.submitButton, loading && styles.submitButtonDisabled]}
-            onPress={handleSubmit}
-            disabled={loading || uploadingCard}
-          >
-            {loading ? (
-              <ActivityIndicator color="#ffffff" />
+    const profileStatus = profilePictureUrl
+      ? isHebrewUi
+        ? 'הועלה'
+        : 'Uploaded'
+      : isHebrewUi
+        ? 'לא הועלה'
+        : 'Not uploaded';
+    const cardStatus = studentCardUrl
+      ? isHebrewUi
+        ? 'הועלה'
+        : 'Uploaded'
+      : isHebrewUi
+        ? 'חסר'
+        : 'Missing';
+    const selfieSummaryStatus = verificationSelfieUrl
+      ? isHebrewUi
+        ? 'הועלתה'
+        : 'Uploaded'
+      : isHebrewUi
+        ? 'חסרה'
+        : 'Missing';
+
+    return (
+      <AppCard style={styles.sectionCard}>
+        <Text style={[styles.sectionHeading, { color: colors.textPrimary }]}>
+          {isHebrewUi ? 'סיכום' : 'Review'}
+        </Text>
+        {renderSummaryRow(t('auth.fullName'), fullName.trim() || '—')}
+        {renderSummaryRow(t('auth.username'), username.trim() || '—')}
+        {renderSummaryRow(t('auth.email'), email.trim() || '—')}
+        {renderSummaryRow(t('auth.password'), '••••••••')}
+        {renderSummaryRow(t('auth.university'), institution.trim() || '—')}
+        {renderSummaryRow(t('auth.fieldOfStudy'), fieldOfStudy.trim() || '—')}
+        {renderSummaryRow(t('auth.phoneNumber'), phone.trim() || '—')}
+        {renderSummaryRow(t('auth.profilePicture'), profileStatus)}
+        {renderSummaryRow(t('auth.uploadStudentCard'), cardStatus)}
+        {renderSummaryRow(
+          isHebrewUi ? 'תמונת אימות פנים' : 'Face Verification Selfie',
+          selfieSummaryStatus,
+        )}
+      </AppCard>
+    );
+  };
+
+  const backButtonEdge = isRtl ? { right: layout.screenPadding } : { left: layout.screenPadding };
+
+  return (
+    <AppScreen>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <View style={[styles.backButtonContainer, backButtonEdge]}>
+            <TouchableOpacity
+              style={[
+                styles.backButton,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => router.back()}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name={isRtl ? 'chevron-forward' : 'chevron-back'}
+                size={22}
+                color={colors.primary}
+              />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.hero}>
+            <View
+              style={[
+                styles.logoRing,
+                {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <View style={[styles.logoInner, { backgroundColor: colors.surfaceMuted }]}>
+                <Ionicons name="school" size={30} color={colors.primary} />
+              </View>
+            </View>
+            <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>{t('auth.studentRegistration')}</Text>
+            <Text style={[styles.heroTagline, { color: colors.textSecondary }]}>{t('auth.fillDetails')}</Text>
+          </View>
+
+          {renderStepIndicator()}
+          {renderCurrentStep()}
+
+          <View style={[styles.stepNav, { paddingBottom: insets.bottom + spacing.xl + spacing.sm }]}>
+            {currentStep === 4 ? (
+              <>
+                <PrimaryButton
+                  label={t('auth.createAccount')}
+                  onPress={handleSubmit}
+                  disabled={loading || uploadingCard || uploadingSelfie}
+                  loading={loading}
+                />
+                <PrimaryButton variant="secondary" label={t('common.back')} onPress={goToPreviousStep} />
+              </>
             ) : (
               <>
-                <Ionicons name="checkmark-circle-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-                <Text style={styles.submitText}>{t('auth.createAccount')}</Text>
+                {currentStep > 1 && (
+                  <PrimaryButton variant="secondary" label={t('common.back')} onPress={goToPreviousStep} />
+                )}
+                <PrimaryButton
+                  label={t('common.next')}
+                  onPress={tryAdvanceStep}
+                  disabled={currentStep === 3 && (uploadingCard || uploadingProfile || uploadingSelfie)}
+                />
               </>
             )}
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
-  scrollContent: {
-    flexGrow: 1,
-    paddingBottom: 40,
-  },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  backButtonHeader: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  logoContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: ACCENT_GREEN,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: '#ffffff',
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 10,
-    marginBottom: 12,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginBottom: 6,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  card: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 5,
-    marginTop: 20,
-  },
-  inputGroup: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  inputIcon: {
-    marginTop: 28,
-    marginRight: 12,
-  },
-  inputWrapper: {
+  flex: {
     flex: 1,
   },
-  label: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#374151',
-    marginBottom: 6,
+  scrollContent: {
+    flexGrow: 1,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
   },
-  input: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    color: '#111827',
+  backButtonContainer: {
+    position: 'absolute',
+    top: spacing.xs,
+    zIndex: 10,
+  },
+  backButton: {
+    width: 40,
+    height: 34,
+    borderRadius: radius.pill,
     borderWidth: 1,
-    borderColor: '#374151',
-    fontSize: 15,
-  },
-  uploadSection: {
-    marginBottom: 20,
-  },
-  uploadButton: {
-    flexDirection: 'row',
-    marginTop: 8,
-    borderRadius: 12,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
   },
-  uploadButtonFilled: {
-    backgroundColor: ACCENT_GREEN,
-    borderColor: ACCENT_GREEN,
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl + spacing.md,
+    paddingBottom: spacing.md,
+  },
+  logoRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  logoInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    ...typography.h1,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+  },
+  heroTagline: {
+    ...typography.body,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    lineHeight: 20,
+  },
+  sectionCard: {
+    marginBottom: spacing.md,
+  },
+  sectionHeading: {
+    ...typography.h3,
+    marginBottom: spacing.md,
+  },
+  fieldBlock: {
+    marginBottom: spacing.md,
+  },
+  label: {
+    ...typography.caption,
+    marginBottom: spacing.xs,
+    fontWeight: '600',
+  },
+  inputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+  },
+  inputRowIcon: {
+    marginEnd: spacing.sm,
+  },
+  input: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '500',
+    paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+  },
+  inputWithTrailingToggle: {
+    minWidth: 0,
+    paddingEnd: spacing.md,
+  },
+  inputRowSuffix: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'stretch',
+    marginStart: spacing.xs,
+    minWidth: 32,
+  },
+  uploadSection: {
+    marginBottom: spacing.lg,
+  },
+  uploadCaption: {
+    ...typography.caption,
+    fontWeight: '600',
+    marginTop: spacing.xs,
+    lineHeight: 18,
+  },
+  uploadHelperText: {
+    ...typography.caption,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    lineHeight: 18,
+    fontWeight: '500',
+  },
+  uploadButton: {
+    marginTop: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  uploadButtonInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.sm,
+  },
+  uploadButtonInnerRtl: {
+    flexDirection: 'row-reverse',
   },
   uploadText: {
-    color: ACCENT_GREEN,
     fontWeight: '600',
     fontSize: 14,
-  },
-  uploadTextFilled: {
-    color: '#ffffff',
+    flexShrink: 1,
+    textAlign: 'center',
   },
   previewContainer: {
-    marginTop: 12,
-    borderRadius: 12,
+    marginTop: spacing.md,
+    borderRadius: radius.md,
     overflow: 'hidden',
+    borderWidth: 1,
   },
   preview: {
     width: '100%',
     height: 180,
-    borderRadius: 12,
+    borderRadius: radius.md,
   },
   previewSmall: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    borderWidth: 3,
-    borderColor: PRIMARY_GREEN,
+    borderWidth: 1,
+    alignSelf: 'center',
   },
-  submitButton: {
-    flexDirection: 'row',
-    marginTop: 24,
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 16,
-    borderRadius: 12,
+  stepIndicatorWrap: {
+    marginBottom: spacing.md,
     alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  submitButtonDisabled: {
-    opacity: 0.7,
-  },
-  submitText: {
-    color: '#ffffff',
-    fontSize: 16,
+  stepIndicatorLabel: {
+    ...typography.caption,
     fontWeight: '600',
+    marginBottom: spacing.sm,
+  },
+  stepDotsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
+  stepDotsRowRtl: {
+    flexDirection: 'row-reverse',
+  },
+  stepDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  stepNav: {
+    marginTop: spacing.md,
+    gap: spacing.sm,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+    gap: spacing.md,
+  },
+  summaryRowRtl: {
+    flexDirection: 'row-reverse',
+  },
+  summaryLabel: {
+    ...typography.caption,
+    fontWeight: '600',
+    flexShrink: 0,
+    maxWidth: '42%',
+  },
+  summaryValue: {
+    ...typography.body,
+    fontWeight: '500',
+    flex: 1,
   },
 });

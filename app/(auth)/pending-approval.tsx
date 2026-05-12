@@ -1,4 +1,9 @@
 // app/(auth)/pending-approval.tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -8,6 +13,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
+  I18nManager,
   Image,
   Keyboard,
   KeyboardAvoidingView,
@@ -27,7 +33,16 @@ import { collection, doc, getDoc, getDocs, query, serverTimestamp, setDoc, where
 
 export default function PendingApprovalScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const isHebrewUi = i18n.language === 'he';
+  const isRtl = I18nManager.isRTL;
+
+  const inputAlign = {
+    textAlign: (isHebrewUi ? 'right' : 'left') as 'right' | 'left',
+    writingDirection: (isHebrewUi ? 'rtl' : 'ltr') as 'rtl' | 'ltr',
+  };
+
   const [userStatus, setUserStatus] = useState<'pending' | 'rejected' | null>(null);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -121,7 +136,7 @@ export default function PendingApprovalScreen() {
   const handleSubmitAppeal = async () => {
     // Dismiss keyboard when submitting
     Keyboard.dismiss();
-    
+
     if (!appealMessage.trim()) {
       Alert.alert(t('common.required'), t('auth.appealMessageRequired'));
       return;
@@ -132,7 +147,7 @@ export default function PendingApprovalScreen() {
 
     try {
       setSubmittingAppeal(true);
-      
+
       // Check if user already has a pending appeal
       const appealsRef = collection(db, 'appeals');
       const pendingAppealsQuery = query(
@@ -141,7 +156,7 @@ export default function PendingApprovalScreen() {
         where('status', '==', 'pending')
       );
       const pendingAppealsSnap = await getDocs(pendingAppealsQuery);
-      
+
       if (!pendingAppealsSnap.empty) {
         Alert.alert(
           t('auth.appealAlreadySubmitted'),
@@ -150,7 +165,7 @@ export default function PendingApprovalScreen() {
         setSubmittingAppeal(false);
         return;
       }
-      
+
       // If image is selected but not uploaded yet, upload it first
       let finalImageUrl = appealImageUrl;
       if (appealImageUri && !appealImageUrl) {
@@ -198,89 +213,138 @@ export default function PendingApprovalScreen() {
 
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator size="large" color={PRIMARY_GREEN} />
-      </View>
+      <AppScreen>
+        <View style={styles.center}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </AppScreen>
     );
   }
 
   const isRejected = userStatus === 'rejected';
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.logoContainer}>
-            <Ionicons
-              name={isRejected ? 'close-circle' : 'hourglass-outline'}
-              size={48}
-              color="#ffffff"
-            />
+        <View style={styles.hero}>
+          <View
+            style={[
+              styles.logoRing,
+              {
+                backgroundColor: colors.surface,
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <View
+              style={[
+                styles.logoInner,
+                {
+                  backgroundColor: isRejected ? colors.dangerSurface : colors.surfaceMuted,
+                },
+              ]}
+            >
+              <Ionicons
+                name={isRejected ? 'close-circle-outline' : 'hourglass-outline'}
+                size={30}
+                color={isRejected ? colors.danger : colors.warning}
+              />
+            </View>
           </View>
-          <Text style={styles.headerTitle}>StudyBuddy</Text>
-          <Text style={styles.headerSubtitle}>
-            Your smart companion for better studying
-          </Text>
+          <Text style={[styles.heroTitle, { color: colors.textPrimary }]}>{t('auth.studybuddy')}</Text>
+          <Text style={[styles.heroTagline, { color: colors.textSecondary }]}>{t('auth.tagline')}</Text>
         </View>
 
-        {/* Status Card */}
-        <View style={styles.card}>
-          <View style={[styles.statusIconContainer, isRejected && styles.statusIconContainerRejected]}>
+        <AppCard style={styles.statusCard}>
+          <View
+            style={[
+              styles.statusIconWrap,
+              {
+                backgroundColor: isRejected ? colors.dangerSurface : colors.surfaceMuted,
+                borderColor: isRejected ? colors.dangerBorder : colors.border,
+              },
+            ]}
+          >
             <Ionicons
               name={isRejected ? 'close-circle' : 'time-outline'}
-              size={64}
-              color={isRejected ? '#ef4444' : PRIMARY_GREEN}
+              size={40}
+              color={isRejected ? colors.danger : colors.warning}
             />
           </View>
-          <Text style={styles.cardTitle}>
+
+          <Text style={[styles.cardTitle, { color: colors.textPrimary }]}>
             {isRejected ? t('auth.accountRejected') : t('auth.accountUnderReview')}
           </Text>
-          <Text style={styles.cardText}>
-            {isRejected
-              ? t('auth.accountRejectedMessage')
-              : t('auth.accountUnderReviewMessage')}
+          <Text style={[styles.cardText, { color: colors.textSecondary }]}>
+            {isRejected ? t('auth.accountRejectedMessage') : t('auth.accountUnderReviewMessage')}
           </Text>
 
           {isRejected && rejectionReason && (
-            <View style={styles.rejectionReasonBox}>
+            <View
+              style={[
+                styles.rejectionReasonBox,
+                {
+                  backgroundColor: colors.dangerSurface,
+                  borderColor: colors.dangerBorder,
+                },
+              ]}
+            >
               <View style={styles.rejectionReasonHeader}>
-                <Ionicons name="information-circle" size={20} color="#ef4444" />
-                <Text style={styles.rejectionReasonTitle}>{t('admin.rejectionReason')}</Text>
+                <Ionicons name="information-circle-outline" size={20} color={colors.danger} />
+                <Text style={[styles.rejectionReasonTitle, { color: colors.danger }]}>
+                  {t('admin.rejectionReason')}
+                </Text>
               </View>
-              <Text style={styles.rejectionReasonText}>{rejectionReason}</Text>
+              <Text style={[styles.rejectionReasonText, { color: colors.textPrimary }]}>{rejectionReason}</Text>
             </View>
           )}
 
-          <View style={[styles.badge, isRejected && styles.badgeRejected]}>
+          <View
+            style={[
+              styles.badge,
+              {
+                backgroundColor: isRejected ? colors.dangerSurface : colors.surfaceMuted,
+                borderColor: isRejected ? colors.dangerBorder : colors.border,
+              },
+            ]}
+          >
             <Ionicons
-              name={isRejected ? 'close-circle' : 'checkmark-circle-outline'}
+              name={isRejected ? 'close-circle' : 'time-outline'}
               size={16}
-              color={isRejected ? '#ef4444' : PRIMARY_GREEN}
+              color={isRejected ? colors.danger : colors.warning}
             />
-            <Text style={[styles.badgeText, isRejected && styles.badgeTextRejected]}>
+            <Text style={[styles.badgeText, { color: isRejected ? colors.danger : colors.textPrimary }]}>
               {isRejected ? t('admin.status.rejected') : t('admin.status.pending')}
             </Text>
           </View>
 
           {isRejected && (
-            <TouchableOpacity
-              style={styles.appealButton}
+            <PrimaryButton
+              label={t('auth.submitAppeal')}
               onPress={() => setAppealModalVisible(true)}
-            >
-              <Ionicons name="chatbubble-ellipses-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-              <Text style={styles.appealButtonText}>{t('auth.submitAppeal')}</Text>
-            </TouchableOpacity>
+              style={styles.appealPrimary}
+            />
           )}
 
-          <TouchableOpacity style={styles.button} onPress={handleLogout}>
-            <Ionicons name="log-out-outline" size={20} color="#ffffff" style={{ marginRight: 8 }} />
-            <Text style={styles.buttonText}>{t('auth.backToLogin')}</Text>
+          <TouchableOpacity
+            style={[
+              styles.logoutButton,
+              {
+                borderColor: colors.danger,
+                backgroundColor: colors.surface,
+              },
+            ]}
+            onPress={handleLogout}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="log-out-outline" size={20} color={colors.danger} style={styles.logoutIcon} />
+            <Text style={[styles.logoutButtonText, { color: colors.danger }]}>{t('auth.backToLogin')}</Text>
           </TouchableOpacity>
-        </View>
+        </AppCard>
       </ScrollView>
 
       {/* Appeal Modal */}
@@ -295,7 +359,7 @@ export default function PendingApprovalScreen() {
         }}
       >
         <KeyboardAvoidingView
-          style={styles.modalBackdrop}
+          style={[styles.modalBackdrop, { backgroundColor: 'rgba(15, 23, 42, 0.45)' }]}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
@@ -306,27 +370,44 @@ export default function PendingApprovalScreen() {
               setAppealModalVisible(false);
               setAppealMessage('');
             }}
-            style={styles.modalBackdrop}
+            style={styles.modalBackdropFill}
           >
             <TouchableOpacity activeOpacity={1} onPress={(e) => e.stopPropagation()}>
-              <View style={styles.appealModalContent}>
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  keyboardShouldPersistTaps="handled"
-                >
+              <View
+                style={[
+                  styles.appealModalContent,
+                  {
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
                   <View style={styles.appealModalHeader}>
-                    <Ionicons name="chatbubble-ellipses" size={24} color={ACCENT_GREEN} />
-                    <Text style={styles.appealModalTitle}>Submit Appeal</Text>
+                    <View style={[styles.appealModalIconWrap, { backgroundColor: colors.surfaceMuted }]}>
+                      <Ionicons name="chatbubble-ellipses-outline" size={22} color={colors.primary} />
+                    </View>
+                    <Text style={[styles.appealModalTitle, { color: colors.textPrimary }]}>{t('auth.submitAppeal')}</Text>
                   </View>
-                  <Text style={styles.appealModalSubtitle}>
-                    Please explain why you believe your registration should be approved. An admin will review your appeal.
+                  <Text style={[styles.appealModalSubtitle, { color: colors.textSecondary }]}>
+                    {t('auth.appealModalSubtitle')}
                   </Text>
 
-                  <Text style={styles.appealModalLabel}>Your Message *</Text>
+                  <Text style={[styles.appealModalLabel, { color: colors.textSecondary }]}>
+                    {t('admin.appealMessage')} *
+                  </Text>
                   <TextInput
-                    style={styles.appealModalInput}
+                    style={[
+                      styles.appealModalInput,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.border,
+                        color: colors.textPrimary,
+                      },
+                      inputAlign,
+                    ]}
                     placeholder={t('auth.appealMessagePlaceholder')}
-                    placeholderTextColor="#6b7280"
+                    placeholderTextColor={colors.textSecondary}
                     value={appealMessage}
                     onChangeText={setAppealMessage}
                     multiline
@@ -334,42 +415,53 @@ export default function PendingApprovalScreen() {
                     textAlignVertical="top"
                   />
 
-                  <Text style={styles.appealModalLabel}>
+                  <Text style={[styles.appealModalLabel, { color: colors.textSecondary }]}>
                     {t('auth.supportingImageOptional')}
                   </Text>
-                  <Text style={styles.appealModalHelperText}>
+                  <Text style={[styles.appealModalHelperText, { color: colors.textSecondary }]}>
                     {t('auth.supportingImageHelper')}
                   </Text>
 
                   {appealImageUri ? (
-                    <View style={styles.imagePreviewContainer}>
+                    <View style={[styles.imagePreviewContainer, { borderColor: colors.border }]}>
                       <Image source={{ uri: appealImageUri }} style={styles.imagePreview} />
                       {uploadingImage ? (
                         <View style={styles.imageOverlay}>
-                          <ActivityIndicator size="large" color="#ffffff" />
-                          <Text style={styles.uploadingText}>{t('common.uploading')}</Text>
+                          <ActivityIndicator size="large" color={colors.primary} />
+                          <Text style={[styles.uploadingText, { color: colors.textOnPrimary }]}>
+                            {t('common.uploading')}
+                          </Text>
                         </View>
                       ) : null}
                       <TouchableOpacity
-                        style={styles.removeImageButton}
+                        style={[styles.removeImageButton, { backgroundColor: colors.surface, borderColor: colors.border }]}
                         onPress={handleRemoveImage}
                       >
-                        <Ionicons name="close-circle" size={24} color="#ef4444" />
+                        <Ionicons name="close-circle" size={24} color={colors.danger} />
                       </TouchableOpacity>
                     </View>
                   ) : (
                     <TouchableOpacity
-                      style={styles.uploadImageButton}
+                      style={[
+                        styles.uploadImageButton,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: colors.surfaceMuted,
+                        },
+                      ]}
                       onPress={handlePickImage}
                       disabled={uploadingImage}
+                      activeOpacity={0.75}
                     >
                       {uploadingImage ? (
-                        <ActivityIndicator color={PRIMARY_GREEN} />
+                        <ActivityIndicator color={colors.primary} />
                       ) : (
-                        <>
-                          <Ionicons name="image-outline" size={24} color={PRIMARY_GREEN} />
-                          <Text style={styles.uploadImageButtonText}>{t('common.uploadImage')}</Text>
-                        </>
+                        <View style={[styles.uploadButtonInner, isRtl && styles.uploadButtonInnerRtl]}>
+                          <Ionicons name="image-outline" size={22} color={colors.primary} />
+                          <Text style={[styles.uploadImageButtonText, { color: colors.textPrimary }]}>
+                            {t('common.uploadImage')}
+                          </Text>
+                        </View>
                       )}
                     </TouchableOpacity>
                   )}
@@ -377,7 +469,13 @@ export default function PendingApprovalScreen() {
 
                 <View style={styles.appealModalButtons}>
                   <TouchableOpacity
-                    style={[styles.appealModalButton, styles.appealModalCancelButton]}
+                    style={[
+                      styles.appealModalButton,
+                      {
+                        backgroundColor: colors.surfaceMuted,
+                        borderColor: colors.border,
+                      },
+                    ]}
                     onPress={() => {
                       Keyboard.dismiss();
                       setAppealModalVisible(false);
@@ -386,295 +484,239 @@ export default function PendingApprovalScreen() {
                       setAppealImageUrl(null);
                     }}
                   >
-                    <Text style={styles.appealModalCancelText}>{t('common.cancel')}</Text>
+                    <Text style={[styles.appealModalCancelText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.appealModalButton, styles.appealModalConfirmButton]}
-                    onPress={handleSubmitAppeal}
-                    disabled={submittingAppeal}
-                  >
-                    {submittingAppeal ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <>
-                        <Ionicons name="send-outline" size={18} color="#ffffff" style={{ marginRight: 6 }} />
-                        <Text style={styles.appealModalConfirmText}>{t('auth.submitAppeal')}</Text>
-                      </>
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.appealSubmitWrap}>
+                    <PrimaryButton
+                      label={t('auth.submitAppeal')}
+                      onPress={handleSubmitAppeal}
+                      disabled={submittingAppeal}
+                      loading={submittingAppeal}
+                      style={styles.appealSubmitButton}
+                    />
+                  </View>
                 </View>
               </View>
             </TouchableOpacity>
           </TouchableOpacity>
         </KeyboardAvoidingView>
       </Modal>
-    </View>
+    </AppScreen>
   );
 }
 
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
   scrollContent: {
-    paddingBottom: 40,
+    flexGrow: 1,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.xs,
   },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 80,
-    paddingBottom: 40,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+  center: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 16,
   },
-  headerTitle: {
-    fontSize: 32,
-    fontWeight: '800',
-    color: '#ffffff',
-    marginBottom: 6,
+  hero: {
+    alignItems: 'center',
+    paddingTop: spacing.xxl + spacing.md,
+    paddingBottom: spacing.md,
   },
-  headerSubtitle: {
-    fontSize: 15,
-    color: '#ffffff',
-    opacity: 0.9,
+  logoRing: {
+    width: 76,
+    height: 76,
+    borderRadius: 38,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.sm,
+  },
+  logoInner: {
+    width: 62,
+    height: 62,
+    borderRadius: 31,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  heroTitle: {
+    ...typography.h1,
     textAlign: 'center',
-    paddingHorizontal: 20,
+    marginBottom: spacing.sm,
   },
-  card: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 24,
-    padding: 32,
+  heroTagline: {
+    ...typography.body,
+    textAlign: 'center',
+    paddingHorizontal: spacing.md,
+    lineHeight: 20,
+  },
+  statusCard: {
+    marginTop: -spacing.sm,
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 5,
-    marginTop: 20,
   },
-  statusIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#dbeafe',
+  statusIconWrap: {
+    width: 88,
+    height: 88,
+    borderRadius: 44,
+    borderWidth: 1,
+    alignItems: 'center',
     justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: spacing.lg,
   },
   cardTitle: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 12,
+    ...typography.h3,
+    marginBottom: spacing.sm,
     textAlign: 'center',
   },
   cardText: {
-    fontSize: 15,
-    color: '#6b7280',
-    marginBottom: 24,
+    ...typography.body,
+    marginBottom: spacing.lg,
     textAlign: 'center',
     lineHeight: 22,
   },
-  badge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'center',
-    backgroundColor: '#dbeafe',
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
-  },
-  badgeText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: ACCENT_GREEN,
-    marginLeft: 8,
-  },
-  button: {
-    flexDirection: 'row',
-    width: '100%',
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  buttonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  statusIconContainerRejected: {
-    backgroundColor: '#fee2e2',
-  },
-  badgeRejected: {
-    backgroundColor: '#fee2e2',
-    borderColor: '#ef4444',
-  },
-  badgeTextRejected: {
-    color: '#ef4444',
-  },
   rejectionReasonBox: {
     width: '100%',
-    backgroundColor: '#fef2f2',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 20,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
     borderWidth: 1,
-    borderColor: '#fecaca',
   },
   rejectionReasonHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 10,
+    gap: spacing.sm,
+    marginBottom: spacing.sm,
   },
   rejectionReasonTitle: {
     fontSize: 16,
     fontWeight: '700',
-    color: '#ef4444',
-    marginLeft: 8,
   },
   rejectionReasonText: {
     fontSize: 14,
-    color: '#991b1b',
     lineHeight: 20,
   },
-  appealButton: {
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    alignSelf: 'center',
+    borderRadius: radius.pill,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+  },
+  badgeText: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  appealPrimary: {
+    alignSelf: 'stretch',
+    width: '100%',
+    marginBottom: spacing.sm,
+  },
+  logoutButton: {
     flexDirection: 'row',
     width: '100%',
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 14,
-    borderRadius: 12,
+    paddingVertical: spacing.md,
+    borderRadius: radius.md,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
+    borderWidth: 1,
   },
-  appealButtonText: {
-    color: '#ffffff',
-    fontSize: 15,
+  logoutIcon: {
+    marginEnd: spacing.sm,
+  },
+  logoutButtonText: {
+    fontSize: 16,
     fontWeight: '600',
   },
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    paddingHorizontal: layout.screenPadding,
+  },
+  modalBackdropFill: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
   appealModalContent: {
-    width: '90%',
-    borderRadius: 20,
-    backgroundColor: '#ffffff',
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    padding: spacing.lg,
+    maxHeight: '88%',
   },
   appealModalHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 12,
+    gap: spacing.md,
+    marginBottom: spacing.sm,
+  },
+  appealModalIconWrap: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   appealModalTitle: {
-    fontSize: 22,
-    fontWeight: '700',
-    color: '#111827',
-    marginLeft: 10,
+    ...typography.h3,
+    flex: 1,
   },
   appealModalSubtitle: {
-    fontSize: 14,
-    color: '#6b7280',
-    marginBottom: 20,
+    ...typography.body,
+    marginBottom: spacing.lg,
     lineHeight: 20,
   },
   appealModalLabel: {
-    fontSize: 14,
+    ...typography.caption,
     fontWeight: '600',
-    color: '#374151',
-    marginBottom: 8,
+    marginBottom: spacing.xs,
   },
   appealModalInput: {
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 14,
+    borderRadius: radius.md,
+    padding: spacing.md,
     borderWidth: 1,
-    borderColor: '#374151',
     fontSize: 15,
-    color: '#111827',
     minHeight: 120,
     textAlignVertical: 'top',
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   appealModalHelperText: {
     fontSize: 12,
-    color: '#6b7280',
-    marginBottom: 12,
+    marginBottom: spacing.sm,
     lineHeight: 16,
   },
   uploadImageButton: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
+    minHeight: 48,
+    justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  uploadButtonInner: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#dbeafe',
-    borderRadius: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
-    borderStyle: 'dashed',
-    marginBottom: 20,
-    gap: 8,
+    gap: spacing.sm,
+  },
+  uploadButtonInnerRtl: {
+    flexDirection: 'row-reverse',
   },
   uploadImageButtonText: {
     fontSize: 15,
     fontWeight: '600',
-    color: ACCENT_GREEN,
   },
   imagePreviewContainer: {
     position: 'relative',
-    borderRadius: 12,
+    borderRadius: radius.md,
     overflow: 'hidden',
-    marginBottom: 20,
-    borderWidth: 2,
-    borderColor: ACCENT_GREEN,
+    marginBottom: spacing.md,
+    borderWidth: 1,
   },
   imagePreview: {
     width: '100%',
@@ -682,66 +724,44 @@ const styles = StyleSheet.create({
     resizeMode: 'cover',
   },
   imageOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0,0,0,0.5)',
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(15, 23, 42, 0.55)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   uploadingText: {
-    color: '#ffffff',
-    marginTop: 8,
+    marginTop: spacing.sm,
     fontSize: 14,
     fontWeight: '600',
   },
   removeImageButton: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    backgroundColor: '#ffffff',
+    top: spacing.sm,
+    end: spacing.sm,
     borderRadius: 20,
     padding: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 4,
+    borderWidth: 1,
   },
   appealModalButtons: {
     flexDirection: 'row',
-    gap: 12,
+    gap: spacing.sm,
+    marginTop: spacing.md,
   },
   appealModalButton: {
     flex: 1,
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
-    paddingVertical: 14,
-  },
-  appealModalCancelButton: {
-    backgroundColor: '#374151',
+    borderRadius: radius.md,
+    paddingVertical: spacing.md,
     borderWidth: 1,
-    borderColor: '#374151',
   },
-  appealModalConfirmButton: {
-    backgroundColor: PRIMARY_GREEN,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 6,
-    elevation: 4,
+  appealSubmitWrap: {
+    flex: 1,
+  },
+  appealSubmitButton: {
+    width: '100%',
   },
   appealModalCancelText: {
-    color: '#4b5563',
-    fontWeight: '600',
-    fontSize: 15,
-  },
-  appealModalConfirmText: {
-    color: '#ffffff',
     fontWeight: '600',
     fontSize: 15,
   },
