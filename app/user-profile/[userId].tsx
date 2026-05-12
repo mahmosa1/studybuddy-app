@@ -1,4 +1,9 @@
 // app/user-profile/[userId].tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { layout, radius, spacing } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
 import { createActivityNotification } from '@/lib/notificationService';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,7 +13,6 @@ import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   ScrollView,
   StyleSheet,
@@ -56,7 +60,9 @@ const relativeTime = (date: Date) => {
 
 export default function UserProfileScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const { colors } = useAppTheme();
+  const isHebrewUi = i18n.language === 'he';
   const params = useLocalSearchParams<{ userId?: string }>();
   const userId = params.userId;
 
@@ -235,178 +241,210 @@ export default function UserProfileScreen() {
     }
   };
 
+  const headerTitle = profile?.fullName || profile?.username || t('userProfile.title');
+
   if (loading) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <ActivityIndicator color="#047857" size="large" />
-      </View>
+      <AppScreen>
+        <AppHeader title={t('userProfile.title')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+        </View>
+        <View style={styles.centerFill}>
+          <ActivityIndicator color={colors.primary} size="large" />
+        </View>
+      </AppScreen>
     );
   }
 
   if (!profile) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.errorText}>User not found</Text>
-      </View>
+      <AppScreen>
+        <AppHeader title={t('userProfile.title')} onBack={() => router.back()} />
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+        </View>
+        <View style={styles.centerFill}>
+          <AppCard style={[styles.notFoundCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <Ionicons name="person-outline" size={40} color={colors.textSecondary} />
+            <Text style={[styles.notFoundText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('userProfile.userNotFound')}
+            </Text>
+          </AppCard>
+        </View>
+      </AppScreen>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={headerTitle} onBack={() => router.back()} />
+      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+      </View>
+
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="handled"
       >
-        {/* Header Section */}
-        <View style={styles.headerSection}>
-          <View style={styles.headerBackground} />
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={() => router.back()}
-          >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-        </View>
-
-        {/* Profile Card */}
-        <View style={styles.profileCard}>
-          {/* Avatar */}
-          <View style={styles.avatarContainer}>
-            {profile.profilePictureUrl ? (
-              <Image
-                source={{ uri: profile.profilePictureUrl }}
-                style={styles.avatarImage}
-              />
-            ) : (
-              <View style={styles.avatarCircle}>
-                <Text style={styles.avatarText}>{getInitials()}</Text>
-              </View>
-            )}
-            {profile.role === 'lecturer' && (
-              <View style={styles.avatarBadge}>
-                <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
-              </View>
-            )}
-          </View>
-
-          {/* Name and Info */}
-          <View style={styles.profileInfo}>
-            <Text style={styles.nameText}>
-              {profile.fullName || profile.username || 'User'}
-            </Text>
-            <Text style={styles.usernameText}>@{profile.username || 'username'}</Text>
-
-            {/* Info Cards */}
-            <View style={styles.infoCards}>
-              {profile.fieldOfStudy && (
-                <View style={styles.infoCard}>
-                  <Ionicons name="school-outline" size={16} color={ACCENT_GREEN} />
-                  <Text style={styles.infoText}>{profile.fieldOfStudy}</Text>
+        <AppCard style={[styles.heroCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={styles.avatarWrap}>
+            <View style={styles.avatarInner}>
+              {profile.profilePictureUrl ? (
+                <Image
+                  source={{ uri: profile.profilePictureUrl }}
+                  style={[styles.avatarImage, { borderColor: colors.primary }]}
+                />
+              ) : (
+                <View style={[styles.avatarCircle, { borderColor: colors.primary, backgroundColor: colors.surfaceMuted }]}>
+                  <Text style={[styles.avatarText, { color: colors.primary }]}>{getInitials()}</Text>
                 </View>
               )}
-              {profile.institution && (
-                <View style={styles.infoCard}>
-                  <Ionicons name="location-outline" size={16} color={ACCENT_GREEN} />
-                  <Text style={styles.infoText}>{profile.institution}</Text>
+              {profile.role === 'lecturer' ? (
+                <View style={[styles.avatarBadge, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+                  <Ionicons name="checkmark-circle" size={22} color={colors.success} />
                 </View>
-              )}
-              {profile.role && (
-                <View style={[styles.infoCard, styles.roleBadge]}>
-                  <Ionicons name="person-circle-outline" size={16} color="#ffffff" />
-                  <Text style={[styles.infoText, styles.roleText]}>
-                    {profile.role.toUpperCase()}
-                  </Text>
-                </View>
-              )}
+              ) : null}
             </View>
           </View>
 
-          {/* Stats */}
-          <View style={styles.statsContainer}>
+          <Text style={[styles.displayName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+            {profile.fullName || profile.username || 'User'}
+          </Text>
+          <Text style={[styles.usernameLine, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+            @{profile.username || 'username'}
+          </Text>
+
+          <View style={[styles.profileInfoCards, isHebrewUi && styles.rtlRow]}>
+            {profile.fieldOfStudy ? (
+              <View
+                style={[
+                  styles.profileDetailCard,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  isHebrewUi && styles.profileDetailCardRtl,
+                ]}
+              >
+                <Ionicons name="school-outline" size={16} color={colors.primary} />
+                <Text style={[styles.profileDetailCardText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                  {profile.fieldOfStudy}
+                </Text>
+              </View>
+            ) : null}
+            {profile.institution ? (
+              <View
+                style={[
+                  styles.profileDetailCard,
+                  { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  isHebrewUi && styles.profileDetailCardRtl,
+                ]}
+              >
+                <Ionicons name="location-outline" size={16} color={colors.accent} />
+                <Text style={[styles.profileDetailCardText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                  {profile.institution}
+                </Text>
+              </View>
+            ) : null}
+            {profile.role && profile.role !== 'admin' ? (
+              <View
+                style={[
+                  styles.profileDetailCard,
+                  styles.profileRoleCard,
+                  { backgroundColor: colors.primary, borderColor: colors.primary },
+                  isHebrewUi && styles.profileDetailCardRtl,
+                ]}
+              >
+                <Ionicons name="person-circle-outline" size={16} color={colors.textOnPrimary} />
+                <Text style={[styles.profileDetailCardText, { color: colors.textOnPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                  {t(`auth.${profile.role}`)}
+                </Text>
+              </View>
+            ) : null}
+          </View>
+
+          <View style={[styles.statsRow, { borderTopColor: colors.border, borderBottomColor: colors.border }]}>
             <TouchableOpacity
-              style={styles.statCard}
+              style={styles.statCell}
               onPress={() => {
-                // TODO: Navigate to followers list
                 console.log('Show followers');
               }}
+              activeOpacity={0.85}
             >
-              <Text style={styles.statNumber}>{followersCount}</Text>
-              <Text style={styles.statLabel}>{t('profile.followers')}</Text>
+              <Text style={[styles.statNumber, { color: colors.primary }, isHebrewUi && styles.rtlText]}>{followersCount}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('profile.followers')}</Text>
             </TouchableOpacity>
-            <View style={styles.statDivider} />
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
             <TouchableOpacity
-              style={styles.statCard}
+              style={styles.statCell}
               onPress={() => {
-                // TODO: Navigate to following list
                 console.log('Show following');
               }}
+              activeOpacity={0.85}
             >
-              <Text style={styles.statNumber}>{followingCount}</Text>
-              <Text style={styles.statLabel}>{t('profile.following')}</Text>
+              <Text style={[styles.statNumber, { color: colors.primary }, isHebrewUi && styles.rtlText]}>{followingCount}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('profile.following')}</Text>
             </TouchableOpacity>
-            <View style={styles.statDivider} />
-            <View style={styles.statCard}>
-              <Text style={styles.statNumber}>{courses.length}</Text>
-              <Text style={styles.statLabel}>{t('profile.courses')}</Text>
+            <View style={[styles.statDivider, { backgroundColor: colors.border }]} />
+            <View style={styles.statCell}>
+              <Text style={[styles.statNumber, { color: colors.primary }, isHebrewUi && styles.rtlText]}>{courses.length}</Text>
+              <Text style={[styles.statLabel, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{t('profile.courses')}</Text>
             </View>
           </View>
 
-          {/* Follow Button (only if not own profile) */}
-          {!isOwnProfile && (
+          {!isOwnProfile ? (
             <TouchableOpacity
               style={[
                 styles.followButton,
-                isFollowing && styles.followButtonFollowing,
+                isFollowing ? [styles.followButtonMuted, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }] : { backgroundColor: colors.primary },
               ]}
               onPress={handleFollow}
+              activeOpacity={0.88}
             >
               <Ionicons
-                name={isFollowing ? 'checkmark' : 'add'}
+                name={isFollowing ? 'checkmark' : 'person-add-outline'}
                 size={18}
-                color={isFollowing ? '#111827' : '#ffffff'}
+                color={isFollowing ? colors.textPrimary : colors.textOnPrimary}
               />
               <Text
                 style={[
-                  styles.followButtonText,
-                  isFollowing && styles.followButtonTextFollowing,
+                  styles.followButtonLabel,
+                  isFollowing ? { color: colors.textPrimary } : { color: colors.textOnPrimary },
+                  isHebrewUi && styles.rtlText,
                 ]}
               >
                 {isFollowing ? t('profile.following') : t('profile.follow')}
               </Text>
             </TouchableOpacity>
-          )}
-        </View>
+          ) : null}
+        </AppCard>
 
-        {/* Courses Section */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="book-outline" size={20} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>
+        <AppCard style={[styles.sectionCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={[styles.sectionHeaderRow, isHebrewUi && styles.rtlRow]}>
+            <Ionicons name="book-outline" size={20} color={colors.primary} />
+            <Text style={[styles.sectionHeading, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
               {profile.role === 'lecturer' ? t('profile.teaching') : t('profile.learning')}
             </Text>
           </View>
           {courses.length > 0 ? (
-            <FlatList
-              data={courses}
-              keyExtractor={(item) => item.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              renderItem={({ item }) => {
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.coursesRow}>
+              {courses.map((item) => {
                 const canOpenLecturerCourse = !isOwnProfile && profile.role === 'lecturer';
 
-                // Keep own-profile navigation unchanged.
                 if (isOwnProfile) {
                   return (
                     <TouchableOpacity
+                      key={item.id}
                       style={styles.courseItem}
                       onPress={() => router.push(`/course/${item.id}` as any)}
+                      activeOpacity={0.88}
                     >
-                      <View style={styles.courseCircle}>
-                        <Text style={styles.courseInitial}>
-                          {item.name[0]?.toUpperCase()}
-                        </Text>
+                      <View style={[styles.courseCircle, { borderColor: colors.primary, backgroundColor: colors.surface }]}>
+                        <Text style={[styles.courseInitial, { color: colors.primary }]}>{item.name[0]?.toUpperCase()}</Text>
                       </View>
-                      <Text style={styles.courseLabel} numberOfLines={1}>
+                      <Text style={[styles.courseLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                         {item.name}
                       </Text>
                     </TouchableOpacity>
@@ -416,6 +454,7 @@ export default function UserProfileScreen() {
                 if (canOpenLecturerCourse) {
                   return (
                     <TouchableOpacity
+                      key={item.id}
                       style={styles.courseItem}
                       onPress={() =>
                         router.push({
@@ -423,381 +462,352 @@ export default function UserProfileScreen() {
                           params: { courseId: item.id, name: item.name },
                         })
                       }
+                      activeOpacity={0.88}
                     >
-                      <View style={styles.courseCircle}>
-                        <Text style={styles.courseInitial}>
-                          {item.name[0]?.toUpperCase()}
-                        </Text>
+                      <View style={[styles.courseCircle, { borderColor: colors.primary, backgroundColor: colors.surface }]}>
+                        <Text style={[styles.courseInitial, { color: colors.primary }]}>{item.name[0]?.toUpperCase()}</Text>
                       </View>
-                      <View style={styles.courseLabelRow}>
-                        <Text style={styles.courseLabel} numberOfLines={1}>
+                      <View style={[styles.courseLabelRow, isHebrewUi && styles.rtlRow]}>
+                        <Text style={[styles.courseLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                           {item.name}
                         </Text>
-                        <Ionicons name="chevron-forward" size={12} color={ACCENT_GREEN} />
+                        <Ionicons name={isHebrewUi ? 'chevron-back' : 'chevron-forward'} size={12} color={colors.primary} />
                       </View>
                     </TouchableOpacity>
                   );
                 }
 
-                // For non-lecturer profiles, keep non-clickable cards.
                 return (
-                  <View style={[styles.courseItem, styles.courseItemDisabled]}>
-                    <View style={[styles.courseCircle, styles.courseCircleDisabled]}>
-                      <Text style={styles.courseInitial}>
-                        {item.name[0]?.toUpperCase()}
-                      </Text>
+                  <View key={item.id} style={[styles.courseItem, styles.courseItemDisabled]}>
+                    <View style={[styles.courseCircle, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                      <Text style={[styles.courseInitial, { color: colors.textSecondary }]}>{item.name[0]?.toUpperCase()}</Text>
                     </View>
-                    <Text style={styles.courseLabel} numberOfLines={1}>
+                    <Text style={[styles.courseLabel, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                       {item.name}
                     </Text>
                   </View>
                 );
-              }}
-              contentContainerStyle={styles.coursesList}
-            />
+              })}
+            </ScrollView>
           ) : (
-            <View style={styles.emptyCoursesCard}>
-              <Ionicons name="book-outline" size={48} color="#4b5563" />
-              <Text style={styles.emptyCoursesText}>
-                No courses to display
+            <View style={[styles.emptyCoursesCard, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
+              <Ionicons name="book-outline" size={40} color={colors.textSecondary} />
+              <Text style={[styles.emptyCoursesText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                {t('userProfile.noCourses')}
               </Text>
             </View>
           )}
-        </View>
+        </AppCard>
 
-        {(isOwnProfile || isFollowing) && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Ionicons name="newspaper-outline" size={20} color={ACCENT_GREEN} />
-              <Text style={styles.sectionTitle}>Feed posts</Text>
+        {(isOwnProfile || isFollowing) ? (
+          <AppCard style={[styles.sectionCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <View style={[styles.sectionHeaderRow, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="newspaper-outline" size={20} color={colors.primary} />
+              <Text style={[styles.sectionHeading, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('userProfile.posts')}
+              </Text>
             </View>
             {loadingFeedPosts ? (
-              <ActivityIndicator color="#047857" />
+              <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.md }} />
             ) : feedPosts.length ? (
-              <View style={styles.feedPostsList}>
+              <View style={styles.feedList}>
                 {feedPosts.map((p) => (
                   <TouchableOpacity
                     key={p.id}
-                    style={styles.feedPostItem}
                     onPress={() => router.push(`/feed/post/${p.id}` as any)}
+                    activeOpacity={0.88}
                   >
-                    <Text style={styles.feedPostTitle} numberOfLines={2}>
-                      {p.title}
-                    </Text>
-                    <View style={styles.feedPostStats}>
-                      <View style={styles.feedPostStatItem}>
-                        <Ionicons name="heart-outline" size={14} color="#6b7280" />
-                        <Text style={styles.feedPostStatText}>{p.likesCount}</Text>
+                    <AppCard style={[styles.feedPostCard, { borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}>
+                      <Text style={[styles.feedPostTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                        {p.title}
+                      </Text>
+                      <View style={[styles.feedPostStats, isHebrewUi && styles.rtlRow]}>
+                        <View style={styles.feedPostStatItem}>
+                          <Ionicons name="heart-outline" size={14} color={colors.textSecondary} />
+                          <Text style={[styles.feedPostStatText, { color: colors.textSecondary }]}>{p.likesCount}</Text>
+                        </View>
+                        <View style={styles.feedPostStatItem}>
+                          <Ionicons name="chatbubble-outline" size={14} color={colors.textSecondary} />
+                          <Text style={[styles.feedPostStatText, { color: colors.textSecondary }]}>{p.commentsCount}</Text>
+                        </View>
                       </View>
-                      <View style={styles.feedPostStatItem}>
-                        <Ionicons name="chatbubble-outline" size={14} color="#6b7280" />
-                        <Text style={styles.feedPostStatText}>{p.commentsCount}</Text>
-                      </View>
-                    </View>
-                    <Text style={styles.feedPostTime}>{p.createdAtLabel}</Text>
+                      <Text style={[styles.feedPostTime, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{p.createdAtLabel}</Text>
+                    </AppCard>
                   </TouchableOpacity>
                 ))}
               </View>
             ) : (
-              <Text style={styles.emptyText}>No feed posts yet</Text>
+              <Text style={[styles.emptyFeedText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                {t('profile.noFeedPostsYet')}
+              </Text>
             )}
-          </View>
-        )}
+          </AppCard>
+        ) : null}
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const ACCENT_GREEN = '#047857';
-
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  headerSection: {
-    height: 160,
-    backgroundColor: '#047857',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    justifyContent: 'flex-end',
-    paddingBottom: 20,
-    paddingHorizontal: 24,
+  topDecorWrap: {
     position: 'relative',
     overflow: 'hidden',
-    marginBottom: 20,
+    height: 22,
+    marginHorizontal: layout.screenPadding,
+    marginTop: 0,
+    marginBottom: 0,
+    borderBottomWidth: 1,
   },
-  headerBackground: {
+  topDecorPrimary: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    opacity: 0.1,
+    width: 128,
+    height: 128,
+    borderRadius: 64,
+    top: -108,
+    right: -14,
+    opacity: 0.055,
   },
-  backButton: {
+  topDecorAccent: {
     position: 'absolute',
-    top: 50,
-    left: 20,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    top: -88,
+    left: -8,
+    opacity: 0.07,
+  },
+  scrollContent: {
+    paddingHorizontal: layout.screenPadding,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xxl,
+    gap: spacing.md,
+  },
+  centerFill: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    paddingHorizontal: layout.screenPadding,
   },
-  profileCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    marginTop: -50,
-    borderRadius: 24,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: 10 },
-    elevation: 8,
-    marginBottom: 20,
-  },
-  avatarContainer: {
+  notFoundCard: {
     alignItems: 'center',
-    marginBottom: 20,
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.lg,
+    gap: spacing.sm,
+  },
+  notFoundText: {
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  heroCard: {
+    paddingVertical: spacing.lg,
+    paddingHorizontal: spacing.md,
+    alignItems: 'center',
+  },
+  avatarWrap: {
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  avatarInner: {
+    width: 112,
+    height: 112,
+    position: 'relative',
+    alignSelf: 'center',
   },
   avatarCircle: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: ACCENT_GREEN,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 3,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#dbeafe',
   },
   avatarImage: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    borderWidth: 4,
-    borderColor: ACCENT_GREEN,
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 3,
   },
   avatarText: {
-    color: ACCENT_GREEN,
-    fontSize: 42,
+    fontSize: 40,
     fontWeight: '800',
   },
   avatarBadge: {
     position: 'absolute',
-    bottom: 0,
-    right: '35%',
-    backgroundColor: '#ffffff',
-    borderRadius: 15,
+    bottom: -2,
+    end: -2,
+    borderRadius: 14,
+    borderWidth: 1,
     padding: 2,
   },
-  profileInfo: {
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  nameText: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#111827',
+  displayName: {
+    fontSize: 22,
+    fontWeight: '800',
+    textAlign: 'center',
     marginBottom: 4,
   },
-  usernameText: {
-    fontSize: 15,
-    color: '#6b7280',
-    fontWeight: '500',
-    marginBottom: 16,
+  usernameLine: {
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: spacing.md,
   },
-  infoCards: {
+  profileInfoCards: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
     justifyContent: 'center',
+    marginBottom: spacing.md,
+    maxWidth: '100%',
   },
-  infoCard: {
+  profileDetailCard: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#dbeafe',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 20,
     gap: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: StyleSheet.hairlineWidth,
+    maxWidth: '100%',
   },
-  roleBadge: {
-    backgroundColor: '#047857',
+  profileDetailCardRtl: {
+    flexDirection: 'row-reverse',
   },
-  infoText: {
+  profileDetailCardText: {
     fontSize: 13,
-    color: '#111827',
     fontWeight: '600',
+    flexShrink: 1,
   },
-  roleText: {
-    color: '#ffffff',
+  profileRoleCard: {
+    borderWidth: 0,
   },
-  statsContainer: {
+  statsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingVertical: 20,
-    borderTopWidth: 1,
-    borderBottomWidth: 1,
-    borderColor: '#374151',
-    marginBottom: 20,
-  },
-  statCard: {
     alignItems: 'center',
+    width: '100%',
+    paddingVertical: spacing.md,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    marginBottom: spacing.md,
+  },
+  statCell: {
     flex: 1,
+    alignItems: 'center',
   },
   statDivider: {
-    width: 1,
-    backgroundColor: '#374151',
+    width: StyleSheet.hairlineWidth,
+    alignSelf: 'stretch',
   },
   statNumber: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: ACCENT_GREEN,
-    marginBottom: 4,
+    fontSize: 20,
+    fontWeight: '800',
+    marginBottom: 2,
   },
   statLabel: {
-    fontSize: 12,
-    color: '#6b7280',
-    fontWeight: '500',
+    fontSize: 11,
+    fontWeight: '600',
   },
   followButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 16,
-    backgroundColor: '#047857',
-    gap: 8,
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.lg,
+    borderRadius: radius.md,
+    alignSelf: 'stretch',
   },
-  followButtonFollowing: {
-    backgroundColor: '#374151',
+  followButtonMuted: {
     borderWidth: 1,
-    borderColor: '#4b5563',
   },
-  followButtonText: {
-    color: '#ffffff',
+  followButtonLabel: {
     fontSize: 15,
     fontWeight: '700',
   },
-  followButtonTextFollowing: {
-    color: '#111827',
+  sectionCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
   },
-  section: {
-    marginHorizontal: 20,
-    marginBottom: 20,
-  },
-  sectionHeader: {
+  sectionHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 16,
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
+  sectionHeading: {
+    fontSize: 17,
+    fontWeight: '800',
+    flex: 1,
   },
-  coursesList: {
-    paddingHorizontal: 4,
+  coursesRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+    paddingVertical: 2,
+    paddingEnd: spacing.xs,
   },
   courseItem: {
     alignItems: 'center',
-    marginRight: 16,
+    width: 88,
   },
   courseItemDisabled: {
-    opacity: 0.8,
+    opacity: 0.85,
   },
   courseCircle: {
-    width: 70,
-    height: 70,
-    borderRadius: 35,
-    borderWidth: 3,
-    borderColor: ACCENT_GREEN,
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    borderWidth: 2,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#dbeafe',
-    marginBottom: 8,
-  },
-  courseCircleDisabled: {
-    borderColor: '#4b5563',
-    backgroundColor: '#f9fafb',
+    marginBottom: spacing.sm,
   },
   courseInitial: {
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '700',
-    color: ACCENT_GREEN,
   },
   courseLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    justifyContent: 'center',
+    maxWidth: '100%',
   },
   courseLabel: {
     fontSize: 12,
-    color: '#111827',
     fontWeight: '600',
-    maxWidth: 80,
     textAlign: 'center',
+    maxWidth: 84,
   },
   emptyCoursesCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 20,
-    padding: 32,
     alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#374151',
+    paddingVertical: spacing.xl,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
     borderStyle: 'dashed',
   },
   emptyCoursesText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    marginTop: 12,
-    fontWeight: '500',
-  },
-  emptyText: {
     fontSize: 13,
-    color: '#6b7280',
+    fontWeight: '600',
     textAlign: 'center',
-    paddingVertical: 20,
+    marginTop: spacing.sm,
   },
-  feedPostsList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    rowGap: 10,
+  feedList: {
+    gap: spacing.sm,
   },
-  feedPostItem: {
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-    borderRadius: 14,
-    width: '48.5%',
-    minHeight: 132,
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    justifyContent: 'space-between',
+  feedPostCard: {
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.md,
   },
   feedPostTitle: {
-    color: '#111827',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '700',
   },
   feedPostStats: {
-    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: spacing.md,
+    marginTop: spacing.sm,
   },
   feedPostStatItem: {
     flexDirection: 'row',
@@ -805,18 +815,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   feedPostStatText: {
-    color: '#4b5563',
     fontSize: 12,
     fontWeight: '600',
   },
   feedPostTime: {
-    marginTop: 8,
-    color: '#6b7280',
+    marginTop: spacing.sm,
     fontSize: 12,
+    fontWeight: '500',
   },
-  errorText: {
-    color: '#ef4444',
-    fontSize: 14,
+  emptyFeedText: {
+    fontSize: 13,
+    fontWeight: '600',
+    textAlign: 'center',
+    paddingVertical: spacing.md,
+  },
+  rtlRow: {
+    flexDirection: 'row-reverse',
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
   },
 });
-

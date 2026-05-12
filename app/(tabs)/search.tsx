@@ -352,17 +352,17 @@ export default function SearchScreen() {
 
   const renderUserResult = ({ item }: { item: UserResult }) => {
     const displayName = item.fullName || item.username || 'User';
-    const metaChips: { key: string; label: string; subtle?: boolean }[] = [];
+    const compact: { key: string; icon: keyof typeof Ionicons.glyphMap; label: string; tone: 'muted' | 'accent' }[] = [];
     if (item.role && item.role !== 'admin') {
-      metaChips.push({ key: 'role', label: roleLabel(item.role) });
+      compact.push({ key: 'r', icon: 'person-outline', label: roleLabel(item.role), tone: 'muted' });
     }
     if (item.fieldOfStudy) {
-      metaChips.push({ key: 'field', label: item.fieldOfStudy, subtle: true });
+      compact.push({ key: 'f', icon: 'school-outline', label: item.fieldOfStudy, tone: 'muted' });
     }
     if (item.institution) {
-      metaChips.push({ key: 'inst', label: item.institution, subtle: true });
+      compact.push({ key: 'i', icon: 'location-outline', label: item.institution, tone: 'accent' });
     }
-    const chipsToShow = metaChips.slice(0, 2);
+    const chipsToShow = compact.slice(0, 2);
     const showUsernameLine =
       !!item.username && (!!item.fullName ? item.username !== item.fullName : displayName !== item.username);
 
@@ -406,19 +406,18 @@ export default function SearchScreen() {
                     <View
                       key={c.key}
                       style={[
-                        styles.userMetaChip,
-                        {
-                          backgroundColor: colors.chipBg,
-                          borderColor: colors.border,
-                        },
+                        styles.searchCompactChip,
+                        { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                        isHebrewUi && styles.searchCompactChipRtl,
                       ]}
                     >
+                      <Ionicons
+                        name={c.icon}
+                        size={11}
+                        color={c.tone === 'accent' ? colors.accent : colors.primary}
+                      />
                       <Text
-                        style={[
-                          styles.userMetaChipText,
-                          { color: c.subtle ? colors.textSecondary : colors.textPrimary },
-                          isHebrewUi && styles.rtlText,
-                        ]}
+                        style={[styles.searchCompactChipText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}
                         numberOfLines={1}
                       >
                         {c.label}
@@ -544,15 +543,29 @@ export default function SearchScreen() {
             </Text>
           ) : null}
           <View style={[styles.tutorChipsRow, isHebrewUi && styles.rtlRow]}>
-            <View style={[styles.chip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-              <Ionicons name="book-outline" size={12} color={colors.primary} />
-              <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+            <View
+              style={[
+                styles.searchCompactChip,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                isHebrewUi && styles.searchCompactChipRtl,
+              ]}
+            >
+              <Ionicons name="book-outline" size={11} color={colors.primary} />
+              <Text style={[styles.searchCompactChipText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                 {item.courseName}
               </Text>
             </View>
-            <View style={[styles.chip, { borderColor: colors.primary, backgroundColor: colors.surfaceElevated }]}>
-              <Ionicons name="ribbon-outline" size={12} color={colors.primary} />
-              <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{t('search.tutorLabel')}</Text>
+            <View
+              style={[
+                styles.searchCompactChip,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.primary },
+                isHebrewUi && styles.searchCompactChipRtl,
+              ]}
+            >
+              <Ionicons name="ribbon-outline" size={11} color={colors.primary} />
+              <Text style={[styles.searchCompactChipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                {t('search.tutorLabel')}
+              </Text>
             </View>
           </View>
         </View>
@@ -613,17 +626,29 @@ export default function SearchScreen() {
             ) : null}
             <View style={[styles.buddyChipsRow, isHebrewUi && styles.rtlRow]}>
               {item.course ? (
-                <View style={[styles.chip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-                  <Ionicons name="book-outline" size={12} color={colors.primary} />
-                  <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                <View
+                  style={[
+                    styles.searchCompactChip,
+                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    isHebrewUi && styles.searchCompactChipRtl,
+                  ]}
+                >
+                  <Ionicons name="book-outline" size={11} color={colors.primary} />
+                  <Text style={[styles.searchCompactChipText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                     {item.course}
                   </Text>
                 </View>
               ) : null}
               {item.availability ? (
-                <View style={[styles.chip, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-                  <Ionicons name="time-outline" size={12} color={colors.accent} />
-                  <Text style={[styles.chipText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                <View
+                  style={[
+                    styles.searchCompactChip,
+                    { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    isHebrewUi && styles.searchCompactChipRtl,
+                  ]}
+                >
+                  <Ionicons name="time-outline" size={11} color={colors.accent} />
+                  <Text style={[styles.searchCompactChipText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                     {t(`profile.time.${item.availability.toLowerCase()}`, { defaultValue: item.availability })}
                   </Text>
                 </View>
@@ -1194,19 +1219,25 @@ const styles = StyleSheet.create({
   userChipsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 6,
-    marginTop: 8,
+    gap: 5,
+    marginTop: 6,
     alignItems: 'center',
   },
-  userMetaChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
+  searchCompactChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 7,
+    paddingVertical: 3,
+    borderRadius: radius.md,
     borderWidth: StyleSheet.hairlineWidth,
     maxWidth: '100%',
   },
-  userMetaChipText: {
-    fontSize: 12,
+  searchCompactChipRtl: {
+    flexDirection: 'row-reverse',
+  },
+  searchCompactChipText: {
+    fontSize: 11,
     fontWeight: '600',
     flexShrink: 1,
   },
@@ -1332,21 +1363,6 @@ const styles = StyleSheet.create({
   tutorInfo: {
     flex: 1,
     minWidth: 0,
-  },
-  chip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: radius.sm,
-    borderWidth: 1,
-    maxWidth: '100%',
-  },
-  chipText: {
-    fontSize: 11,
-    fontWeight: '700',
-    flexShrink: 1,
   },
   whatsappButton: {
     flexDirection: 'row',

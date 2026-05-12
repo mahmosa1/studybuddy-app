@@ -449,6 +449,12 @@
     "phoneNumberHelper": "הוסף מספר טלפון כדי שיוכלו ליצור איתך קשר בוואטסאפ",
     "phoneNumberPlaceholder": "לדוגמה: 050-1234567"
   },
+  "userProfile": {
+    "title": "פרופיל",
+    "userNotFound": "המשתמש לא נמצא",
+    "posts": "פוסטים",
+    "noCourses": "אין קורסים להצגה"
+  },
   "editProfileScreen": {
     "title": "עריכת פרופיל",
     "subtitle": "עדכון פרטי הפרופיל שלך",

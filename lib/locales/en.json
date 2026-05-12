@@ -447,6 +447,12 @@
     "phoneNumberHelper": "Add your phone number so others can contact you via WhatsApp",
     "phoneNumberPlaceholder": "e.g., 050-1234567"
   },
+  "userProfile": {
+    "title": "Profile",
+    "userNotFound": "User not found",
+    "posts": "Posts",
+    "noCourses": "No courses to display"
+  },
   "editProfileScreen": {
     "title": "Edit Profile",
     "subtitle": "Update your profile information",
