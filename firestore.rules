@@ -9,7 +9,9 @@ service cloud.firestore {
 
     function isProtectedPath() {
       return request.path.matches('/databases/.*/documents/courseJoinRequests/.*') ||
-        request.path.matches('/databases/.*/documents/courses/.*');
+        request.path.matches('/databases/.*/documents/courses/.*') ||
+        request.path.matches('/databases/.*/documents/tutorExercises/.*') ||
+        request.path.matches('/databases/.*/documents/tutorExerciseSubmissions/.*');
     }
     
     // Users collection - CRITICAL for login flow
@@ -227,6 +229,141 @@ service cloud.firestore {
       allow delete: if isAdminUser();
     }
 
+    // Tutor-authored manual exercises (tutor tools; not AI practice)
+    match /tutorExercises/{exerciseId} {
+      function tutorExerciseCreateValid() {
+        return isAuthenticated() &&
+          request.resource.data.tutorUid is string &&
+          request.resource.data.tutorUid == request.auth.uid &&
+          request.resource.data.keys().hasAll([
+            'courseId',
+            'courseName',
+            'tutorUid',
+            'tutorName',
+            'title',
+            'instructions',
+            'questionType',
+            'questions',
+            'status',
+            'createdAt',
+            'updatedAt'
+          ]) &&
+          request.resource.data.courseId is string &&
+          request.resource.data.courseName is string &&
+          request.resource.data.tutorName is string &&
+          request.resource.data.title is string &&
+          request.resource.data.instructions is string &&
+          request.resource.data.questionType in ['open_text', 'multiple_choice', 'true_false'] &&
+          request.resource.data.questions is list &&
+          request.resource.data.status in ['draft', 'published'];
+      }
+
+      function tutorExerciseCoreImmutable() {
+        return request.resource.data.courseId == resource.data.courseId &&
+          request.resource.data.courseName == resource.data.courseName &&
+          request.resource.data.tutorName == resource.data.tutorName &&
+          request.resource.data.createdAt == resource.data.createdAt;
+      }
+
+      function tutorExerciseStatusAllowed() {
+        return (resource.data.status == 'draft' &&
+            request.resource.data.status in ['draft', 'published']) ||
+          (resource.data.status == 'published' && request.resource.data.status == 'published');
+      }
+
+      allow read: if isAuthenticated() && (
+        resource.data.tutorUid == request.auth.uid ||
+        resource.data.status == 'published'
+      );
+      allow create: if tutorExerciseCreateValid();
+      allow update: if isAuthenticated() &&
+        resource.data.tutorUid == request.auth.uid &&
+        request.resource.data.tutorUid == resource.data.tutorUid &&
+        tutorExerciseCoreImmutable() &&
+        request.resource.data.questionType == resource.data.questionType &&
+        request.resource.data.questionType in ['open_text', 'multiple_choice', 'true_false'] &&
+        request.resource.data.title is string &&
+        request.resource.data.instructions is string &&
+        request.resource.data.questions is list &&
+        tutorExerciseStatusAllowed() &&
+        (request.resource.data.status != 'published' || request.resource.data.publishedAt != null);
+      allow delete: if isAuthenticated() && resource.data.tutorUid == request.auth.uid;
+    }
+
+    // Student submissions for tutor exercises (one doc id per exercise + student enforced in app layer)
+    match /tutorExerciseSubmissions/{submissionId} {
+      function tutorExerciseSubmissionCreateValid() {
+        return isAuthenticated() &&
+          submissionId == request.resource.data.exerciseId + '_' + request.auth.uid &&
+          request.resource.data.studentUid == request.auth.uid &&
+          request.resource.data.keys().hasAll([
+            'id',
+            'exerciseId',
+            'courseId',
+            'courseName',
+            'tutorUid',
+            'tutorName',
+            'studentUid',
+            'studentName',
+            'answers',
+            'status',
+            'submittedAt',
+            'updatedAt',
+            'grade',
+            'feedback',
+            'gradedAt'
+          ]) &&
+          request.resource.data.id is string &&
+          request.resource.data.id == submissionId &&
+          request.resource.data.exerciseId is string &&
+          request.resource.data.courseId is string &&
+          request.resource.data.courseName is string &&
+          request.resource.data.tutorUid is string &&
+          request.resource.data.tutorName is string &&
+          request.resource.data.studentUid is string &&
+          request.resource.data.studentName is string &&
+          request.resource.data.answers is list &&
+          request.resource.data.status == 'submitted' &&
+          request.resource.data.grade == null &&
+          request.resource.data.feedback == null &&
+          request.resource.data.gradedAt == null;
+      }
+
+      function tutorExerciseSubmissionTutorGradeUpdate() {
+        return resource.data.tutorUid == request.auth.uid &&
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            'status', 'grade', 'feedback', 'gradedAt', 'updatedAt'
+          ]) &&
+          request.resource.data.exerciseId == resource.data.exerciseId &&
+          request.resource.data.courseId == resource.data.courseId &&
+          request.resource.data.courseName == resource.data.courseName &&
+          request.resource.data.tutorUid == resource.data.tutorUid &&
+          request.resource.data.tutorName == resource.data.tutorName &&
+          request.resource.data.studentUid == resource.data.studentUid &&
+          request.resource.data.studentName == resource.data.studentName &&
+          request.resource.data.answers == resource.data.answers &&
+          request.resource.data.submittedAt == resource.data.submittedAt &&
+          request.resource.data.id == resource.data.id &&
+          request.resource.data.status == 'graded' &&
+          (request.resource.data.grade is int || request.resource.data.grade is float) &&
+          request.resource.data.grade >= 0 &&
+          request.resource.data.grade <= 100 &&
+          request.resource.data.feedback is string &&
+          request.resource.data.gradedAt is timestamp &&
+          request.resource.data.updatedAt is timestamp &&
+          (!resource.data.keys().hasAll(['totalQuestions']) || request.resource.data.totalQuestions == resource.data.totalQuestions) &&
+          (!resource.data.keys().hasAll(['questionType']) || request.resource.data.questionType == resource.data.questionType);
+      }
+
+      allow read: if isAuthenticated() && (
+        resource.data.studentUid == request.auth.uid ||
+        resource.data.tutorUid == request.auth.uid
+      );
+      allow create: if tutorExerciseSubmissionCreateValid();
+      allow update: if isAuthenticated() && tutorExerciseSubmissionTutorGradeUpdate();
+      allow delete: if false;
+    }
+    
     // Study Journal - Sessions collection
     match /studySessions/{sessionId} {
       // Users can read their own sessions

@@ -141,12 +141,13 @@ export default function TabLayout() {
         }}
       />
 
-      {/* Feed - Only for students */}
+      {/* Feed — students, lecturers, and admins */}
       <Tabs.Screen
         name="feed"
         options={{
-          title: t('feed.title'),
-          href: role === 'student' ? undefined : null,
+          title: t('feed.tabName'),
+          href:
+            role === 'student' || role === 'lecturer' || role === 'admin' ? undefined : null,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons
               name={focused ? 'newspaper' : 'newspaper-outline'}

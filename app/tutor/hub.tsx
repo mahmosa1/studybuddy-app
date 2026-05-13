@@ -8,17 +8,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 export default function TutorHubScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { colors } = useAppTheme();
   const styles = makeStyles(colors);
-
-  const showComingSoon = () => {
-    Alert.alert(t('tutor.hub.title'), t('tutor.hub.comingSoon'));
-  };
 
   return (
     <AppScreen>
@@ -50,7 +46,7 @@ export default function TutorHubScreen() {
             </AppCard>
           </Pressable>
 
-          <Pressable style={({ pressed }) => pressed ? styles.cardPress : null} onPress={showComingSoon}>
+          <Pressable style={({ pressed }) => pressed ? styles.cardPress : null} onPress={() => router.push('/tutor/exercises' as any)}>
             <AppCard style={styles.card}>
               <View style={styles.cardAccentBar} />
               <View style={styles.cardIconWrap}>

@@ -3,7 +3,6 @@ import { auth, db } from '@/lib/firebaseConfig';
 import { buildSystemUpdatesSignature, getTutorUpdatesSeenSignature } from '@/lib/profileSystemUpdates';
 import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
 import { AppCard } from '@/frontend/components/ui/AppCard';
-import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { EmptyState } from '@/frontend/components/ui/EmptyState';
 import { layout, radius, spacing } from '@/frontend/styles/designSystem';
@@ -35,12 +34,14 @@ import {
     Modal,
     Platform,
     ScrollView,
+    StatusBar,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
     View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type UserProfile = {
   username?: string;
@@ -66,7 +67,7 @@ type MyFeedPost = {
   courseId?: string;
   courseName?: string;
   tags?: string[];
-  visibility?: 'public' | 'institution';
+  visibility?: 'public' | 'institution' | 'followers';
   attachments?: Array<{
     name: string;
     url: string;
@@ -86,6 +87,287 @@ type FollowListItem = {
   username: string;
   avatarUrl: string;
 };
+
+type ProfileFollowsModalBodyProps = {
+  onClose: () => void;
+  headerTitle: string;
+  followsModalType: 'followers' | 'following';
+  setFollowsModalType: (type: 'followers' | 'following') => void;
+  loadFollowsList: (type: 'followers' | 'following') => Promise<void>;
+  followersCount: number;
+  followingCount: number;
+  followsSearch: string;
+  setFollowsSearch: (q: string) => void;
+  followsLoading: boolean;
+  filteredFollowsItems: FollowListItem[];
+};
+
+/** Followers/Following modal: nested provider + local header so first-open safe area is correct. */
+function ProfileFollowsModalBody({
+  onClose,
+  headerTitle,
+  followsModalType,
+  setFollowsModalType,
+  loadFollowsList,
+  followersCount,
+  followingCount,
+  followsSearch,
+  setFollowsSearch,
+  followsLoading,
+  filteredFollowsItems,
+}: ProfileFollowsModalBodyProps) {
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
+  const { t, i18n } = useTranslation();
+  const router = useRouter();
+  const isHebrewUi = i18n.language === 'he';
+  const topInset =
+    insets.top > 0 ? insets.top : Platform.OS === 'ios' ? 47 : StatusBar.currentHeight ?? 0;
+
+  return (
+    <View style={[styles.followsModalRoot, { backgroundColor: colors.bg }]}>
+      <View
+        style={[
+          styles.followsModalLocalHeader,
+          {
+            paddingTop: topInset + 8,
+            minHeight: topInset + 8 + 56,
+            backgroundColor: colors.bg,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.followsModalLocalHeaderRow}>
+          <TouchableOpacity
+            style={styles.followsModalHeaderBackBtn}
+            onPress={onClose}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.back')}
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.primary} />
+          </TouchableOpacity>
+          <View style={styles.followsModalHeaderTitleWrap} pointerEvents="none">
+            <Text
+              style={[styles.followsModalHeaderTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+              numberOfLines={1}
+            >
+              {headerTitle}
+            </Text>
+          </View>
+          <View style={styles.followsModalHeaderSpacer} />
+        </View>
+      </View>
+
+      <View style={[styles.followsModalTopDecor, { borderBottomColor: colors.border }]}>
+        <View style={[styles.followsTopDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.followsTopDecorAccent, { backgroundColor: colors.accent }]} />
+      </View>
+
+      <View style={styles.followsBody}>
+        <AppCard
+          style={[
+            styles.followsSegmentShell,
+            { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+          ]}
+        >
+          <View style={[styles.followsSegmentRow, isHebrewUi && styles.rtlRow]}>
+            <TouchableOpacity
+              style={[
+                styles.followsSegmentBtn,
+                followsModalType === 'followers' && {
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                },
+                followsModalType !== 'followers' && {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => {
+                setFollowsModalType('followers');
+                void loadFollowsList('followers');
+              }}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.followsSegmentCount,
+                  {
+                    color:
+                      followsModalType === 'followers' ? colors.textOnPrimary : colors.textPrimary,
+                  },
+                ]}
+              >
+                {followersCount}
+              </Text>
+              <Text
+                style={[
+                  styles.followsSegmentLabel,
+                  {
+                    color:
+                      followsModalType === 'followers' ? colors.textOnPrimary : colors.textSecondary,
+                  },
+                  isHebrewUi && styles.rtlText,
+                ]}
+              >
+                {t('profile.followers')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.followsSegmentBtn,
+                followsModalType === 'following' && {
+                  backgroundColor: colors.primary,
+                  borderColor: colors.primary,
+                },
+                followsModalType !== 'following' && {
+                  backgroundColor: colors.surface,
+                  borderColor: colors.border,
+                },
+              ]}
+              onPress={() => {
+                setFollowsModalType('following');
+                void loadFollowsList('following');
+              }}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.followsSegmentCount,
+                  {
+                    color:
+                      followsModalType === 'following' ? colors.textOnPrimary : colors.textPrimary,
+                  },
+                ]}
+              >
+                {followingCount}
+              </Text>
+              <Text
+                style={[
+                  styles.followsSegmentLabel,
+                  {
+                    color:
+                      followsModalType === 'following' ? colors.textOnPrimary : colors.textSecondary,
+                  },
+                  isHebrewUi && styles.rtlText,
+                ]}
+              >
+                {t('profile.following')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </AppCard>
+
+        <AppCard style={[styles.followsSearchCard, { borderColor: colors.border }]}>
+          <View style={[styles.followsSearchInner, isHebrewUi && styles.rtlRow]}>
+            <Ionicons name="search" size={18} color={colors.textSecondary} />
+            <TextInput
+              style={[styles.followsSearchInput, { color: colors.textPrimary }]}
+              placeholder={t('search.title')}
+              placeholderTextColor={colors.textSecondary}
+              value={followsSearch}
+              onChangeText={setFollowsSearch}
+              textAlign={isHebrewUi ? 'right' : 'left'}
+            />
+          </View>
+        </AppCard>
+
+        {followsLoading ? (
+          <View style={styles.followsStateWrap}>
+            <ActivityIndicator color={colors.primary} />
+          </View>
+        ) : filteredFollowsItems.length ? (
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            style={styles.followsListScroll}
+            contentContainerStyle={[
+              styles.followsListContent,
+              { paddingBottom: spacing.xxl + insets.bottom },
+            ]}
+          >
+            {filteredFollowsItems.map((item) => (
+              <TouchableOpacity
+                key={item.uid}
+                onPress={() => {
+                  onClose();
+                  router.push(`/user-profile/${item.uid}` as any);
+                }}
+                activeOpacity={0.85}
+                style={styles.followUserCardOuter}
+              >
+                <AppCard
+                  style={[
+                    styles.followUserCard,
+                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+                  ]}
+                >
+                  <View style={[styles.followUserRow, isHebrewUi && styles.rtlRow]}>
+                    <View style={[styles.followAvatarWrap, { borderColor: colors.border }]}>
+                      {item.avatarUrl ? (
+                        <Image source={{ uri: item.avatarUrl }} style={styles.followAvatar} />
+                      ) : (
+                        <Ionicons name="person" size={18} color={colors.primary} />
+                      )}
+                    </View>
+                    <View style={styles.followTextWrap}>
+                      <Text
+                        style={[styles.followName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                        numberOfLines={1}
+                      >
+                        {item.fullName}
+                      </Text>
+                      {!!item.username && (
+                        <Text
+                          style={[
+                            styles.followUsername,
+                            { color: colors.textSecondary },
+                            isHebrewUi && styles.rtlText,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          @{item.username}
+                        </Text>
+                      )}
+                    </View>
+                    {followsModalType === 'following' && (
+                      <View
+                        style={[
+                          styles.followingChip,
+                          { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                        ]}
+                      >
+                        <Text style={[styles.followingChipText, { color: colors.textSecondary }]}>
+                          {t('profile.following')}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                </AppCard>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        ) : (
+          <View style={styles.followsStateWrap}>
+            <AppCard
+              style={[
+                styles.followsEmptyCard,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              ]}
+            >
+              <EmptyState
+                title={t('search.noResults')}
+                subtitle={
+                  followsModalType === 'followers' ? t('profile.followers') : t('profile.following')
+                }
+              />
+            </AppCard>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
 
 type TutorApprovedCourse = {
   courseId: string;
@@ -108,7 +390,7 @@ export default function ProfileScreen() {
   const [editingContent, setEditingContent] = useState('');
   const [editingType, setEditingType] = useState<'Summary' | 'Tip' | 'Question' | 'Exam Info'>('Summary');
   const [editingTagsInput, setEditingTagsInput] = useState('');
-  const [editingVisibility, setEditingVisibility] = useState<'public' | 'institution'>('public');
+  const [editingVisibility, setEditingVisibility] = useState<'public' | 'institution' | 'followers'>('public');
   const [editingCourseId, setEditingCourseId] = useState('');
   const [editingCourseName, setEditingCourseName] = useState('');
   const [editingAttachments, setEditingAttachments] = useState<Array<{
@@ -278,7 +560,11 @@ export default function ProfileScreen() {
           courseId: data?.courseId || '',
           courseName: data?.courseName || '',
           tags: Array.isArray(data?.tags) ? data.tags : [],
-          visibility: (data?.visibility || 'public') as 'public' | 'institution',
+          visibility: (() => {
+            const raw = String(data?.visibility || 'public').toLowerCase();
+            if (raw === 'institution' || raw === 'followers') return raw;
+            return 'public';
+          })(),
           attachments: Array.isArray(data?.attachments) ? data.attachments : [],
           likesCount: likedBy.length,
           savesCount: savedBy.length,
@@ -412,7 +698,12 @@ export default function ProfileScreen() {
     setEditingContent(post.content);
     setEditingType((post.type as any) || 'Summary');
     setEditingTagsInput((post.tags || []).join(', '));
-    setEditingVisibility(post.visibility || 'public');
+    {
+      const raw = String(post.visibility || 'public').toLowerCase();
+      setEditingVisibility(
+        raw === 'institution' || raw === 'followers' ? (raw as 'institution' | 'followers') : 'public'
+      );
+    }
     setEditingCourseId(post.courseId || '');
     setEditingCourseName(post.courseName || '');
     setEditingAttachments(post.attachments || []);
@@ -851,225 +1142,21 @@ export default function ProfileScreen() {
         animationType="slide"
         onRequestClose={() => setShowFollowsModal(false)}
       >
-        <AppScreen>
-          <AppHeader
-            title={profile?.username || 'username'}
-            onBack={() => setShowFollowsModal(false)}
+        <SafeAreaProvider style={[styles.followsModalRoot, { backgroundColor: colors.bg }]}>
+          <ProfileFollowsModalBody
+            onClose={() => setShowFollowsModal(false)}
+            headerTitle={profile?.username || 'username'}
+            followsModalType={followsModalType}
+            setFollowsModalType={setFollowsModalType}
+            loadFollowsList={loadFollowsList}
+            followersCount={followersCount}
+            followingCount={followingCount}
+            followsSearch={followsSearch}
+            setFollowsSearch={setFollowsSearch}
+            followsLoading={followsLoading}
+            filteredFollowsItems={filteredFollowsItems}
           />
-          <View style={[styles.followsTopDecorWrap, { borderBottomColor: colors.border }]}>
-            <View style={[styles.followsTopDecorPrimary, { backgroundColor: colors.primary }]} />
-            <View style={[styles.followsTopDecorAccent, { backgroundColor: colors.accent }]} />
-          </View>
-
-          <View style={styles.followsBody}>
-            <AppCard
-              style={[
-                styles.followsSegmentShell,
-                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-              ]}
-            >
-              <View style={[styles.followsSegmentRow, isHebrewUi && styles.rtlRow]}>
-                <TouchableOpacity
-                  style={[
-                    styles.followsSegmentBtn,
-                    followsModalType === 'followers' && {
-                      backgroundColor: colors.primary,
-                      borderColor: colors.primary,
-                    },
-                    followsModalType !== 'followers' && {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                  onPress={() => {
-                    setFollowsModalType('followers');
-                    loadFollowsList('followers');
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.followsSegmentCount,
-                      {
-                        color:
-                          followsModalType === 'followers'
-                            ? colors.textOnPrimary
-                            : colors.textPrimary,
-                      },
-                    ]}
-                  >
-                    {followersCount}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.followsSegmentLabel,
-                      {
-                        color:
-                          followsModalType === 'followers'
-                            ? colors.textOnPrimary
-                            : colors.textSecondary,
-                      },
-                      isHebrewUi && styles.rtlText,
-                    ]}
-                  >
-                    {t('profile.followers')}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.followsSegmentBtn,
-                    followsModalType === 'following' && {
-                      backgroundColor: colors.primary,
-                      borderColor: colors.primary,
-                    },
-                    followsModalType !== 'following' && {
-                      backgroundColor: colors.surface,
-                      borderColor: colors.border,
-                    },
-                  ]}
-                  onPress={() => {
-                    setFollowsModalType('following');
-                    loadFollowsList('following');
-                  }}
-                  activeOpacity={0.85}
-                >
-                  <Text
-                    style={[
-                      styles.followsSegmentCount,
-                      {
-                        color:
-                          followsModalType === 'following'
-                            ? colors.textOnPrimary
-                            : colors.textPrimary,
-                      },
-                    ]}
-                  >
-                    {followingCount}
-                  </Text>
-                  <Text
-                    style={[
-                      styles.followsSegmentLabel,
-                      {
-                        color:
-                          followsModalType === 'following'
-                            ? colors.textOnPrimary
-                            : colors.textSecondary,
-                      },
-                      isHebrewUi && styles.rtlText,
-                    ]}
-                  >
-                    {t('profile.following')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </AppCard>
-
-            <AppCard style={[styles.followsSearchCard, { borderColor: colors.border }]}>
-              <View style={[styles.followsSearchInner, isHebrewUi && styles.rtlRow]}>
-                <Ionicons name="search" size={18} color={colors.textSecondary} />
-                <TextInput
-                  style={[styles.followsSearchInput, { color: colors.textPrimary }]}
-                  placeholder={t('search.title')}
-                  placeholderTextColor={colors.textSecondary}
-                  value={followsSearch}
-                  onChangeText={setFollowsSearch}
-                  textAlign={isHebrewUi ? 'right' : 'left'}
-                />
-              </View>
-            </AppCard>
-
-            {followsLoading ? (
-              <View style={styles.followsStateWrap}>
-                <ActivityIndicator color={colors.primary} />
-              </View>
-            ) : filteredFollowsItems.length ? (
-              <ScrollView
-                showsVerticalScrollIndicator={false}
-                style={styles.followsListScroll}
-                contentContainerStyle={styles.followsListContent}
-              >
-                {filteredFollowsItems.map((item) => (
-                  <TouchableOpacity
-                    key={item.uid}
-                    onPress={() => {
-                      setShowFollowsModal(false);
-                      router.push(`/user-profile/${item.uid}` as any);
-                    }}
-                    activeOpacity={0.85}
-                    style={styles.followUserCardOuter}
-                  >
-                    <AppCard
-                      style={[
-                        styles.followUserCard,
-                        { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                      ]}
-                    >
-                      <View style={[styles.followUserRow, isHebrewUi && styles.rtlRow]}>
-                        <View style={[styles.followAvatarWrap, { borderColor: colors.border }]}>
-                          {item.avatarUrl ? (
-                            <Image source={{ uri: item.avatarUrl }} style={styles.followAvatar} />
-                          ) : (
-                            <Ionicons name="person" size={18} color={colors.primary} />
-                          )}
-                        </View>
-                        <View style={styles.followTextWrap}>
-                          <Text
-                            style={[styles.followName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
-                            numberOfLines={1}
-                          >
-                            {item.fullName}
-                          </Text>
-                          {!!item.username && (
-                            <Text
-                              style={[
-                                styles.followUsername,
-                                { color: colors.textSecondary },
-                                isHebrewUi && styles.rtlText,
-                              ]}
-                              numberOfLines={1}
-                            >
-                              @{item.username}
-                            </Text>
-                          )}
-                        </View>
-                        {followsModalType === 'following' && (
-                          <View
-                            style={[
-                              styles.followingChip,
-                              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                            ]}
-                          >
-                            <Text style={[styles.followingChipText, { color: colors.textSecondary }]}>
-                              {t('profile.following')}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                    </AppCard>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={styles.followsStateWrap}>
-                <AppCard
-                  style={[
-                    styles.followsEmptyCard,
-                    { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-                  ]}
-                >
-                  <EmptyState
-                    title={t('search.noResults')}
-                    subtitle={
-                      followsModalType === 'followers'
-                        ? t('profile.followers')
-                        : t('profile.following')
-                    }
-                  />
-                </AppCard>
-              </View>
-            )}
-          </View>
-        </AppScreen>
+        </SafeAreaProvider>
       </Modal>
 
       {/* Edit Feed Post Modal */}
@@ -1182,16 +1269,23 @@ export default function ProfileScreen() {
             />
 
             <Text style={styles.modalLabel}>{t('feed.visibility')}</Text>
-            <View style={styles.postEditVisibilityRow}>
+            <View style={[styles.postEditVisibilityRow, isHebrewUi && styles.rtlRow]}>
               <TouchableOpacity
                 style={[styles.postEditVisibilityBtn, editingVisibility === 'public' && styles.postEditVisibilityBtnActive]}
                 onPress={() => setEditingVisibility('public')}
               >
+                <Ionicons
+                  name="globe-outline"
+                  size={16}
+                  color={editingVisibility === 'public' ? '#047857' : '#6b7280'}
+                />
                 <Text
                   style={[
                     styles.postEditVisibilityText,
-                    editingVisibility === 'public' && styles.postEditVisibilityTextActive
+                    editingVisibility === 'public' && styles.postEditVisibilityTextActive,
+                    isHebrewUi && styles.rtlText,
                   ]}
+                  numberOfLines={2}
                 >
                   {t('feed.public')}
                 </Text>
@@ -1199,17 +1293,47 @@ export default function ProfileScreen() {
               <TouchableOpacity
                 style={[
                   styles.postEditVisibilityBtn,
-                  editingVisibility === 'institution' && styles.postEditVisibilityBtnActive
+                  editingVisibility === 'institution' && styles.postEditVisibilityBtnActive,
                 ]}
                 onPress={() => setEditingVisibility('institution')}
               >
+                <Ionicons
+                  name="school-outline"
+                  size={16}
+                  color={editingVisibility === 'institution' ? '#047857' : '#6b7280'}
+                />
                 <Text
                   style={[
                     styles.postEditVisibilityText,
-                    editingVisibility === 'institution' && styles.postEditVisibilityTextActive
+                    editingVisibility === 'institution' && styles.postEditVisibilityTextActive,
+                    isHebrewUi && styles.rtlText,
                   ]}
+                  numberOfLines={2}
                 >
                   {t('feed.institutionOnly')}
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.postEditVisibilityBtn,
+                  editingVisibility === 'followers' && styles.postEditVisibilityBtnActive,
+                ]}
+                onPress={() => setEditingVisibility('followers')}
+              >
+                <Ionicons
+                  name="people-outline"
+                  size={16}
+                  color={editingVisibility === 'followers' ? '#047857' : '#6b7280'}
+                />
+                <Text
+                  style={[
+                    styles.postEditVisibilityText,
+                    editingVisibility === 'followers' && styles.postEditVisibilityTextActive,
+                    isHebrewUi && styles.rtlText,
+                  ]}
+                  numberOfLines={2}
+                >
+                  {t('feed.followersOnly')}
                 </Text>
               </TouchableOpacity>
             </View>
@@ -1827,6 +1951,51 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
   },
+  followsModalRoot: {
+    flex: 1,
+  },
+  followsModalLocalHeader: {
+    width: '100%',
+    zIndex: 20,
+    elevation: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  followsModalLocalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    minHeight: 56,
+  },
+  followsModalHeaderBackBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  followsModalHeaderTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  followsModalHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  followsModalHeaderSpacer: {
+    width: 44,
+    height: 44,
+  },
+  followsModalTopDecor: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+    borderBottomWidth: 1,
+  },
   followsTopDecorWrap: {
     position: 'relative',
     overflow: 'hidden',
@@ -2117,16 +2286,22 @@ const styles = StyleSheet.create({
   },
   postEditVisibilityRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 12,
   },
   postEditVisibilityBtn: {
-    flex: 1,
+    flexGrow: 1,
+    minWidth: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
     borderWidth: 1,
     borderColor: '#e5e7eb',
     borderRadius: 10,
     paddingVertical: 10,
-    alignItems: 'center',
+    paddingHorizontal: 8,
     backgroundColor: '#f9fafb',
   },
   postEditVisibilityBtnActive: {
@@ -2137,6 +2312,8 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 12,
     fontWeight: '600',
+    textAlign: 'center',
+    flexShrink: 1,
   },
   postEditVisibilityTextActive: {
     color: '#047857',

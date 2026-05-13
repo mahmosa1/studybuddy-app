@@ -6,7 +6,9 @@ import { layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
+import { attachmentLooksLikeImage } from '@/lib/feedAttachmentUtils';
 import { createActivityNotification } from '@/lib/notificationService';
+import { pushAttachmentViewer } from '@/lib/openAttachmentViewer';
 import { Ionicons } from '@expo/vector-icons';
 import {
   addDoc,
@@ -30,7 +32,6 @@ import {
   ActivityIndicator,
   Alert,
   Image,
-  Linking,
   ScrollView,
   StyleSheet,
   Text,
@@ -62,14 +63,7 @@ type StudyPost = {
   createdAt: string;
   isLiked: boolean;
   isSaved: boolean;
-};
-
-const attachmentLooksLikeImage = (file: { name: string; url: string; mimeType?: string | null }) => {
-  const mime = String(file.mimeType || '').toLowerCase();
-  if (mime.startsWith('image/')) return true;
-  const u = String(file.url || '').toLowerCase();
-  const n = String(file.name || '').toLowerCase();
-  return /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/.test(u) || /\.(png|jpe?g|gif|webp|heic|heif)(\?|$)/.test(n);
+  visibility?: 'public' | 'institution' | 'followers';
 };
 
 type PostComment = {
@@ -103,6 +97,7 @@ export default function StudyPostDetailsScreen() {
   const [post, setPost] = useState<StudyPost | null>(null);
   const [loading, setLoading] = useState(true);
   const [comments, setComments] = useState<PostComment[]>([]);
+  const [commentAvatarByUid, setCommentAvatarByUid] = useState<Record<string, string>>({});
   const [loadingComments, setLoadingComments] = useState(true);
   const [commentText, setCommentText] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
@@ -142,18 +137,45 @@ export default function StudyPostDetailsScreen() {
           return;
         }
         const data = snap.data() as any;
+        const visRaw = String(data.visibility || 'public').toLowerCase();
+        const postVisibility =
+          visRaw === 'institution' || visRaw === 'followers' || visRaw === 'public' ? visRaw : 'public';
+
+        if (postVisibility === 'followers') {
+          if (!firebaseUser) {
+            setPost(null);
+            return;
+          }
+          const authorUid = String(data.authorUid || '').trim();
+          if (authorUid && authorUid !== firebaseUser.uid) {
+            const followRef = doc(db, 'follows', `${firebaseUser.uid}_${authorUid}`);
+            const followSnap = await getDoc(followRef);
+            if (!followSnap.exists()) {
+              setPost(null);
+              return;
+            }
+          }
+        }
+
         const likedBy: string[] = data.likedBy || [];
         const savedBy: string[] = data.savedBy || [];
-        let authorAvatarUrl = data.authorAvatarUrl || '';
-        if (!authorAvatarUrl && data.authorUid) {
+        let authorAvatarUrl = String(data.authorAvatarUrl || '').trim();
+        if (data.authorUid) {
           try {
             const authorSnap = await getDoc(doc(db, 'users', data.authorUid));
             if (authorSnap.exists()) {
               const authorData = authorSnap.data() as any;
-              authorAvatarUrl = authorData?.profilePictureUrl || '';
+              const fromProfile = String(
+                authorData?.profilePictureUrl ||
+                  authorData?.profileImageUrl ||
+                  authorData?.photoURL ||
+                  authorData?.avatarUrl ||
+                  ''
+              ).trim();
+              authorAvatarUrl = fromProfile || undefined;
             }
           } catch {
-            // Keep icon fallback if user lookup fails.
+            // Keep denormalized post avatar if user lookup fails.
           }
         }
         setPost({
@@ -174,6 +196,7 @@ export default function StudyPostDetailsScreen() {
           createdAt: data.createdAt?.toDate ? relativeTime(data.createdAt.toDate()) : 'Just now',
           isLiked: firebaseUser ? likedBy.includes(firebaseUser.uid) : false,
           isSaved: firebaseUser ? savedBy.includes(firebaseUser.uid) : false,
+          visibility: postVisibility as 'public' | 'institution' | 'followers',
         });
       } catch (err) {
         console.log('post details load error', err);
@@ -215,6 +238,41 @@ export default function StudyPostDetailsScreen() {
     );
     return unsub;
   }, [resolvedPostId, firebaseUser]);
+
+  useEffect(() => {
+    const uids = [...new Set(comments.map((c) => String(c.authorUid || '').trim()).filter(Boolean))];
+    if (!uids.length) {
+      setCommentAvatarByUid({});
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      const next: Record<string, string> = {};
+      await Promise.all(
+        uids.map(async (uid) => {
+          try {
+            const userSnap = await getDoc(doc(db, 'users', uid));
+            if (userSnap.exists()) {
+              const ud = userSnap.data() as any;
+              next[uid] = String(
+                ud?.profilePictureUrl ||
+                  ud?.profileImageUrl ||
+                  ud?.photoURL ||
+                  ud?.avatarUrl ||
+                  ''
+              ).trim();
+            }
+          } catch {
+            // skip uid
+          }
+        })
+      );
+      if (!cancelled) setCommentAvatarByUid(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [comments]);
 
   const handleLike = async () => {
     if (!firebaseUser || !post) return;
@@ -538,6 +596,21 @@ export default function StudyPostDetailsScreen() {
             </View>
           ) : null}
 
+          {post.visibility === 'institution' ? (
+            <View
+              style={[
+                styles.courseTag,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border, marginBottom: 8 },
+                isHebrewUi && styles.rtlRow,
+              ]}
+            >
+              <Ionicons name="school-outline" size={14} color={colors.textSecondary} />
+              <Text style={[styles.courseTagText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                {t('feed.institutionOnlyBadge')}
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={[styles.title, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>{post.title}</Text>
           <Text style={[styles.contentText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>{post.content}</Text>
 
@@ -560,8 +633,10 @@ export default function StudyPostDetailsScreen() {
                     activeOpacity={0.9}
                     onPress={() => {
                       if (!file?.url) return;
-                      Linking.openURL(file.url).catch(() => {
-                        Alert.alert(t('common.error'), 'Could not open attachment.');
+                      pushAttachmentViewer(router, {
+                        url: file.url,
+                        name: file.name,
+                        mimeType: file.mimeType ?? undefined,
                       });
                     }}
                   >
@@ -579,8 +654,10 @@ export default function StudyPostDetailsScreen() {
                     ]}
                     onPress={() => {
                       if (!file?.url) return;
-                      Linking.openURL(file.url).catch(() => {
-                        Alert.alert(t('common.error'), 'Could not open attachment.');
+                      pushAttachmentViewer(router, {
+                        url: file.url,
+                        name: file.name,
+                        mimeType: file.mimeType ?? undefined,
                       });
                     }}
                     activeOpacity={0.85}
@@ -692,11 +769,16 @@ export default function StudyPostDetailsScreen() {
                 <AppCard style={[styles.commentCard, { borderColor: colors.border }]}>
                   <View style={styles.commentRow}>
                     <View style={[styles.commentAvatar, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-                      {comment.authorAvatarUrl ? (
-                        <Image source={{ uri: comment.authorAvatarUrl }} style={styles.commentAvatarImage} />
-                      ) : (
-                        <Ionicons name="person" size={14} color={colors.primary} />
-                      )}
+                      {(() => {
+                        const uid = String(comment.authorUid || '').trim();
+                        const inMap = uid && Object.prototype.hasOwnProperty.call(commentAvatarByUid, uid);
+                        const uri = inMap ? commentAvatarByUid[uid] || undefined : comment.authorAvatarUrl;
+                        return uri ? (
+                          <Image source={{ uri }} style={styles.commentAvatarImage} />
+                        ) : (
+                          <Ionicons name="person" size={14} color={colors.primary} />
+                        );
+                      })()}
                     </View>
                     <View style={styles.commentMain}>
                       <View style={[styles.commentHeader, isHebrewUi && styles.rtlRow]}>

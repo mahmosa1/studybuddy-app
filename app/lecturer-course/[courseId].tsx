@@ -1,32 +1,28 @@
 // app/lecturer-course/[courseId].tsx
+import { AppCard } from '@/frontend/components/ui/AppCard';
+import { AppHeader } from '@/frontend/components/ui/AppHeader';
+import { AppScreen } from '@/frontend/components/ui/AppScreen';
+import { EmptyState } from '@/frontend/components/ui/EmptyState';
+import { LoadingState } from '@/frontend/components/ui/LoadingState';
+import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { layout, radius, spacing, typography, ThemeColors } from '@/frontend/styles/designSystem';
+import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { getExistingJoinRequest, requestToJoinCourse } from '@/lib/courseJoinRequestService';
 import { auth, db } from '@/lib/firebaseConfig';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import {
   collection,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
   where,
 } from 'firebase/firestore';
+import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ActivityIndicator,
-  Alert,
-  FlatList,
-  Linking,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-
-const PRIMARY_GREEN = '#047857';
-const ACCENT_GREEN = '#047857';
+import { Alert, Linking, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 type CourseFile = {
   id: string;
@@ -38,7 +34,11 @@ type CourseFile = {
 
 export default function StudentLecturerCourseViewScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isHebrewUi = i18n.language === 'he';
+  const { colors } = useAppTheme();
+  const styles = makeStyles(colors);
+
   const params = useLocalSearchParams<{
     courseId?: string | string[];
     name?: string;
@@ -56,12 +56,11 @@ export default function StudentLecturerCourseViewScreen() {
   const [courseOwnerUid, setCourseOwnerUid] = useState('');
   const [lecturerName, setLecturerName] = useState('');
   const [lecturerInstitution, setLecturerInstitution] = useState('');
-  /** True once course snapshot (+ join-request check when needed) finished for this viewer. */
   const [accessResolved, setAccessResolved] = useState(false);
-  /** Owner or approved participant via sharedWithUids or latest approved join request */
   const [canViewMaterials, setCanViewMaterials] = useState(false);
+  const [followingLecturer, setFollowingLecturer] = useState(false);
+  const [followResolved, setFollowResolved] = useState(false);
 
-  // Course doc + participation / request UI state (live updates when lecturer approves)
   useEffect(() => {
     if (!courseId) {
       setAccessResolved(false);
@@ -78,7 +77,9 @@ export default function StudentLecturerCourseViewScreen() {
         if (cancelled || !courseSnap.exists()) return;
 
         const data = courseSnap.data() as any;
-        const ownerUid = String(data?.ownerUid || data?.lecturerUid || '');
+        const ownerUid = String(
+          data?.ownerUid || data?.lecturerUid || data?.createdBy || data?.userId || '',
+        );
         const sharedList = Array.isArray(data?.sharedWithUids)
           ? data.sharedWithUids.map((v: any) => String(v))
           : [];
@@ -138,7 +139,37 @@ export default function StudentLecturerCourseViewScreen() {
     };
   }, [courseId]);
 
-  // Load file metadata only when viewer may download (owner or approved participant)
+  useEffect(() => {
+    if (!courseOwnerUid) {
+      setFollowingLecturer(false);
+      setFollowResolved(true);
+      return;
+    }
+
+    const user = auth.currentUser;
+    if (!user?.uid || user.uid === courseOwnerUid) {
+      setFollowingLecturer(false);
+      setFollowResolved(true);
+      return;
+    }
+
+    setFollowResolved(false);
+    const followDocId = `${user.uid}_${courseOwnerUid}`;
+    const followRef = doc(db, 'follows', followDocId);
+    const unsub = onSnapshot(
+      followRef,
+      (snap) => {
+        setFollowingLecturer(snap.exists());
+        setFollowResolved(true);
+      },
+      () => {
+        setFollowingLecturer(false);
+        setFollowResolved(true);
+      },
+    );
+    return () => unsub();
+  }, [courseOwnerUid]);
+
   useEffect(() => {
     if (!courseId) {
       setLoadingFiles(false);
@@ -163,9 +194,9 @@ export default function StudentLecturerCourseViewScreen() {
 
     const unsub = onSnapshot(
       q,
-      snapshot => {
+      (snapshot) => {
         const list: CourseFile[] = [];
-        snapshot.forEach(docSnap => {
+        snapshot.forEach((docSnap) => {
           const data = docSnap.data() as any;
           list.push({
             id: docSnap.id,
@@ -178,7 +209,7 @@ export default function StudentLecturerCourseViewScreen() {
         setFiles(list);
         setLoadingFiles(false);
       },
-      err => {
+      (err) => {
         console.log('Error loading course files:', err);
         setLoadingFiles(false);
       },
@@ -193,13 +224,13 @@ export default function StudentLecturerCourseViewScreen() {
       return;
     }
     if (!file.url) {
-      Alert.alert('Error', 'Missing file URL.');
+      Alert.alert(t('common.error'), t('courseJoin.requestFailed'));
       return;
     }
 
-    Linking.openURL(file.url).catch(err => {
+    Linking.openURL(file.url).catch((err) => {
       console.log('Failed to open file url:', err);
-      Alert.alert('Error', 'Could not open file.');
+      Alert.alert(t('common.error'), t('courseJoin.requestFailed'));
     });
   };
 
@@ -224,8 +255,25 @@ export default function StudentLecturerCourseViewScreen() {
       return;
     }
 
-    if (courseOwnerUid && user.uid === courseOwnerUid) {
+    if (!courseOwnerUid) {
+      Alert.alert(t('common.error'), t('courseJoin.requestUnavailable'));
+      return;
+    }
+
+    if (user.uid === courseOwnerUid) {
       Alert.alert(t('common.error'), t('courseJoin.cannotRequestOwnCourse'));
+      return;
+    }
+
+    try {
+      const followSnap = await getDoc(doc(db, 'follows', `${user.uid}_${courseOwnerUid}`));
+      if (!followSnap.exists()) {
+        Alert.alert(t('common.error'), t('courseJoin.mustFollowLecturerToRequest'));
+        return;
+      }
+    } catch (e) {
+      console.log('Follow check before join request failed:', e);
+      Alert.alert(t('common.error'), t('courseJoin.mustFollowLecturerToRequest'));
       return;
     }
 
@@ -272,422 +320,424 @@ export default function StudentLecturerCourseViewScreen() {
     }
   };
 
-  const renderFile = ({ item }: { item: CourseFile }) => {
-    const sizeMb =
-      item.size != null ? (item.size / (1024 * 1024)).toFixed(2) : null;
-    const fileIcon = getFileIcon(item.mimeType);
-
-    return (
-      <TouchableOpacity
-        style={styles.fileCard}
-        onPress={() => handleOpenFile(item)}
-        activeOpacity={0.7}
-      >
-        <View style={styles.fileIconContainer}>
-          <Ionicons name={fileIcon} size={24} color={ACCENT_GREEN} />
-        </View>
-        <View style={styles.fileInfo}>
-          <Text style={styles.fileName} numberOfLines={1}>
-            {item.name}
-          </Text>
-          <View style={styles.fileMetaRow}>
-            {item.mimeType && (
-              <View style={styles.metaTag}>
-                <Ionicons name="document-outline" size={10} color="#6b7280" />
-                <Text style={styles.metaTagText}>
-                  {item.mimeType.split('/')[1]?.toUpperCase() || 'FILE'}
-                </Text>
-              </View>
-            )}
-            {sizeMb && (
-              <View style={styles.metaTag}>
-                <Ionicons name="hardware-chip-outline" size={10} color="#6b7280" />
-                <Text style={styles.metaTagText}>{sizeMb} MB</Text>
-              </View>
-            )}
-          </View>
-        </View>
-        <Ionicons name="download-outline" size={20} color={PRIMARY_GREEN} />
-      </TouchableOpacity>
-    );
-  };
-
   const currentUid = auth.currentUser?.uid ?? '';
   const isOwnerViewer = !!courseOwnerUid && currentUid === courseOwnerUid;
 
+  const showRequestJoin =
+    accessResolved &&
+    followResolved &&
+    !!currentUid &&
+    !isOwnerViewer &&
+    !requestPending &&
+    !alreadyParticipating &&
+    followingLecturer &&
+    !!courseOwnerUid;
+
+  const showMustFollowMessage =
+    accessResolved &&
+    followResolved &&
+    !!currentUid &&
+    !isOwnerViewer &&
+    !requestPending &&
+    !alreadyParticipating &&
+    !followingLecturer &&
+    !!courseOwnerUid;
+
+  const showLoginHint =
+    accessResolved && followResolved && !currentUid && !isOwnerViewer && !requestPending && !alreadyParticipating;
+
   return (
-    <View style={styles.container}>
+    <AppScreen>
+      <AppHeader title={String(name)} onBack={() => router.back()} />
       <ScrollView
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.backButtonHeader}
-            onPress={() => router.back()}
+        <View style={[styles.heroWrap, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={styles.heroGlowPrimary} />
+          <View style={styles.heroGlowAccent} />
+          <View
+            style={[
+              styles.previewBadge,
+              { borderColor: colors.border, backgroundColor: colors.surfaceElevated },
+            ]}
           >
-            <Ionicons name="arrow-back" size={24} color="#ffffff" />
-          </TouchableOpacity>
-          <Ionicons name="people" size={32} color="#ffffff" />
-          <Text style={styles.headerTitle}>{name}</Text>
+            <Ionicons name="eye-outline" size={14} color={colors.textSecondary} />
+            <Text style={[styles.previewBadgeText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+              {t('courseJoin.previewBadge')}
+            </Text>
+          </View>
+          <Text style={[styles.heroSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+            {t('courseJoin.previewHeroSubtitle')}
+          </Text>
           {!!lecturerName && (
-            <Text style={styles.headerSubtitle}>
-              {lecturerInstitution
-                ? `${lecturerName} • ${lecturerInstitution}`
-                : lecturerName}
+            <Text style={[styles.lecturerLine, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {lecturerInstitution ? `${lecturerName} · ${lecturerInstitution}` : lecturerName}
             </Text>
           )}
-          <View style={styles.readOnlyBadge}>
-            <Ionicons name="lock-closed" size={14} color="#ffffff" />
-            <Text style={styles.readOnlyBadgeText}>Read-Only</Text>
-          </View>
         </View>
 
-        {/* Request Join Button */}
         {!isOwnerViewer && !requestPending && !alreadyParticipating && (
-          <View style={styles.requestSection}>
-            <TouchableOpacity
-              style={[styles.requestButton, requestLoading && styles.requestButtonDisabled]}
-              onPress={handleRequestJoin}
-              disabled={requestLoading}
-            >
-              <Ionicons name="person-add" size={20} color="#ffffff" />
-              <Text style={styles.requestButtonText}>{t('courseJoin.requestToJoin')}</Text>
-            </TouchableOpacity>
+          <View style={styles.actionBlock}>
+            {accessResolved && followResolved && !courseOwnerUid ? (
+              <AppCard style={[styles.noticeCard, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                <Text style={[styles.noticeText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                  {t('courseJoin.requestUnavailable')}
+                </Text>
+              </AppCard>
+            ) : showRequestJoin ? (
+              <PrimaryButton
+                label={t('courseJoin.requestToJoin')}
+                onPress={() => void handleRequestJoin()}
+                loading={requestLoading}
+                disabled={requestLoading}
+              />
+            ) : showMustFollowMessage ? (
+              <AppCard style={[styles.noticeCard, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                <View style={[styles.noticeRow, isHebrewUi && styles.rtlRow]}>
+                  <Ionicons name="person-add-outline" size={20} color={colors.textSecondary} />
+                  <Text style={[styles.noticeText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                    {t('courseJoin.mustFollowLecturerToRequest')}
+                  </Text>
+                </View>
+              </AppCard>
+            ) : showLoginHint ? (
+              <AppCard style={[styles.noticeCard, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
+                <Text style={[styles.noticeText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                  {t('courseJoin.notAuthenticated')}
+                </Text>
+              </AppCard>
+            ) : null}
           </View>
         )}
 
-        {requestPending && (
-          <View style={styles.requestedSection}>
-            <Ionicons name="checkmark-circle" size={24} color={ACCENT_GREEN} />
-            <Text style={styles.requestedText}>
-              {t('courseJoin.requestPending')}
-            </Text>
-          </View>
-        )}
-
-        {alreadyParticipating && (
-          <View style={styles.requestedSection}>
-            <Ionicons name="checkmark-done-circle" size={24} color={ACCENT_GREEN} />
-            <Text style={styles.requestedText}>
-              {t('courseJoin.alreadyParticipating')}
-            </Text>
-          </View>
-        )}
-
-        {isOwnerViewer && (
-          <View style={styles.ownerActions}>
-            <View style={[styles.requestedSection, styles.requestedSectionOwner]}>
-              <Ionicons name="information-circle" size={24} color={ACCENT_GREEN} />
-              <Text style={styles.requestedText}>
-                {t('courseJoin.ownerUseLecturerTools')}
+        {requestPending ? (
+          <AppCard style={[styles.statusCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <View style={[styles.statusRow, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="checkmark-circle" size={22} color={colors.primary} />
+              <Text style={[styles.statusText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('courseJoin.requestPending')}
               </Text>
             </View>
+          </AppCard>
+        ) : null}
+
+        {alreadyParticipating ? (
+          <AppCard style={[styles.statusCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+            <View style={[styles.statusRow, isHebrewUi && styles.rtlRow]}>
+              <Ionicons name="checkmark-done-circle" size={22} color={colors.success} />
+              <Text style={[styles.statusText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('courseJoin.alreadyParticipating')}
+              </Text>
+            </View>
+          </AppCard>
+        ) : null}
+
+        {isOwnerViewer ? (
+          <View style={styles.actionBlock}>
+            <AppCard style={[styles.statusCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <View style={[styles.statusRow, isHebrewUi && styles.rtlRow]}>
+                <Ionicons name="information-circle-outline" size={22} color={colors.accent} />
+                <Text style={[styles.statusText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                  {t('courseJoin.ownerUseLecturerTools')}
+                </Text>
+              </View>
+            </AppCard>
             {courseId ? (
-              <TouchableOpacity
-                style={styles.ownerToolsButton}
+              <PrimaryButton
+                label={t('courseJoin.openLecturerCourse')}
                 onPress={() =>
                   router.push({
                     pathname: '/lecturer/course/[courseId]' as any,
                     params: { courseId, name },
                   })
                 }
-              >
-                <Ionicons name="construct-outline" size={18} color="#ffffff" />
-                <Text style={styles.ownerToolsButtonText}>{t('courseJoin.openLecturerCourse')}</Text>
-              </TouchableOpacity>
+              />
             ) : null}
           </View>
-        )}
+        ) : null}
 
-        {/* Files Section */}
-        <View style={styles.filesCard}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="document-text" size={22} color={ACCENT_GREEN} />
-            <Text style={styles.sectionTitle}>{t('courseJoin.teachingMaterials')}</Text>
-            <Text style={styles.sectionSubtitle}>{t('courseJoin.downloadOnly')}</Text>
+        <AppCard style={[styles.filesCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+          <View style={styles.cardAccentBar} />
+          <View style={[styles.sectionHeader, isHebrewUi && styles.rtlRow]}>
+            <View style={[styles.sectionIconBadge, { backgroundColor: colors.surfaceMuted }]}>
+              <Ionicons name="document-text" size={18} color={colors.textPrimary} />
+            </View>
+            <View style={styles.sectionHeaderText}>
+              <Text style={[styles.sectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {t('courseJoin.teachingMaterials')}
+              </Text>
+              <Text style={[styles.sectionSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                {t('courseJoin.downloadOnly')}
+              </Text>
+            </View>
           </View>
 
           {!accessResolved ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator color={PRIMARY_GREEN} size="large" />
-              <Text style={styles.loadingText}>{t('common.loading')}</Text>
-            </View>
+            <LoadingState label={t('common.loading')} />
           ) : !canViewMaterials ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconContainer}>
-                <Ionicons name="lock-closed-outline" size={64} color="#6b7280" />
-              </View>
-              <Text style={styles.emptyTitle}>{t('courseJoin.materialsLockedTitle')}</Text>
-              <Text style={styles.emptyText}>{t('courseJoin.materialsLockedSubtitle')}</Text>
-            </View>
-          ) : loadingFiles ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator color={PRIMARY_GREEN} size="large" />
-              <Text style={styles.loadingText}>Loading files...</Text>
-            </View>
-          ) : files.length === 0 ? (
-            <View style={styles.emptyState}>
-              <View style={styles.emptyIconContainer}>
-                <Ionicons name="document-outline" size={64} color="#6b7280" />
-              </View>
-              <Text style={styles.emptyTitle}>No files available</Text>
-              <Text style={styles.emptyText}>
-                The lecturer hasn't uploaded any materials yet.
-              </Text>
-            </View>
-          ) : (
-            <FlatList
-              data={files}
-              keyExtractor={item => item.id}
-              renderItem={renderFile}
-              scrollEnabled={false}
-              contentContainerStyle={styles.filesList}
+            <EmptyState
+              title={t('courseJoin.materialsLockedTitle')}
+              subtitle={t('courseJoin.materialsLockedSubtitle')}
             />
+          ) : loadingFiles ? (
+            <LoadingState label={t('common.loading')} />
+          ) : files.length === 0 ? (
+            <EmptyState
+              title={t('courseJoin.noMaterialsTitle')}
+              subtitle={t('courseJoin.noMaterialsSubtitle')}
+            />
+          ) : (
+            <View style={styles.filesList}>
+              {files.map((item) => {
+                const sizeMb =
+                  item.size != null ? (item.size / (1024 * 1024)).toFixed(2) : null;
+                const fileIcon = getFileIcon(item.mimeType);
+                return (
+                  <View
+                    key={item.id}
+                    style={[
+                      styles.fileCard,
+                      { borderColor: colors.border, backgroundColor: colors.surfaceMuted },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.fileContent}
+                      onPress={() => handleOpenFile(item)}
+                      activeOpacity={0.7}
+                    >
+                      <View style={[styles.fileIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+                        <Ionicons name={fileIcon} size={24} color={colors.accent} />
+                      </View>
+                      <View style={styles.fileInfo}>
+                        <Text
+                          style={[styles.fileName, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                          numberOfLines={1}
+                        >
+                          {item.name}
+                        </Text>
+                        <View style={[styles.fileMetaRow, isHebrewUi && styles.rtlRow]}>
+                          {item.mimeType ? (
+                            <View style={[styles.metaTag, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                              <Ionicons name="document-outline" size={10} color={colors.textSecondary} />
+                              <Text style={[styles.metaTagText, { color: colors.textSecondary }]}>
+                                {item.mimeType.split('/')[1]?.toUpperCase() || 'FILE'}
+                              </Text>
+                            </View>
+                          ) : null}
+                          {sizeMb ? (
+                            <View style={[styles.metaTag, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+                              <Ionicons name="hardware-chip-outline" size={10} color={colors.textSecondary} />
+                              <Text style={[styles.metaTagText, { color: colors.textSecondary }]}>{sizeMb} MB</Text>
+                            </View>
+                          ) : null}
+                        </View>
+                      </View>
+                      <Ionicons
+                        name={isHebrewUi ? 'chevron-back' : 'chevron-forward'}
+                        size={20}
+                        color={colors.textSecondary}
+                      />
+                    </TouchableOpacity>
+                  </View>
+                );
+              })}
+            </View>
           )}
-        </View>
+        </AppCard>
       </ScrollView>
-    </View>
+    </AppScreen>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#f9fafb',
-  },
-  scrollContent: {
-    paddingBottom: 40,
-  },
-  header: {
-    backgroundColor: PRIMARY_GREEN,
-    paddingTop: 60,
-    paddingBottom: 30,
-    alignItems: 'center',
-    borderBottomLeftRadius: 30,
-    borderBottomRightRadius: 30,
-    marginBottom: -30,
-    marginHorizontal: -24,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 8,
-  },
-  backButtonHeader: {
-    position: 'absolute',
-    top: 60,
-    left: 20,
-    padding: 8,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#ffffff',
-    marginTop: 10,
-    marginBottom: 8,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: '#ffffff',
-    opacity: 0.9,
-    marginBottom: 12,
-  },
-  readOnlyBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  readOnlyBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  requestSection: {
-    paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 20,
-  },
-  requestButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 16,
-    borderRadius: 12,
-    shadowColor: PRIMARY_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  requestButtonDisabled: {
-    opacity: 0.7,
-  },
-  requestButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#ffffff',
-  },
-  requestedSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 20,
-    backgroundColor: '#f0fdf4',
-    marginHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: ACCENT_GREEN,
-  },
-  requestedText: {
-    flex: 1,
-    fontSize: 14,
-    color: '#111827',
-    fontWeight: '500',
-  },
-  ownerActions: {
-    paddingHorizontal: 20,
-    paddingTop: 40,
-    paddingBottom: 12,
-    gap: 12,
-  },
-  requestedSectionOwner: {
-    marginHorizontal: 0,
-  },
-  ownerToolsButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: PRIMARY_GREEN,
-    paddingVertical: 14,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-  },
-  ownerToolsButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#ffffff',
-  },
-  filesCard: {
-    backgroundColor: '#ffffff',
-    marginHorizontal: 20,
-    borderRadius: 20,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
-    marginTop: 20,
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 20,
-    gap: 8,
-  },
-  sectionTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#6b7280',
-    marginLeft: 'auto',
-  },
-  loadingContainer: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 14,
-    color: '#6b7280',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-  },
-  emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#f3f4f6',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#111827',
-    marginBottom: 8,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: '#6b7280',
-    textAlign: 'center',
-    paddingHorizontal: 20,
-  },
-  filesList: {
-    paddingBottom: 10,
-  },
-  fileCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#f9fafb',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 10,
-    borderWidth: 1,
-    borderColor: '#e5e7eb',
-  },
-  fileIconContainer: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
-    backgroundColor: '#dbeafe',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  fileInfo: {
-    flex: 1,
-  },
-  fileName: {
-    color: '#111827',
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  fileMetaRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  metaTag: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    borderRadius: 6,
-    paddingVertical: 3,
-    paddingHorizontal: 6,
-  },
-  metaTagText: {
-    fontSize: 11,
-    color: '#6b7280',
-    marginLeft: 4,
-    fontWeight: '500',
-  },
-});
-
+const makeStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
+    scrollContent: {
+      paddingHorizontal: layout.screenPadding,
+      paddingTop: spacing.sm,
+      paddingBottom: 40,
+    },
+    heroWrap: {
+      position: 'relative',
+      overflow: 'hidden',
+      padding: spacing.md,
+      marginBottom: spacing.sm,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+    },
+    heroGlowPrimary: {
+      position: 'absolute',
+      width: 160,
+      height: 160,
+      borderRadius: 80,
+      top: -100,
+      right: -50,
+      backgroundColor: colors.primary,
+      opacity: 0.08,
+    },
+    heroGlowAccent: {
+      position: 'absolute',
+      width: 120,
+      height: 120,
+      borderRadius: 60,
+      bottom: -65,
+      left: -30,
+      backgroundColor: colors.accent,
+      opacity: 0.08,
+    },
+    previewBadge: {
+      alignSelf: 'flex-start',
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: 6,
+      paddingHorizontal: 10,
+      paddingVertical: 6,
+      borderRadius: radius.pill,
+      borderWidth: 1,
+      marginBottom: spacing.sm,
+    },
+    previewBadgeText: {
+      ...typography.caption,
+      fontWeight: '600',
+    },
+    heroSubtitle: {
+      ...typography.body,
+      lineHeight: 20,
+    },
+    lecturerLine: {
+      marginTop: spacing.sm,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    actionBlock: {
+      gap: spacing.sm,
+      marginBottom: spacing.sm,
+    },
+    noticeCard: {
+      padding: spacing.md,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+    },
+    noticeRow: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+    },
+    noticeText: {
+      flex: 1,
+      ...typography.body,
+      lineHeight: 20,
+    },
+    statusCard: {
+      padding: spacing.md,
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      marginBottom: spacing.sm,
+    },
+    statusRow: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      gap: spacing.sm,
+    },
+    statusText: {
+      flex: 1,
+      fontSize: 14,
+      fontWeight: '600',
+    },
+    filesCard: {
+      position: 'relative',
+      overflow: 'hidden',
+      borderRadius: radius.lg,
+      borderWidth: 1,
+      padding: spacing.md,
+    },
+    cardAccentBar: {
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      height: 2,
+      backgroundColor: colors.primary,
+      opacity: 0.35,
+    },
+    sectionHeader: {
+      flexDirection: 'row',
+      alignItems: 'flex-start',
+      gap: spacing.sm,
+      marginBottom: spacing.md,
+    },
+    sectionIconBadge: {
+      width: 36,
+      height: 36,
+      borderRadius: radius.md,
+      alignItems: 'center',
+      justifyContent: 'center',
+    },
+    sectionHeaderText: {
+      flex: 1,
+      minWidth: 0,
+    },
+    sectionTitle: {
+      fontSize: 17,
+      fontWeight: '700',
+    },
+    sectionSubtitle: {
+      marginTop: 2,
+      fontSize: 12,
+    },
+    filesList: {
+      gap: spacing.sm,
+    },
+    fileCard: {
+      borderRadius: radius.md,
+      borderWidth: 1,
+      overflow: 'hidden',
+    },
+    fileContent: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      padding: spacing.sm,
+      gap: spacing.sm,
+    },
+    fileIconContainer: {
+      width: 48,
+      height: 48,
+      borderRadius: radius.md,
+      justifyContent: 'center',
+      alignItems: 'center',
+    },
+    fileInfo: {
+      flex: 1,
+      minWidth: 0,
+    },
+    fileName: {
+      fontSize: 15,
+      fontWeight: '600',
+      marginBottom: 6,
+    },
+    fileMetaRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      gap: 8,
+    },
+    metaTag: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      borderRadius: 6,
+      borderWidth: 1,
+      paddingVertical: 3,
+      paddingHorizontal: 6,
+    },
+    metaTagText: {
+      fontSize: 11,
+      marginLeft: 4,
+      fontWeight: '500',
+    },
+    rtlText: {
+      writingDirection: 'rtl',
+      textAlign: 'right',
+    },
+    rtlRow: {
+      flexDirection: 'row-reverse',
+    },
+  });

@@ -71,11 +71,6 @@ export default function ParticipatingCoursesScreen() {
 
       <View style={styles.heroWrap}>
         <View style={styles.heroGlowPrimary} />
-        <View style={styles.heroBadge}>
-          <Ionicons name="people-outline" size={14} color={colors.primary} />
-          <Text style={styles.heroBadgeText}>{t('courses.hub.participatingTitle')}</Text>
-        </View>
-        <Text style={styles.heroTitle}>{t('courses.hub.participatingTitle')}</Text>
         <Text style={styles.heroSubtitle}>{t('courses.hub.participatingSubtitle')}</Text>
       </View>
 
@@ -125,7 +120,7 @@ export default function ParticipatingCoursesScreen() {
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{course.name}</Text>
-                {course.sources.includes('lecturer') && !course.sources.includes('tutor') ? (
+                {course.sources.includes('lecturer') ? (
                   <Text style={styles.meta}>{course.lecturer}</Text>
                 ) : null}
                 <View style={styles.sourceRow}>
@@ -177,27 +172,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.primary,
     opacity: 0.08,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
-    marginBottom: spacing.sm,
-  },
-  heroBadgeText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  heroTitle: { color: colors.textPrimary, fontSize: 18, fontWeight: '700' },
   heroSubtitle: {
-    marginTop: 4,
     color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,

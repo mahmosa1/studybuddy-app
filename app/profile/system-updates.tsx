@@ -17,9 +17,8 @@ import {
   TutorSupportRequestDoc,
 } from '@/lib/tutorSupportRequestService';
 import { AppCard } from '@/frontend/components/ui/AppCard';
-import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
-import { layout, spacing } from '@/frontend/styles/designSystem';
+import { layout, spacing, typography } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -29,6 +28,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
+  I18nManager,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +37,7 @@ import {
   Image,
 } from 'react-native';
 import { GestureHandlerRootView, Swipeable } from 'react-native-gesture-handler';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type TutorRow = { courseId: string; courseName: string; approvedAt?: string };
 
@@ -45,8 +46,6 @@ type SystemUpdatesMergedItem =
   | { kind: 'tutorRequest'; sortMs: number; req: TutorSupportRequestDoc }
   | { kind: 'tutorRibbon'; sortMs: number; row: TutorRow }
   | { kind: 'studentTutorDecision'; sortMs: number; req: TutorSupportRequestDoc };
-
-const ACCENT = '#047857';
 
 function formatReceivedAt(iso: string | undefined, lang: string): string {
   if (!iso) return '—';
@@ -153,6 +152,7 @@ export default function SystemUpdatesScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const { colors } = useAppTheme();
+  const insets = useSafeAreaInsets();
   const isHebrewUi = i18n.language === 'he';
 
   const [loading, setLoading] = useState(true);
@@ -358,9 +358,45 @@ export default function SystemUpdatesScreen() {
   );
 
   return (
-    <GestureHandlerRootView style={styles.gestureRoot}>
-      <AppScreen>
-      <AppHeader title={t('profile.systemUpdatesTitle')} onBack={() => router.back()} />
+    <AppScreen safeAreaEdges={['left', 'right']}>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+      <View
+        style={[
+          styles.safeHeaderWrap,
+          {
+            paddingTop: insets.top + spacing.sm,
+            backgroundColor: colors.bg,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.localHeaderRow}>
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={styles.localHeaderSide}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.back')}
+          >
+            <Ionicons
+              name={I18nManager.isRTL ? 'arrow-forward' : 'arrow-back'}
+              size={layout.headerIconSize}
+              color={colors.textPrimary}
+            />
+          </TouchableOpacity>
+          <View style={styles.localHeaderTitleWrap} pointerEvents="none">
+            <Text
+              style={[styles.localHeaderTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}
+            >
+              {t('profile.systemUpdatesTitle')}
+            </Text>
+          </View>
+          <View style={styles.localHeaderSide} />
+        </View>
+      </View>
       <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
         <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
         <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
@@ -585,21 +621,61 @@ export default function SystemUpdatesScreen() {
           )}
         </ScrollView>
       )}
-      </AppScreen>
-    </GestureHandlerRootView>
+      </GestureHandlerRootView>
+    </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
   gestureRoot: { flex: 1 },
+  safeHeaderWrap: {
+    width: '100%',
+    alignSelf: 'stretch',
+    zIndex: 4,
+    elevation: 4,
+    overflow: 'visible',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingBottom: spacing.xs,
+  },
+  localHeaderRow: {
+    width: '100%',
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  localHeaderSide: {
+    width: 44,
+    height: 44,
+    minWidth: 44,
+    minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  localHeaderTitleWrap: {
+    flex: 1,
+    minWidth: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing.sm,
+  },
+  localHeaderTitle: {
+    width: '100%',
+    textAlign: 'center',
+    ...typography.h3,
+    fontWeight: '800',
+  },
   topDecorWrap: {
     position: 'relative',
     overflow: 'hidden',
     height: 26,
     marginHorizontal: layout.screenPadding,
-    marginTop: -2,
+    marginTop: spacing.xs,
     marginBottom: 2,
     borderBottomWidth: 1,
+    zIndex: 0,
   },
   topDecorPrimary: {
     position: 'absolute',

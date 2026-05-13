@@ -261,23 +261,30 @@ function StudentHomeWithJournal({
     return isHebrewUi ? `${roundedHours} שעות` : `${roundedHours} hours`;
   };
 
+  const displayName = loading ? '...' : username || 'Student';
+  const welcomeName = isHebrewUi ? `\u200E${displayName}\u200E` : displayName;
+
   return (
     <AppScreen>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        <View style={[styles.heroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.homeRoot}>
+        <View pointerEvents="none" style={styles.homeDecorLayer}>
           <View style={[styles.heroGlowPrimary, { backgroundColor: colors.primary }]} />
           <View style={[styles.heroGlowAccent, { backgroundColor: colors.accent }]} />
-          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-            <Ionicons name="sparkles-outline" size={14} color={colors.primary} />
-            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>
-              {t('home.studyStats')}
-            </Text>
-          </View>
-          <SectionTitle
-            title={t('home.welcome', { name: loading ? '...' : username || 'Student' })}
-            subtitle={t('home.tagline')}
-          />
         </View>
+        <ScrollView
+          style={styles.homeScroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text
+            style={[
+              styles.homeGreeting,
+              isHebrewUi ? styles.homeGreetingHe : styles.homeGreetingEn,
+              { color: colors.textPrimary },
+            ]}
+          >
+            {t('home.welcome', { name: welcomeName })}
+          </Text>
 
         <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.journalHeaderBetween, isHebrewUi && styles.rtlRow]}>
@@ -531,6 +538,7 @@ function StudentHomeWithJournal({
           )}
         </AppCard>
       </ScrollView>
+      </View>
 
       <Modal visible={showTaskModal} transparent animationType="slide" onRequestClose={() => setShowTaskModal(false)}>
         <KeyboardAvoidingView
@@ -642,9 +650,10 @@ function StudentHomeWithJournal({
 // Lecturer Home Screen Component
 function LecturerHomeScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { colors } = useAppTheme();
   const { firebaseUser } = useUser();
+  const isHebrewUi = i18n.language === 'he';
   const [lecturerName, setLecturerName] = useState<string>('');
   const [recentCourses, setRecentCourses] = useState<RecentCourse[]>([]);
   const [loading, setLoading] = useState(true);
@@ -686,26 +695,30 @@ function LecturerHomeScreen() {
     loadLecturerData();
   }, [firebaseUser]);
 
+  const displayName = loading ? '...' : lecturerName || t('auth.lecturer');
+  const welcomeName = isHebrewUi ? `\u200E${displayName}\u200E` : displayName;
+
   return (
     <AppScreen>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={[styles.lecturerHeroWrap, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+      <View style={styles.homeRoot}>
+        <View pointerEvents="none" style={styles.homeDecorLayer}>
           <View style={[styles.lecturerHeroGlowPrimary, { backgroundColor: colors.primary }]} />
           <View style={[styles.lecturerHeroGlowAccent, { backgroundColor: colors.accent }]} />
-          <View style={[styles.heroBadge, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}>
-            <Ionicons name="school-outline" size={14} color={colors.primary} />
-            <Text style={[styles.heroBadgeText, { color: colors.textSecondary }]}>
-              {t('lecturer.tools')}
-            </Text>
-          </View>
-          <SectionTitle
-            title={t('home.welcome', { name: loading ? '...' : lecturerName || t('auth.lecturer') })}
-            subtitle={t('home.lecturerSubtitle')}
-          />
         </View>
+        <ScrollView
+          style={styles.homeScroll}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text
+            style={[
+              styles.homeGreeting,
+              isHebrewUi ? styles.homeGreetingHe : styles.homeGreetingEn,
+              { color: colors.textPrimary },
+            ]}
+          >
+            {t('home.welcome', { name: welcomeName })}
+          </Text>
 
         <View style={styles.cardsWrapper}>
           <AppCard style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -770,10 +783,10 @@ function LecturerHomeScreen() {
           </AppCard>
         </View>
       </ScrollView>
+      </View>
     </AppScreen>
   );
 }
-
 // Admin Home Screen Component
 function AdminHomeScreen() {
   const router = useRouter();
@@ -1040,17 +1053,39 @@ const styles = StyleSheet.create({
     paddingTop: 60,
     paddingBottom: 40,
   },
+  homeRoot: {
+    flex: 1,
+  },
+  homeDecorLayer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 170,
+    overflow: 'hidden',
+    zIndex: 0,
+    pointerEvents: 'none',
+  },
+  homeScroll: {
+    flex: 1,
+    zIndex: 1,
+  },
+  homeGreeting: {
+    ...typography.h3,
+    marginBottom: spacing.lg,
+  },
+  homeGreetingHe: {
+    textAlign: 'right',
+    alignSelf: 'stretch',
+    writingDirection: 'rtl',
+  },
+  homeGreetingEn: {
+    textAlign: 'left',
+    writingDirection: 'ltr',
+  },
   logoContainer: {
     alignItems: 'center',
     marginBottom: 24,
-  },
-  heroWrap: {
-    position: 'relative',
-    overflow: 'hidden',
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
   },
   heroGlowPrimary: {
     position: 'absolute',
@@ -1070,21 +1105,6 @@ const styles = StyleSheet.create({
     bottom: -60,
     opacity: 0.08,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginBottom: spacing.sm,
-  },
-  heroBadgeText: {
-    ...typography.caption,
-    fontWeight: '700',
-  },
   adminHeroRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1097,14 +1117,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  lecturerHeroWrap: {
-    position: 'relative',
-    overflow: 'hidden',
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
   },
   lecturerHeroGlowPrimary: {
     position: 'absolute',

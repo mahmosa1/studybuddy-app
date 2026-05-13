@@ -1,21 +1,19 @@
 import { AppCard } from '@/frontend/components/ui/AppCard';
-import { AppChip } from '@/frontend/components/ui/AppChip';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { EmptyState } from '@/frontend/components/ui/EmptyState';
 import { LoadingState } from '@/frontend/components/ui/LoadingState';
 import { StatCard } from '@/frontend/components/ui/StatCard';
-import { iconContainer, layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
+import { iconContainer, layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
-import { fetchTutorSupportRequestsForTutor, TutorSupportRequestDoc } from '@/lib/tutorSupportRequestService';
+import { fetchTutorSupportRequestsForTutor } from '@/lib/tutorSupportRequestService';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  ActivityIndicator,
   Image,
   Modal,
   ScrollView,
@@ -114,22 +112,24 @@ export default function TutorParticipantsScreen() {
     return Array.from(byId.entries()).map(([id, name]) => ({ id, name }));
   }, [participants]);
 
-  const courseParticipants = useMemo(() => {
-    if (!selectedCourseId) return [];
+  /** Course filter only narrows the list; stats use full `participants`. */
+  const visibleByCourse = useMemo(() => {
+    if (!selectedCourseId) return participants;
     return participants.filter((p) => p.courseId === selectedCourseId);
   }, [participants, selectedCourseId]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return courseParticipants;
-    return courseParticipants.filter(
+    if (!q) return visibleByCourse;
+    return visibleByCourse.filter(
       (p) => p.studentName.toLowerCase().includes(q) || p.courseName.toLowerCase().includes(q),
     );
-  }, [courseParticipants, query]);
+  }, [visibleByCourse, query]);
 
+  const totalParticipations = participants.length;
   const uniqueStudentsCount = useMemo(
-    () => new Set(courseParticipants.map((p) => p.studentUid)).size,
-    [courseParticipants],
+    () => new Set(participants.map((p) => p.studentUid)).size,
+    [participants],
   );
   const uniqueCoursesCount = useMemo(
     () => new Set(participants.map((p) => p.courseId)).size,
@@ -166,28 +166,24 @@ export default function TutorParticipantsScreen() {
 
   return (
     <AppScreen>
-      <AppHeader title={t('tutor.hub.participantsTitle')} onBack={() => router.back()} />
+      <View style={styles.screenInner}>
+        <View pointerEvents="none" style={styles.pageDecor}>
+          <View style={[styles.decorGlowPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.decorGlowAccent, { backgroundColor: colors.accent }]} />
+        </View>
+        <AppHeader title={t('tutor.hub.participantsTitle')} onBack={() => router.back()} />
 
-      {loading ? (
-        <LoadingState label={t('common.loading')} />
-      ) : (
-        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-          <View style={styles.heroWrap}>
-            <View style={styles.heroGlowPrimary} />
-            <View style={styles.heroGlowAccent} />
-            <View style={styles.heroBadge}>
-              <Ionicons name="people-outline" size={14} color={colors.primary} />
-              <Text style={styles.heroBadgeText}>{t('tutor.hub.participantsTitle')}</Text>
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            <LoadingState label={t('common.loading')} />
+          </View>
+        ) : (
+          <ScrollView style={styles.mainScroll} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <View style={styles.statsRow}>
+              <StatCard value={totalParticipations} label={t('tutor.hub.totalParticipations')} style={styles.statCard} />
+              <StatCard value={uniqueStudentsCount} label={t('tutor.hub.totalStudents')} style={styles.statCard} />
+              <StatCard value={uniqueCoursesCount} label={t('tutor.hub.totalCourses')} style={styles.statCard} />
             </View>
-            <Text style={[styles.heroTitle, isHebrewUi && styles.rtlText]}>{t('tutor.hub.participantsTitle')}</Text>
-            <Text style={[styles.heroSubtitle, isHebrewUi && styles.rtlText]}>{t('tutor.hub.participantsSubtitle')}</Text>
-          </View>
-
-          <View style={styles.statsRow}>
-            <StatCard value={courseParticipants.length} label={t('tutor.hub.totalParticipations')} style={styles.statCard} />
-            <StatCard value={uniqueStudentsCount} label={t('tutor.hub.totalStudents')} style={styles.statCard} />
-            <StatCard value={uniqueCoursesCount} label={t('tutor.hub.totalCourses')} style={styles.statCard} />
-          </View>
 
           <AppCard style={styles.courseSelectCard}>
             <TouchableOpacity style={styles.courseSelectBtn} onPress={() => setShowCoursePicker(true)}>
@@ -197,7 +193,7 @@ export default function TutorParticipantsScreen() {
               <Text style={[styles.courseSelectText, isHebrewUi && styles.rtlText]}>
                 {selectedCourseId
                   ? courseOptions.find((c) => c.id === selectedCourseId)?.name || t('tutor.selectCourse')
-                  : t('tutor.hub.selectCourseFirst')}
+                  : t('tutor.exercises.allCourses')}
               </Text>
               <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
             </TouchableOpacity>
@@ -222,8 +218,28 @@ export default function TutorParticipantsScreen() {
                   </TouchableOpacity>
                 </View>
                 <ScrollView style={styles.optionsList}>
-                  {courseOptions.map((course) => (
                   <TouchableOpacity
+                    style={[
+                      styles.listOptionButton,
+                      !selectedCourseId && styles.listOptionButtonSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedCourseId('');
+                      setShowCoursePicker(false);
+                    }}
+                  >
+                    <Text
+                      style={[
+                        styles.listOptionText,
+                        !selectedCourseId && styles.listOptionTextSelected,
+                      ]}
+                    >
+                      {t('tutor.exercises.allCourses')}
+                    </Text>
+                    {!selectedCourseId ? <Ionicons name="checkmark" size={20} color={colors.primary} /> : null}
+                  </TouchableOpacity>
+                  {courseOptions.map((course) => (
+                    <TouchableOpacity
                       key={course.id}
                       style={[
                         styles.listOptionButton,
@@ -242,9 +258,9 @@ export default function TutorParticipantsScreen() {
                       >
                         {course.name}
                       </Text>
-                      {selectedCourseId === course.id && (
+                      {selectedCourseId === course.id ? (
                         <Ionicons name="checkmark" size={20} color={colors.primary} />
-                      )}
+                      ) : null}
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
@@ -260,15 +276,15 @@ export default function TutorParticipantsScreen() {
               placeholderTextColor={colors.textSecondary}
               value={query}
               onChangeText={setQuery}
-              editable={!!selectedCourseId}
+              editable={participants.length > 0}
             />
           </View>
 
-          {!selectedCourseId ? (
-            <EmptyState title={t('tutor.hub.selectCourseFirst')} subtitle={t('tutor.selectCourse')} />
+          {participants.length === 0 ? (
+            <EmptyState title={t('tutor.hub.noParticipantsYet')} subtitle={t('tutor.hub.participantsSubtitle')} />
           ) : filtered.length === 0 ? (
             <EmptyState
-              title={courseParticipants.length === 0 ? t('tutor.hub.noParticipantsYet') : t('search.noResults')}
+              title={visibleByCourse.length === 0 ? t('tutor.hub.noParticipantsYet') : t('search.noResults')}
               subtitle={t('tutor.hub.participantsSearchPlaceholder')}
             />
           ) : (
@@ -311,63 +327,53 @@ export default function TutorParticipantsScreen() {
             ))
           )}
         </ScrollView>
-      )}
+        )}
+      </View>
     </AppScreen>
   );
 }
 
 const makeStyles = (colors: any) => StyleSheet.create({
+  screenInner: {
+    flex: 1,
+  },
+  pageDecor: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    height: 260,
+    zIndex: 0,
+    overflow: 'hidden',
+  },
+  decorGlowPrimary: {
+    position: 'absolute',
+    width: 130,
+    height: 130,
+    borderRadius: 65,
+    top: -56,
+    right: -36,
+    opacity: 0.08,
+  },
+  decorGlowAccent: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    top: 72,
+    left: -28,
+    opacity: 0.1,
+  },
+  mainScroll: {
+    flex: 1,
+    zIndex: 1,
+  },
+  loadingWrap: {
+    flex: 1,
+    zIndex: 1,
+  },
   rtlText: { textAlign: 'right', writingDirection: 'rtl' },
   content: { paddingHorizontal: layout.screenPadding, paddingTop: spacing.sm, gap: spacing.sm, paddingBottom: 34 },
-  heroWrap: {
-    position: 'relative',
-    overflow: 'hidden',
-    padding: spacing.md,
-    borderRadius: radius.lg,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  heroGlowPrimary: {
-    position: 'absolute',
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    top: -100,
-    right: -50,
-    backgroundColor: colors.primary,
-    opacity: 0.08,
-  },
-  heroGlowAccent: {
-    position: 'absolute',
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    bottom: -70,
-    left: -30,
-    backgroundColor: colors.accent,
-    opacity: 0.08,
-  },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
-    marginBottom: spacing.sm,
-  },
-  heroBadgeText: {
-    color: colors.textSecondary,
-    ...typography.caption,
-    fontWeight: '700',
-  },
-  heroTitle: { ...typography.h3, color: colors.textPrimary },
-  heroSubtitle: { marginTop: spacing.xs, color: colors.textSecondary, fontSize: 13, lineHeight: 18 },
   statsRow: { flexDirection: 'row', gap: spacing.sm },
   statCard: {
     flex: 1,

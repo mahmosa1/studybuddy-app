@@ -79,12 +79,13 @@ export default function SavedPostsScreen() {
       q,
       async (snap) => {
         const list: StudyPost[] = [];
-        const missingAvatarAuthorUids = new Set<string>();
+        const authorUids = new Set<string>();
         snap.forEach((d) => {
           const data = d.data() as any;
           const likedBy: string[] = data.likedBy || [];
           const savedBy: string[] = data.savedBy || [];
-          const authorUid = String(data.authorUid || data.userId || '');
+          const authorUid = String(data.authorUid || data.userId || '').trim();
+          if (authorUid) authorUids.add(authorUid);
           const directAvatar = String(
             data.authorAvatarUrl ||
               data.avatarUrl ||
@@ -93,12 +94,9 @@ export default function SavedPostsScreen() {
               data.userAvatarUrl ||
               ''
           );
-          if (authorUid && !directAvatar) {
-            missingAvatarAuthorUids.add(authorUid);
-          }
           list.push({
             id: d.id,
-            authorUid,
+            authorUid: authorUid || undefined,
             authorName: data.authorName || 'User',
             authorInstitution: data.authorInstitution || '',
             authorAvatarUrl: directAvatar || undefined,
@@ -114,23 +112,23 @@ export default function SavedPostsScreen() {
             isSaved: savedBy.includes(currentUser.uid),
           });
         });
-        if (missingAvatarAuthorUids.size > 0) {
+        if (authorUids.size > 0) {
           const fetchedEntries = await Promise.all(
-            Array.from(missingAvatarAuthorUids).map(async (uid) => {
-              if (authorAvatarMap[uid]) return [uid, authorAvatarMap[uid]] as const;
+            Array.from(authorUids).map(async (uid) => {
               try {
                 const userSnap = await getDoc(doc(db, 'users', uid));
                 if (!userSnap.exists()) return [uid, ''] as const;
                 const userData = userSnap.data() as any;
                 const avatar = String(
                   userData.profilePictureUrl ||
-                    userData.authorAvatarUrl ||
-                    userData.avatarUrl ||
+                    userData.profileImageUrl ||
                     userData.photoURL ||
+                    userData.avatarUrl ||
+                    userData.authorAvatarUrl ||
                     userData.profileImage ||
                     userData.userAvatarUrl ||
                     ''
-                );
+                ).trim();
                 return [uid, avatar] as const;
               } catch {
                 return [uid, ''] as const;
@@ -139,11 +137,17 @@ export default function SavedPostsScreen() {
           );
           const updates: Record<string, string> = {};
           fetchedEntries.forEach(([uid, avatar]) => {
-            if (avatar) updates[uid] = avatar;
+            updates[uid] = avatar;
           });
-          if (Object.keys(updates).length > 0) {
-            setAuthorAvatarMap((prev) => ({ ...prev, ...updates }));
-          }
+          setAuthorAvatarMap((prev) => {
+            const next = { ...prev };
+            Object.entries(updates).forEach(([uid, avatar]) => {
+              next[uid] = avatar;
+            });
+            return next;
+          });
+        } else {
+          setAuthorAvatarMap({});
         }
         setSavedPosts(list);
         setLoading(false);
@@ -174,17 +178,19 @@ export default function SavedPostsScreen() {
       activeOpacity={0.7}
     >
       <View style={styles.postHeader}>
-        <View style={styles.authorInfo}>
-          <View style={[styles.avatar, { backgroundColor: colors.surfaceElevated }]}>
-            {item.authorAvatarUrl || (item.authorUid ? authorAvatarMap[item.authorUid] : '') ? (
-              <Image
-                source={{ uri: item.authorAvatarUrl || (item.authorUid ? authorAvatarMap[item.authorUid] : '') }}
-                style={styles.avatarImage}
-              />
+      <View style={styles.authorInfo}>
+        <View style={[styles.avatar, { backgroundColor: colors.surfaceElevated }]}>
+          {(() => {
+            const uid = item.authorUid;
+            const inMap = uid && Object.prototype.hasOwnProperty.call(authorAvatarMap, uid);
+            const displayUri = inMap ? authorAvatarMap[uid!] : item.authorAvatarUrl || '';
+            return displayUri ? (
+              <Image source={{ uri: displayUri }} style={styles.avatarImage} />
             ) : (
               <Ionicons name="person" size={20} color={colors.primary} />
-            )}
-          </View>
+            );
+          })()}
+        </View>
           <View style={styles.authorDetails}>
             <Text style={[styles.authorName, { color: colors.textPrimary }]}>{item.authorName}</Text>
             <Text style={[styles.authorInstitution, { color: colors.textSecondary }]}>{item.authorInstitution}</Text>

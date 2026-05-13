@@ -1,15 +1,21 @@
-// app/course/[courseId].tsx
+// app/course/[courseId]/index.tsx
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { EmptyState } from '@/frontend/components/ui/EmptyState';
 import { LoadingState } from '@/frontend/components/ui/LoadingState';
 import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
-import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
 import { iconContainer, layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
+import {
+  getStudentSubmissionsForExerciseIds,
+  listPublishedTutorExercisesForCourse,
+  type TutorExerciseSubmissionDoc,
+} from '@/lib/tutorExerciseService';
+import { fetchTutorSupportRequestsForStudent } from '@/lib/tutorSupportRequestService';
 import { useUser } from '@/lib/UserContext';
+import type { TutorExerciseDoc } from '@/shared/types/tutorExercise';
 import { askCourseAssistant } from '@/lib/aiService';
 import { startCourseFileIntelligenceJob } from '@/lib/learningIntelligence/api';
 import { supabase } from '@/lib/supabaseClient';
@@ -22,6 +28,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -54,12 +61,20 @@ type CourseFile = {
   url?: string | null;
 };
 
+function formatTutorExerciseGradeForCard(grade: unknown): string | null {
+  if (grade == null) return null;
+  if (typeof grade === 'number' && !Number.isNaN(grade)) return String(grade);
+  if (typeof grade === 'string' && grade.trim()) return grade.trim();
+  return null;
+}
+
 export default function CourseDetailsScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isHebrewUi = i18n.language === 'he';
   const { colors } = useAppTheme();
   const styles = makeStyles(colors);
-  const { role } = useUser();
+  const { role, loading: userRoleLoading } = useUser();
   const params = useLocalSearchParams<{
     courseId?: string | string[];
     name?: string;
@@ -99,6 +114,20 @@ export default function CourseDetailsScreen() {
     weakTopics: string[];
   } | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
+
+  /** Participating / tutored courses: student is not `ownerUid` on the course doc (same rule as "Courses I participate in"). */
+  const [studentNonOwnerCourse, setStudentNonOwnerCourse] = useState(false);
+  const [courseOwnershipResolved, setCourseOwnershipResolved] = useState(false);
+
+  const [tutorPublishedExercises, setTutorPublishedExercises] = useState<TutorExerciseDoc[]>([]);
+  const [loadingTutorPublished, setLoadingTutorPublished] = useState(false);
+  const [tutorSubmissionsByExerciseId, setTutorSubmissionsByExerciseId] = useState<
+    Record<string, TutorExerciseSubmissionDoc | null>
+  >({});
+
+  /** Same rule as "Courses I participate in" tutor badge: accepted `tutorSupportRequests` for this course + student. */
+  const [hasAcceptedTutorForThisCourse, setHasAcceptedTutorForThisCourse] = useState(false);
+  const [tutorParticipationResolved, setTutorParticipationResolved] = useState(false);
 
   // --- טעינת קבצים לקורס הזה ---
   useEffect(() => {
@@ -141,11 +170,124 @@ export default function CourseDetailsScreen() {
     return unsub;
   }, [courseId]);
 
+  useEffect(() => {
+    if (!courseId) {
+      setStudentNonOwnerCourse(false);
+      setCourseOwnershipResolved(false);
+      return;
+    }
+    if (userRoleLoading) return;
+
+    if (role !== 'student') {
+      setStudentNonOwnerCourse(false);
+      setCourseOwnershipResolved(true);
+      return;
+    }
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setStudentNonOwnerCourse(false);
+      setCourseOwnershipResolved(true);
+      return;
+    }
+
+    let cancelled = false;
+    setCourseOwnershipResolved(false);
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, 'courses', courseId));
+        if (cancelled) return;
+        if (!snap.exists()) {
+          setStudentNonOwnerCourse(false);
+          setCourseOwnershipResolved(true);
+          return;
+        }
+        const ownerUid = (snap.data() as { ownerUid?: unknown }).ownerUid;
+        setStudentNonOwnerCourse(typeof ownerUid === 'string' && ownerUid !== uid);
+        setCourseOwnershipResolved(true);
+      } catch {
+        if (!cancelled) {
+          setStudentNonOwnerCourse(false);
+          setCourseOwnershipResolved(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, userRoleLoading, role]);
+
+  useEffect(() => {
+    if (!courseId) {
+      setHasAcceptedTutorForThisCourse(false);
+      setTutorParticipationResolved(false);
+      return;
+    }
+    if (userRoleLoading) return;
+
+    if (role !== 'student') {
+      setHasAcceptedTutorForThisCourse(false);
+      setTutorParticipationResolved(true);
+      return;
+    }
+
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setHasAcceptedTutorForThisCourse(false);
+      setTutorParticipationResolved(true);
+      return;
+    }
+
+    let cancelled = false;
+    setTutorParticipationResolved(false);
+    (async () => {
+      try {
+        const requests = await fetchTutorSupportRequestsForStudent(uid);
+        if (cancelled) return;
+        setHasAcceptedTutorForThisCourse(
+          requests.some((r) => r.courseId === courseId && r.status === 'accepted'),
+        );
+        setTutorParticipationResolved(true);
+      } catch (e) {
+        console.log('Error loading tutor participation for course:', e);
+        if (!cancelled) {
+          setHasAcceptedTutorForThisCourse(false);
+          setTutorParticipationResolved(true);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, userRoleLoading, role]);
+
+  const showStudyInsights =
+    !userRoleLoading &&
+    role !== null &&
+    (role !== 'student' || (courseOwnershipResolved && !studentNonOwnerCourse));
+
+  /** Participating / tutored students (not course owner) must not delete course files — UI + handler guard. */
+  const canDeleteCourseFiles =
+    !userRoleLoading &&
+    role !== null &&
+    (role !== 'student' || (courseOwnershipResolved && !studentNonOwnerCourse));
+
   // Load practice statistics - reload when screen comes into focus (after practice)
   const loadPracticeStats = useCallback(async () => {
     if (!courseId) {
       setLoadingStats(false);
       return;
+    }
+    if (userRoleLoading || role === null) return;
+    if (role === 'student') {
+      if (!courseOwnershipResolved) return;
+      if (studentNonOwnerCourse) {
+        setLoadingStats(false);
+        setPracticeStats(null);
+        return;
+      }
     }
 
     try {
@@ -166,7 +308,7 @@ export default function CourseDetailsScreen() {
     } finally {
       setLoadingStats(false);
     }
-  }, [courseId]);
+  }, [courseId, userRoleLoading, role, courseOwnershipResolved, studentNonOwnerCourse]);
 
   // Load stats on mount and when screen comes into focus
   useEffect(() => {
@@ -178,6 +320,71 @@ export default function CourseDetailsScreen() {
     useCallback(() => {
       loadPracticeStats();
     }, [loadPracticeStats])
+  );
+
+  useEffect(() => {
+    if (
+      !courseId ||
+      userRoleLoading ||
+      role !== 'student' ||
+      !tutorParticipationResolved ||
+      !hasAcceptedTutorForThisCourse
+    ) {
+      setTutorPublishedExercises([]);
+      setLoadingTutorPublished(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingTutorPublished(true);
+    listPublishedTutorExercisesForCourse(courseId)
+      .then((list) => {
+        if (!cancelled) setTutorPublishedExercises(list);
+      })
+      .catch((e) => {
+        console.log('Error loading tutor exercises for course:', e);
+        if (!cancelled) setTutorPublishedExercises([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingTutorPublished(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, role, userRoleLoading, tutorParticipationResolved, hasAcceptedTutorForThisCourse]);
+
+  const reloadTutorSubmissions = useCallback(async () => {
+    if (
+      role !== 'student' ||
+      !tutorParticipationResolved ||
+      !hasAcceptedTutorForThisCourse ||
+      tutorPublishedExercises.length === 0
+    ) {
+      setTutorSubmissionsByExerciseId({});
+      return;
+    }
+    const uid = auth.currentUser?.uid;
+    if (!uid) {
+      setTutorSubmissionsByExerciseId({});
+      return;
+    }
+    try {
+      const ids = tutorPublishedExercises.map((e) => e.id);
+      const map = await getStudentSubmissionsForExerciseIds(ids, uid);
+      setTutorSubmissionsByExerciseId(map);
+    } catch (e) {
+      console.log('Error loading tutor exercise submissions for course:', e);
+      setTutorSubmissionsByExerciseId({});
+    }
+  }, [role, tutorParticipationResolved, hasAcceptedTutorForThisCourse, tutorPublishedExercises]);
+
+  useEffect(() => {
+    void reloadTutorSubmissions();
+  }, [reloadTutorSubmissions]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reloadTutorSubmissions();
+    }, [reloadTutorSubmissions]),
   );
 
   // --- העלאת קובץ חדש ---
@@ -274,6 +481,17 @@ export default function CourseDetailsScreen() {
     }
     const months = Math.floor(diffDays / 30);
     return t('courseDetails.monthsAgo', { count: months });
+  };
+
+  const formatTutorExercisePublishedDate = (ex: TutorExerciseDoc): string => {
+    const ts = ex.publishedAt ?? ex.updatedAt;
+    const ms =
+      ts && typeof (ts as { toMillis?: () => number }).toMillis === 'function'
+        ? (ts as { toMillis: () => number }).toMillis()
+        : 0;
+    if (!ms) return '—';
+    const locale = isHebrewUi ? 'he-IL' : 'en-US';
+    return new Date(ms).toLocaleDateString(locale, { dateStyle: 'medium' });
   };
 
   // helper קטן לשליפת ה-path מתוך ה־public URL
@@ -382,6 +600,10 @@ export default function CourseDetailsScreen() {
 
   // --- מחיקת קובץ ---
   const handleDeleteFile = (file: CourseFile) => {
+    if (!canDeleteCourseFiles) {
+      console.log('Course file delete blocked: user cannot delete files on this course.');
+      return;
+    }
     Alert.alert(
       'Delete file',
       'Are you sure you want to delete this file?',
@@ -458,15 +680,20 @@ export default function CourseDetailsScreen() {
           </View>
           <Ionicons name="chevron-forward" size={20} color={colors.textSecondary} />
         </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.deleteButton}
-          onPress={() => handleDeleteFile(item)}
-        >
-          <Ionicons name="trash-outline" size={18} color={colors.textOnPrimary} />
-        </TouchableOpacity>
+        {canDeleteCourseFiles && (
+          <TouchableOpacity
+            style={styles.deleteButton}
+            onPress={() => handleDeleteFile(item)}
+          >
+            <Ionicons name="trash-outline" size={18} color={colors.textOnPrimary} />
+          </TouchableOpacity>
+        )}
       </View>
     );
   };
+
+  const shouldShowTutorExercises =
+    role === 'student' && tutorParticipationResolved && hasAcceptedTutorForThisCourse;
 
   return (
     <AppScreen>
@@ -478,73 +705,202 @@ export default function CourseDetailsScreen() {
         <View style={styles.heroWrap}>
           <View style={styles.heroGlowPrimary} />
           <View style={styles.heroGlowAccent} />
-          <View style={styles.heroBadge}>
-            <Ionicons name="folder-outline" size={14} color={colors.primary} />
-            <Text style={styles.heroBadgeText}>{t('courses.title')}</Text>
-          </View>
-          <SectionTitle title={String(name ?? 'Course')} subtitle={t('courseDetails.manageMaterials')} />
+          <Text style={[styles.heroSubtitle, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+            {t('courseDetails.manageMaterials')}
+          </Text>
         </View>
 
-        {/* Study Insights Section - Only for students */}
-        <AppCard style={styles.insightsCard}>
-          <View style={styles.cardAccentBar} />
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionIconBadge}>
-              <Ionicons name="analytics" size={18} color={colors.accent} />
-            </View>
-            <Text style={styles.sectionTitle}>{t('courseDetails.studyInsights')}</Text>
-          </View>
-
-          {/* Real practice statistics */}
-          {loadingStats ? (
-            <View style={styles.insightsContent}>
-              <LoadingState />
-            </View>
-          ) : practiceStats ? (
-            <View style={styles.insightsContent}>
-              <View style={styles.insightRow}>
-                <View style={styles.insightItem}>
-                  <Ionicons name="alert-circle" size={20} color="#f59e0b" />
-                  <Text style={styles.insightLabel}>{t('courseDetails.weakTopics')}</Text>
-                  <Text style={styles.insightValue}>{practiceStats.weakTopics.length}</Text>
-                </View>
-                <View style={styles.insightItem}>
-                  <Ionicons name="flask" size={20} color={colors.accent} />
-                  <Text style={styles.insightLabel}>{t('courseDetails.practices')}</Text>
-                  <Text style={styles.insightValue}>{practiceStats.totalPractices}</Text>
-                </View>
-                <View style={styles.insightItem}>
-                  <Ionicons name="calendar" size={20} color={colors.primary} />
-                  <Text style={styles.insightLabel}>{t('courseDetails.lastPractice')}</Text>
-                  <Text style={styles.insightValue}>
-                    {practiceStats.lastPracticeDate
-                      ? formatPracticeDate(practiceStats.lastPracticeDate)
-                      : t('courseDetails.noPractice')}
-                  </Text>
-                </View>
+        {/* Study Insights — hidden for participating / tutored courses (student is not course owner). */}
+        {showStudyInsights && (
+          <AppCard style={styles.insightsCard}>
+            <View style={styles.cardAccentBar} />
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionIconBadge}>
+                <Ionicons name="analytics" size={18} color={colors.accent} />
               </View>
+              <Text style={styles.sectionTitle}>{t('courseDetails.studyInsights')}</Text>
+            </View>
 
-              {/* Top Weak Topics */}
-              {practiceStats.weakTopics.length > 0 && (
-                <View style={styles.weakTopicsSection}>
-                  <Text style={styles.weakTopicsTitle}>{t('courseDetails.topWeakTopics')}</Text>
-                  <View style={styles.weakTopicsList}>
-                    {practiceStats.weakTopics.slice(0, 3).map((topic, index) => (
-                      <View key={index} style={styles.weakTopicItem}>
-                        <Ionicons name="bookmark-outline" size={16} color="#f59e0b" />
-                        <Text style={styles.weakTopicText}>{topic}</Text>
-                      </View>
-                    ))}
+            {/* Real practice statistics */}
+            {loadingStats ? (
+              <View style={styles.insightsContent}>
+                <LoadingState />
+              </View>
+            ) : practiceStats ? (
+              <View style={styles.insightsContent}>
+                <View style={styles.insightRow}>
+                  <View style={styles.insightItem}>
+                    <Ionicons name="alert-circle" size={20} color="#f59e0b" />
+                    <Text style={styles.insightLabel}>{t('courseDetails.weakTopics')}</Text>
+                    <Text style={styles.insightValue}>{practiceStats.weakTopics.length}</Text>
                   </View>
+                  <View style={styles.insightItem}>
+                    <Ionicons name="flask" size={20} color={colors.accent} />
+                    <Text style={styles.insightLabel}>{t('courseDetails.practices')}</Text>
+                    <Text style={styles.insightValue}>{practiceStats.totalPractices}</Text>
+                  </View>
+                  <View style={styles.insightItem}>
+                    <Ionicons name="calendar" size={20} color={colors.primary} />
+                    <Text style={styles.insightLabel}>{t('courseDetails.lastPractice')}</Text>
+                    <Text style={styles.insightValue}>
+                      {practiceStats.lastPracticeDate
+                        ? formatPracticeDate(practiceStats.lastPracticeDate)
+                        : t('courseDetails.noPractice')}
+                    </Text>
+                  </View>
+                  {shouldShowTutorExercises && (
+                    <View style={styles.insightItem}>
+                      <Ionicons name="reader-outline" size={20} color={colors.primary} />
+                      <Text style={[styles.insightLabel, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                        {t('courseDetails.tutorExercisesStatLabel')}
+                      </Text>
+                      <Text style={styles.insightValue}>
+                        {loadingTutorPublished ? '—' : tutorPublishedExercises.length}
+                      </Text>
+                    </View>
+                  )}
                 </View>
-              )}
+
+                {/* Top Weak Topics */}
+                {practiceStats.weakTopics.length > 0 && (
+                  <View style={styles.weakTopicsSection}>
+                    <Text style={styles.weakTopicsTitle}>{t('courseDetails.topWeakTopics')}</Text>
+                    <View style={styles.weakTopicsList}>
+                      {practiceStats.weakTopics.slice(0, 3).map((topic, index) => (
+                        <View key={index} style={styles.weakTopicItem}>
+                          <Ionicons name="bookmark-outline" size={16} color="#f59e0b" />
+                          <Text style={styles.weakTopicText}>{topic}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  </View>
+                )}
+              </View>
+            ) : (
+              <View style={styles.insightsContent}>
+                <Text style={styles.noDataText}>{t('courseDetails.noPracticeData')}</Text>
+              </View>
+            )}
+          </AppCard>
+        )}
+
+        {shouldShowTutorExercises && (
+          <AppCard style={styles.tutorExercisesCard}>
+            <View style={styles.cardAccentBar} />
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionHeaderLeft}>
+                <View style={styles.sectionIconBadge}>
+                  <Ionicons name="create-outline" size={18} color={colors.textPrimary} />
+                </View>
+                <Text style={[styles.sectionTitle, isHebrewUi && styles.rtlText]}>
+                  {t('courseDetails.tutorExercisesTitle')}
+                </Text>
+              </View>
             </View>
-          ) : (
-            <View style={styles.insightsContent}>
-              <Text style={styles.noDataText}>{t('courseDetails.noPracticeData')}</Text>
-            </View>
-          )}
-        </AppCard>
+            {loadingTutorPublished ? (
+              <View style={styles.loadingContainer}>
+                <LoadingState />
+              </View>
+            ) : tutorPublishedExercises.length === 0 ? (
+              <EmptyState title={t('courseDetails.tutorExercisesEmpty')} subtitle="" />
+            ) : (
+              <View style={styles.tutorExercisesList}>
+                {tutorPublishedExercises.map((ex) => (
+                  <TouchableOpacity
+                    key={ex.id}
+                    activeOpacity={0.88}
+                    accessibilityRole="button"
+                    onPress={() =>
+                      courseId &&
+                      router.push(`/course/${courseId}/tutor-exercises/${ex.id}` as any)
+                    }
+                    style={[
+                      styles.tutorExItem,
+                      { borderColor: colors.border, backgroundColor: colors.surfaceMuted },
+                    ]}
+                  >
+                    <View style={styles.tutorExItemHeader}>
+                      <Text
+                        style={[styles.tutorExTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+                        numberOfLines={2}
+                      >
+                        {ex.title || '—'}
+                      </Text>
+                      <View
+                        style={[
+                          styles.tutorExPublishedPill,
+                          { borderColor: colors.primary, backgroundColor: `${colors.primary}14` },
+                        ]}
+                      >
+                        <Text style={[styles.tutorExPublishedPillText, { color: colors.primary }]}>
+                          {t('courseDetails.tutorExercisesPublished')}
+                        </Text>
+                      </View>
+                    </View>
+                    {!!ex.tutorName && (
+                      <Text
+                        style={[styles.tutorExTutor, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}
+                        numberOfLines={1}
+                      >
+                        {ex.tutorName}
+                      </Text>
+                    )}
+                    <Text style={[styles.tutorExMeta, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+                      {t('tutor.exercises.questionCount', { count: ex.questions.length })}
+                      {' · '}
+                      {t('courseDetails.tutorExercisesPublishedOn', {
+                        date: formatTutorExercisePublishedDate(ex),
+                      })}
+                    </Text>
+                    {(() => {
+                      const submission = tutorSubmissionsByExerciseId[ex.id];
+                      const graded = submission?.status === 'graded';
+                      const submitted = submission?.status === 'submitted';
+                      const ctaLabel = graded
+                        ? t('courseDetails.tutorExerciseCardViewGrade')
+                        : submitted
+                          ? t('courseDetails.tutorExerciseCardWaitingReview')
+                          : t('courseDetails.tutorExerciseCardTapToSolve');
+                      const ctaColor = graded
+                        ? colors.success
+                        : submitted
+                          ? colors.textSecondary
+                          : colors.primary;
+                      const gradeStr = graded ? formatTutorExerciseGradeForCard(submission.grade) : null;
+                      return (
+                        <View style={[styles.tutorExOpenRow, { borderTopColor: colors.border }]}>
+                          <View style={styles.tutorExOpenCol}>
+                            <Text
+                              style={[styles.tutorExOpenText, { color: ctaColor }, isHebrewUi && styles.rtlText]}
+                            >
+                              {ctaLabel}
+                            </Text>
+                            {gradeStr != null && (
+                              <Text
+                                style={[
+                                  styles.tutorExGradeLine,
+                                  { color: colors.textSecondary },
+                                  isHebrewUi && styles.rtlText,
+                                ]}
+                              >
+                                {t('courseDetails.tutorExerciseCardGrade', { score: gradeStr })}
+                              </Text>
+                            )}
+                          </View>
+                          <Ionicons
+                            name={isHebrewUi ? 'chevron-back' : 'chevron-forward'}
+                            size={18}
+                            color={ctaColor}
+                          />
+                        </View>
+                      );
+                    })()}
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+          </AppCard>
+        )}
 
         {/* Files Section */}
         <AppCard style={styles.filesCard}>
@@ -881,23 +1237,8 @@ const makeStyles = (colors: any) => StyleSheet.create({
     backgroundColor: colors.accent,
     opacity: 0.08,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
-    marginBottom: spacing.sm,
-  },
-  heroBadgeText: {
-    color: colors.textSecondary,
-    ...typography.caption,
-    fontWeight: '700',
+  heroSubtitle: {
+    ...typography.body,
   },
   cardAccentBar: {
     position: 'absolute',
@@ -960,8 +1301,10 @@ const makeStyles = (colors: any) => StyleSheet.create({
   },
   insightRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     justifyContent: 'space-around',
     marginBottom: 20,
+    gap: spacing.sm,
   },
   insightItem: {
     alignItems: 'center',
@@ -1013,6 +1356,76 @@ const makeStyles = (colors: any) => StyleSheet.create({
     fontSize: 13,
     color: colors.textPrimary,
     fontWeight: '500',
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  tutorExercisesCard: {
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  tutorExercisesList: {
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  tutorExItem: {
+    borderRadius: radius.md,
+    borderWidth: 1,
+    padding: spacing.md,
+  },
+  tutorExItemHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.sm,
+  },
+  tutorExTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  tutorExPublishedPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+  },
+  tutorExPublishedPillText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  tutorExTutor: {
+    fontSize: 13,
+    marginTop: spacing.xs,
+  },
+  tutorExMeta: {
+    fontSize: 12,
+    marginTop: spacing.sm,
+  },
+  tutorExOpenRow: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  tutorExOpenCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  tutorExOpenText: {
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  tutorExGradeLine: {
+    fontSize: 12,
+    fontWeight: '600',
+    marginTop: 4,
   },
   filesCard: {
     borderRadius: radius.lg,

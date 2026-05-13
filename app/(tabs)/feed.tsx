@@ -1,17 +1,18 @@
 // app/(tabs)/feed.tsx
 import { AppCard } from '@/frontend/components/ui/AppCard';
-import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
 import { layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
+import { attachmentLooksLikeImage } from '@/lib/feedAttachmentUtils';
 import { createActivityNotification } from '@/lib/notificationService';
+import { pushAttachmentViewer } from '@/lib/openAttachmentViewer';
 import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
 import { Ionicons } from '@expo/vector-icons';
 import * as DocumentPicker from 'expo-document-picker';
-import { useRouter } from 'expo-router';
+import { useRouter, useFocusEffect } from 'expo-router';
 import {
     addDoc,
     arrayRemove,
@@ -27,23 +28,26 @@ import {
     updateDoc,
     where,
 } from 'firebase/firestore';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     ActivityIndicator,
     Alert,
     FlatList,
     Image,
+    KeyboardAvoidingView,
     Modal,
     Platform,
     Pressable,
     ScrollView,
+    StatusBar,
     StyleSheet,
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type StudyPost = {
   id: string;
@@ -68,7 +72,7 @@ type StudyPost = {
   createdAt: string;
   isLiked?: boolean;
   isSaved?: boolean;
-  visibility?: 'public' | 'institution';
+  visibility?: 'public' | 'institution' | 'followers';
 };
 
 type CourseOption = {
@@ -85,6 +89,7 @@ type FeedAttachment = {
 
 type ActivityNotificationItem = {
   id: string;
+  actorUid?: string;
   actorName: string;
   actorAvatarUrl?: string;
   type: 'follow' | 'post_like' | 'post_comment' | 'comment_like';
@@ -94,6 +99,582 @@ type ActivityNotificationItem = {
   createdAtMs: number;
   read: boolean;
 };
+
+type FeedNotificationsModalBodyProps = {
+  onClose: () => void;
+  notificationsFilter: 'all' | 'follows' | 'comments' | 'likes';
+  setNotificationsFilter: (f: 'all' | 'follows' | 'comments' | 'likes') => void;
+  groupedNotifications: { title: string; data: ActivityNotificationItem[] }[];
+  notificationText: (item: ActivityNotificationItem) => string;
+  notificationRowTypeIcon: (n: ActivityNotificationItem) => keyof typeof Ionicons.glyphMap;
+};
+
+type CreatePostModalBodyProps = {
+  onClose: () => void;
+  courses: CourseOption[];
+  selectedCourse: CourseOption | null;
+  setSelectedCourse: React.Dispatch<React.SetStateAction<CourseOption | null>>;
+  showCoursePicker: boolean;
+  setShowCoursePicker: React.Dispatch<React.SetStateAction<boolean>>;
+  selectedType: StudyPost['type'];
+  setSelectedType: React.Dispatch<React.SetStateAction<StudyPost['type']>>;
+  visibility: 'public' | 'institution' | 'followers';
+  setVisibility: React.Dispatch<React.SetStateAction<'public' | 'institution' | 'followers'>>;
+  attachments: FeedAttachment[];
+  setAttachments: React.Dispatch<React.SetStateAction<FeedAttachment[]>>;
+  uploadingAttachment: boolean;
+  newTitle: string;
+  setNewTitle: React.Dispatch<React.SetStateAction<string>>;
+  newContent: string;
+  setNewContent: React.Dispatch<React.SetStateAction<string>>;
+  newTags: string;
+  setNewTags: React.Dispatch<React.SetStateAction<string>>;
+  publishing: boolean;
+  onPublish: () => void;
+  onPickAttachment: () => void;
+  coursesLoading: boolean;
+};
+
+/**
+ * Create Post form: call useSafeAreaInsets() only as a descendant of Modal → SafeAreaProvider (see parent).
+ */
+function CreatePostModalBody({
+  onClose,
+  courses,
+  selectedCourse,
+  setSelectedCourse,
+  showCoursePicker,
+  setShowCoursePicker,
+  selectedType,
+  setSelectedType,
+  visibility,
+  setVisibility,
+  attachments,
+  setAttachments,
+  uploadingAttachment,
+  newTitle,
+  setNewTitle,
+  newContent,
+  setNewContent,
+  newTags,
+  setNewTags,
+  publishing,
+  onPublish,
+  onPickAttachment,
+  coursesLoading,
+}: CreatePostModalBodyProps) {
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
+  const { t, i18n } = useTranslation();
+  const isHebrewUi = i18n.language === 'he';
+
+  const topInset =
+    insets.top > 0 ? insets.top : Platform.OS === 'ios' ? 47 : StatusBar.currentHeight ?? 0;
+
+  return (
+    <View style={[styles.createModalRoot, { backgroundColor: colors.surface }]}>
+      <KeyboardAvoidingView
+        style={styles.createModalKeyboard}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={0}
+      >
+        <View
+          style={[
+            styles.createPostModalHeaderShell,
+            {
+              paddingTop: topInset + 8,
+              minHeight: topInset + 8 + 56,
+              backgroundColor: colors.surface,
+              borderBottomColor: colors.border,
+            },
+          ]}
+        >
+          <View style={[styles.createPostModalHeaderRow, isHebrewUi && styles.rtlRow]}>
+            <TouchableOpacity
+              style={styles.createPostModalCloseWrap}
+              onPress={onClose}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+              accessibilityRole="button"
+              accessibilityLabel={t('common.close')}
+            >
+              <Ionicons name="close" size={24} color={colors.textPrimary} />
+            </TouchableOpacity>
+            <Text
+              style={[styles.createPostModalHeaderTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+              numberOfLines={1}
+            >
+              {t('feed.createPost')}
+            </Text>
+            <View style={styles.createPostModalHeaderSideSlot} />
+          </View>
+        </View>
+
+        <ScrollView
+          style={styles.createModalScroll}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+          automaticallyAdjustKeyboardInsets={Platform.OS === 'ios'}
+          contentContainerStyle={[
+            styles.createModalScrollContent,
+            { paddingBottom: insets.bottom + spacing.xxl + 32 },
+          ]}
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            {t('feed.course')} ({t('common.optional')})
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.input,
+              { backgroundColor: colors.surfaceMuted, borderColor: colors.border, opacity: coursesLoading ? 0.65 : 1 },
+            ]}
+            onPress={() => !coursesLoading && setShowCoursePicker((prev) => !prev)}
+            activeOpacity={0.8}
+            disabled={coursesLoading}
+          >
+            <Text
+              style={
+                selectedCourse
+                  ? [styles.inputValue, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]
+                  : [styles.inputPlaceholder, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]
+              }
+            >
+              {coursesLoading ? t('feed.loadingCourses') : selectedCourse?.name || t('feed.selectCourse')}
+            </Text>
+            {coursesLoading ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
+            )}
+          </TouchableOpacity>
+          {showCoursePicker ? (
+            <View style={[styles.pickerList, { borderColor: colors.border, backgroundColor: colors.surface }]}>
+              <TouchableOpacity
+                style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                onPress={() => {
+                  setSelectedCourse(null);
+                  setShowCoursePicker(false);
+                }}
+              >
+                <Text style={[styles.pickerItemText, { color: colors.textPrimary }]}>{t('feed.selectCourse')}</Text>
+              </TouchableOpacity>
+              {courses.map((course) => (
+                <TouchableOpacity
+                  key={course.id}
+                  style={[styles.pickerItem, { borderBottomColor: colors.border }]}
+                  onPress={() => {
+                    setSelectedCourse(course);
+                    setShowCoursePicker(false);
+                  }}
+                >
+                  <Text style={[styles.pickerItemText, { color: colors.textPrimary }]}>{course.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : null}
+
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            {t('feed.titleLabel')} *
+          </Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+                color: colors.textPrimary,
+              },
+            ]}
+            placeholder={t('feed.titlePlaceholder')}
+            placeholderTextColor={colors.textSecondary}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
+            value={newTitle}
+            onChangeText={setNewTitle}
+            textAlign={isHebrewUi ? 'right' : 'left'}
+          />
+
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            {t('feed.contentLabel')} *
+          </Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              styles.textArea,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+                color: colors.textPrimary,
+              },
+            ]}
+            placeholder={t('feed.contentPlaceholder')}
+            placeholderTextColor={colors.textSecondary}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
+            multiline
+            numberOfLines={6}
+            value={newContent}
+            onChangeText={setNewContent}
+            textAlign={isHebrewUi ? 'right' : 'left'}
+          />
+
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            {t('feed.postTypeLabel')} *
+          </Text>
+          <View style={styles.typeOptions}>
+            {(['Summary', 'Tip', 'Question', 'Exam Info'] as StudyPost['type'][]).map((type) => {
+              const active = selectedType === type;
+              return (
+                <TouchableOpacity
+                  key={type}
+                  style={[
+                    styles.typeOption,
+                    {
+                      backgroundColor: active ? colors.surfaceElevated : colors.surfaceMuted,
+                      borderColor: active ? colors.primary : colors.border,
+                    },
+                  ]}
+                  onPress={() => setSelectedType(type)}
+                >
+                  <Text
+                    style={[
+                      styles.typeOptionText,
+                      { color: active ? colors.primary : colors.textSecondary, fontWeight: active ? '700' : '500' },
+                      isHebrewUi && styles.rtlText,
+                    ]}
+                  >
+                    {t(`feed.postType.${type.toLowerCase().replace(' ', '')}`)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            {t('feed.tags')} ({t('common.optional')})
+          </Text>
+          <TextInput
+            style={[
+              styles.textInput,
+              {
+                backgroundColor: colors.surfaceMuted,
+                borderColor: colors.border,
+                color: colors.textPrimary,
+              },
+            ]}
+            placeholder={t('feed.tagsPlaceholder')}
+            placeholderTextColor={colors.textSecondary}
+            selectionColor={colors.primary}
+            cursorColor={colors.primary}
+            value={newTags}
+            onChangeText={setNewTags}
+          />
+
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            {t('feed.visibility')}
+          </Text>
+          <View style={styles.visibilityOptions}>
+            <TouchableOpacity
+              style={[
+                styles.visibilityOption,
+                {
+                  backgroundColor: visibility === 'public' ? colors.surfaceElevated : colors.surfaceMuted,
+                  borderColor: visibility === 'public' ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setVisibility('public')}
+            >
+              <Ionicons
+                name="globe"
+                size={20}
+                color={visibility === 'public' ? colors.primary : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.visibilityOptionText,
+                  { color: visibility === 'public' ? colors.primary : colors.textSecondary },
+                  isHebrewUi && styles.rtlText,
+                ]}
+                numberOfLines={2}
+              >
+                {t('feed.public')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.visibilityOption,
+                {
+                  backgroundColor: visibility === 'institution' ? colors.surfaceElevated : colors.surfaceMuted,
+                  borderColor: visibility === 'institution' ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setVisibility('institution')}
+            >
+              <Ionicons
+                name="school"
+                size={20}
+                color={visibility === 'institution' ? colors.primary : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.visibilityOptionText,
+                  { color: visibility === 'institution' ? colors.primary : colors.textSecondary },
+                  isHebrewUi && styles.rtlText,
+                ]}
+                numberOfLines={2}
+              >
+                {t('feed.institutionOnly')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.visibilityOption,
+                {
+                  backgroundColor: visibility === 'followers' ? colors.surfaceElevated : colors.surfaceMuted,
+                  borderColor: visibility === 'followers' ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setVisibility('followers')}
+            >
+              <Ionicons
+                name="people-outline"
+                size={20}
+                color={visibility === 'followers' ? colors.primary : colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.visibilityOptionText,
+                  { color: visibility === 'followers' ? colors.primary : colors.textSecondary },
+                  isHebrewUi && styles.rtlText,
+                ]}
+                numberOfLines={2}
+              >
+                {t('feed.followersOnly')}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+            Attachments ({t('common.optional')})
+          </Text>
+          <TouchableOpacity
+            style={[
+              styles.attachButton,
+              {
+                borderColor: colors.primary,
+                backgroundColor: colors.surfaceElevated,
+              },
+            ]}
+            onPress={onPickAttachment}
+            disabled={uploadingAttachment}
+          >
+            {uploadingAttachment ? (
+              <ActivityIndicator size="small" color={colors.primary} />
+            ) : (
+              <Ionicons name="attach" size={18} color={colors.accent} />
+            )}
+            <Text style={[styles.attachButtonText, { color: colors.primary }]}>
+              {uploadingAttachment ? t('common.uploading') : t('profile.addAttachment')}
+            </Text>
+          </TouchableOpacity>
+          {attachments.length > 0 ? (
+            <View style={styles.attachmentsList}>
+              {attachments.map((file, idx) => (
+                <View
+                  key={`${file.url}-${idx}`}
+                  style={[styles.attachmentChip, { borderColor: colors.border, backgroundColor: colors.surface }]}
+                >
+                  <Text style={[styles.attachmentChipText, { color: colors.textPrimary }]} numberOfLines={1}>
+                    {file.name}
+                  </Text>
+                  <TouchableOpacity onPress={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}>
+                    <Ionicons name="close-circle" size={18} color={colors.danger} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          <PrimaryButton
+            label={t('feed.publishPost')}
+            onPress={onPublish}
+            disabled={publishing}
+            loading={publishing}
+            style={styles.publishButtonPrimary}
+          />
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </View>
+  );
+}
+
+/**
+ * Renders inside Modal + nested SafeAreaProvider so useSafeAreaInsets() measures correctly on first open.
+ */
+function FeedNotificationsModalBody({
+  onClose,
+  notificationsFilter,
+  setNotificationsFilter,
+  groupedNotifications,
+  notificationText,
+  notificationRowTypeIcon,
+}: FeedNotificationsModalBodyProps) {
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
+  const { t, i18n } = useTranslation();
+  const router = useRouter();
+  const isHebrewUi = i18n.language === 'he';
+
+  const topInset =
+    insets.top > 0 ? insets.top : Platform.OS === 'ios' ? 47 : StatusBar.currentHeight ?? 0;
+
+  return (
+    <View style={[styles.notificationsModalRoot, { backgroundColor: colors.bg }]}>
+      <View
+        style={[
+          styles.notificationsLocalHeader,
+          {
+            paddingTop: topInset + 8,
+            minHeight: topInset + 8 + 56,
+            backgroundColor: colors.bg,
+            borderBottomColor: colors.border,
+          },
+        ]}
+      >
+        <View style={styles.notificationsLocalHeaderRow}>
+          <TouchableOpacity
+            style={styles.notificationsHeaderBackBtn}
+            onPress={onClose}
+            hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            accessibilityRole="button"
+            accessibilityLabel={t('common.back')}
+          >
+            <Ionicons name="chevron-back" size={24} color={colors.primary} />
+          </TouchableOpacity>
+          <View style={styles.notificationsHeaderTitleWrap} pointerEvents="none">
+            <Text
+              style={[styles.notificationsHeaderTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}
+              numberOfLines={1}
+            >
+              {isHebrewUi ? 'עדכונים' : 'Updates'}
+            </Text>
+          </View>
+          <View style={styles.notificationsHeaderSpacer} />
+        </View>
+      </View>
+
+      <View style={[styles.notificationsModalTopDecor, { borderBottomColor: colors.border }]}>
+        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+      </View>
+
+      <AppCard
+        style={[
+          styles.notificationsFilterShell,
+          { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+        ]}
+      >
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notificationsTabsRow}>
+          {(['all', 'follows', 'comments', 'likes'] as const).map((filter) => {
+            const active = notificationsFilter === filter;
+            return (
+              <TouchableOpacity
+                key={filter}
+                style={[
+                  styles.notificationTab,
+                  active
+                    ? { backgroundColor: colors.primary, borderColor: colors.primary }
+                    : { backgroundColor: colors.surface, borderColor: colors.border },
+                ]}
+                onPress={() => setNotificationsFilter(filter)}
+              >
+                <Text
+                  style={[
+                    styles.notificationTabText,
+                    { color: active ? colors.textOnPrimary : colors.textSecondary },
+                  ]}
+                >
+                  {t(`feed.notifications.filters.${filter}`)}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </ScrollView>
+      </AppCard>
+
+      <ScrollView
+        style={styles.notificationsModalScroll}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[
+          styles.notificationsBody,
+          { paddingBottom: spacing.xxl + insets.bottom },
+        ]}
+      >
+        {groupedNotifications.length ? (
+          groupedNotifications.map((section) => (
+            <View key={section.title}>
+              <Text style={[styles.notificationsSectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+                {section.title}
+              </Text>
+              {section.data.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.78}
+                  style={styles.notificationCardWrap}
+                  onPress={() => {
+                    onClose();
+                    if (item.type === 'follow') {
+                      const uid = item.actorUid?.trim();
+                      if (uid) router.push(`/user-profile/${uid}` as any);
+                      return;
+                    }
+                    if (item.postId) router.push(`/feed/post/${item.postId}` as any);
+                  }}
+                >
+                  <AppCard style={[styles.notificationCard, { borderColor: colors.border }]}>
+                    <View style={[styles.notificationRowInner, isHebrewUi && styles.rtlRow]}>
+                      <View style={[styles.notificationTypeIconWrap, { backgroundColor: colors.surfaceMuted }]}>
+                        <Ionicons name={notificationRowTypeIcon(item)} size={15} color={colors.primary} />
+                      </View>
+                      <View style={[styles.notificationAvatarWrap, { borderColor: colors.border }]}>
+                        {item.actorAvatarUrl ? (
+                          <Image source={{ uri: item.actorAvatarUrl }} style={styles.notificationAvatar} />
+                        ) : (
+                          <Ionicons name="person" size={14} color={colors.primary} />
+                        )}
+                      </View>
+                      <View style={[styles.notificationTextWrap, isHebrewUi && styles.rtlTextBlock]}>
+                        <Text style={[styles.notificationText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
+                          {notificationText(item)}
+                        </Text>
+                        {!!item.text && item.type === 'post_comment' ? (
+                          <Text style={[styles.notificationSubText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                            &quot;{item.text}&quot;
+                          </Text>
+                        ) : null}
+                      </View>
+                      <View style={[styles.notificationMeta, isHebrewUi && styles.rtlRow]}>
+                        <Text style={[styles.notificationTime, { color: colors.textSecondary }]}>{item.createdAtLabel}</Text>
+                        {!item.read ? <View style={[styles.notificationUnreadDot, { backgroundColor: colors.danger }]} /> : null}
+                      </View>
+                    </View>
+                  </AppCard>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ))
+        ) : (
+          <AppCard style={[styles.notificationsEmptyCard, { borderColor: colors.border }]}>
+            <Ionicons name="notifications-off-outline" size={36} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
+            <Text style={[styles.notificationsEmptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('feed.notifications.empty')}
+            </Text>
+          </AppCard>
+        )}
+      </ScrollView>
+    </View>
+  );
+}
 
 export default function StudentFeedScreen() {
   const router = useRouter();
@@ -105,11 +686,13 @@ export default function StudentFeedScreen() {
   const [loadingPosts, setLoadingPosts] = useState(true);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [courses, setCourses] = useState<CourseOption[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
   const [showCoursePicker, setShowCoursePicker] = useState(false);
   const [userInstitution, setUserInstitution] = useState('');
   const [selectedType, setSelectedType] = useState<StudyPost['type']>('Summary');
   const [selectedCourse, setSelectedCourse] = useState<CourseOption | null>(null);
-  const [visibility, setVisibility] = useState<'public' | 'institution'>('public');
+  const [visibility, setVisibility] = useState<'public' | 'institution' | 'followers'>('public');
+  const [followingAuthorIds, setFollowingAuthorIds] = useState<string[]>([]);
   const [attachments, setAttachments] = useState<FeedAttachment[]>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const [newTitle, setNewTitle] = useState('');
@@ -176,32 +759,83 @@ export default function StudentFeedScreen() {
     ].filter((section) => section.data.length > 0);
   }, [filteredNotifications, t]);
 
+  const followingIdsKey = useMemo(
+    () => [...followingAuthorIds].sort().join(','),
+    [followingAuthorIds]
+  );
+
   useEffect(() => {
-    const loadContext = async () => {
-      if (!firebaseUser) return;
-      try {
-        const [userDoc, coursesSnap] = await Promise.all([
-          getDoc(doc(db, 'users', firebaseUser.uid)),
-          getDocs(query(collection(db, 'courses'), where('ownerUid', '==', firebaseUser.uid))),
-        ]);
-        if (userDoc.exists()) {
-          const data = userDoc.data() as any;
-          setUserInstitution(data?.institution || '');
-        }
-        const list: CourseOption[] = [];
-        coursesSnap.forEach((courseDoc) => {
-          const data = courseDoc.data() as any;
-          if (data?.name) {
-            list.push({ id: courseDoc.id, name: data.name });
-          }
+    if (!firebaseUser) {
+      setFollowingAuthorIds([]);
+      return;
+    }
+    const q = query(collection(db, 'follows'), where('followerId', '==', firebaseUser.uid));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const ids: string[] = [];
+        snap.forEach((d) => {
+          const data = d.data() as any;
+          if (data?.followingId) ids.push(String(data.followingId));
         });
-        setCourses(list);
-      } catch (err) {
-        console.log('feed context error:', err);
-      }
-    };
-    loadContext();
+        setFollowingAuthorIds(ids);
+      },
+      () => setFollowingAuthorIds([])
+    );
+    return unsub;
   }, [firebaseUser]);
+
+  const refreshCourses = useCallback(async () => {
+    if (!firebaseUser) {
+      setCourses([]);
+      setSelectedCourse(null);
+      setCoursesLoading(false);
+      return;
+    }
+    setCoursesLoading(true);
+    try {
+      const [userDoc, coursesSnap] = await Promise.all([
+        getDoc(doc(db, 'users', firebaseUser.uid)),
+        getDocs(query(collection(db, 'courses'), where('ownerUid', '==', firebaseUser.uid))),
+      ]);
+      if (userDoc.exists()) {
+        const udata = userDoc.data() as any;
+        setUserInstitution(udata?.institution || '');
+      }
+      const byId = new Map<string, CourseOption>();
+      coursesSnap.forEach((courseDoc) => {
+        const data = courseDoc.data() as any;
+        if (data?.name) {
+          byId.set(courseDoc.id, { id: courseDoc.id, name: String(data.name) });
+        }
+      });
+      const nextList = Array.from(byId.values()).sort((a, b) =>
+        a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+      );
+      setCourses(nextList);
+      setSelectedCourse((prev) => (prev && nextList.some((c) => c.id === prev.id) ? prev : null));
+    } catch (err) {
+      console.log('feed courses refresh error:', err);
+    } finally {
+      setCoursesLoading(false);
+    }
+  }, [firebaseUser]);
+
+  useEffect(() => {
+    void refreshCourses();
+  }, [refreshCourses]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshCourses();
+    }, [refreshCourses])
+  );
+
+  useEffect(() => {
+    if (showCreateModal) {
+      void refreshCourses();
+    }
+  }, [showCreateModal, refreshCourses]);
 
   useEffect(() => {
     const postsRef = collection(db, 'feedPosts');
@@ -209,34 +843,70 @@ export default function StudentFeedScreen() {
     const unsub = onSnapshot(
       q,
       async (snap) => {
-        const list = await Promise.all(
-          snap.docs.map(async (d) => {
+        type PostVis = 'public' | 'institution' | 'followers';
+        type Row = { id: string; data: any; likedBy: string[]; savedBy: string[]; postVisibility: PostVis };
+        const followingSet = new Set(followingAuthorIds);
+        const rows: Row[] = [];
+        for (const d of snap.docs) {
           const data = d.data() as any;
           const likedBy: string[] = data.likedBy || [];
           const savedBy: string[] = data.savedBy || [];
-          const postVisibility = (data.visibility || 'public') as 'public' | 'institution';
+          const rawVis = String(data.visibility || 'public').toLowerCase();
+          const postVisibility = (
+            rawVis === 'institution' || rawVis === 'followers' ? rawVis : 'public'
+          ) as PostVis;
           const postInstitution = data.authorInstitution || '';
-          const canSeePost =
-            postVisibility === 'public' ||
-            !postInstitution ||
-            (userInstitution && postInstitution === userInstitution);
-          if (!canSeePost) return null;
+          const authorUid = String(data.authorUid || '').trim();
+          const isAuthor = !!firebaseUser && !!authorUid && authorUid === firebaseUser.uid;
+          const followsAuthor = !!authorUid && followingSet.has(authorUid);
 
-          let authorAvatarUrl = data.authorAvatarUrl || '';
-          if (!authorAvatarUrl && data.authorUid) {
+          let canSeePost = false;
+          if (postVisibility === 'followers') {
+            canSeePost = !!firebaseUser && (isAuthor || followsAuthor);
+          } else {
+            canSeePost =
+              postVisibility === 'public' ||
+              !postInstitution ||
+              (!!userInstitution && postInstitution === userInstitution);
+          }
+          if (!canSeePost) continue;
+          rows.push({ id: d.id, data, likedBy, savedBy, postVisibility });
+        }
+
+        const authorUids = [...new Set(rows.map((r) => String(r.data.authorUid || '').trim()).filter(Boolean))];
+        const avatarFromProfileByUid: Record<string, string> = {};
+        await Promise.all(
+          authorUids.map(async (uid) => {
             try {
-              const authorSnap = await getDoc(doc(db, 'users', data.authorUid));
+              const authorSnap = await getDoc(doc(db, 'users', uid));
               if (authorSnap.exists()) {
                 const authorData = authorSnap.data() as any;
-                authorAvatarUrl = authorData?.profilePictureUrl || '';
+                const url = String(
+                  authorData?.profilePictureUrl ||
+                    authorData?.profileImageUrl ||
+                    authorData?.photoURL ||
+                    authorData?.avatarUrl ||
+                    ''
+                ).trim();
+                avatarFromProfileByUid[uid] = url;
               }
             } catch {
-              // Keep fallback icon if user lookup fails.
+              // leave missing; fallback to post denormalized field below
             }
-          }
+          })
+        );
+
+        const list: (StudyPost | null)[] = rows.map((r) => {
+          const { data, id, likedBy, savedBy, postVisibility } = r;
+          const uid = String(data.authorUid || '').trim();
+          const fromPost = String(data.authorAvatarUrl || '').trim();
+          const hasProfileFetch = uid && Object.prototype.hasOwnProperty.call(avatarFromProfileByUid, uid);
+          const authorAvatarUrl = hasProfileFetch
+            ? avatarFromProfileByUid[uid] || undefined
+            : fromPost || undefined;
 
           return {
-            id: d.id,
+            id,
             authorUid: data.authorUid || '',
             authorName: data.authorName || 'User',
             authorAvatarUrl,
@@ -254,8 +924,8 @@ export default function StudentFeedScreen() {
             isSaved: firebaseUser ? savedBy.includes(firebaseUser.uid) : false,
             visibility: postVisibility,
           } as StudyPost;
-        })
-        );
+        });
+
         setPosts(list.filter(Boolean) as StudyPost[]);
         setLoadingPosts(false);
       },
@@ -265,7 +935,7 @@ export default function StudentFeedScreen() {
       }
     );
     return unsub;
-  }, [firebaseUser, userInstitution]);
+  }, [firebaseUser, userInstitution, followingIdsKey]);
 
   useEffect(() => {
     if (!firebaseUser) return;
@@ -297,6 +967,9 @@ export default function StudentFeedScreen() {
           const createdAtDate = data?.createdAt?.toDate ? data.createdAt.toDate() : null;
           return {
             id: d.id,
+            actorUid: String(
+              data?.actorUid || data?.fromUid || data?.userId || data?.senderUid || ''
+            ).trim(),
             actorName: data?.actorName || 'User',
             actorAvatarUrl: data?.actorAvatarUrl || '',
             type: (data?.type || 'follow') as ActivityNotificationItem['type'],
@@ -315,8 +988,7 @@ export default function StudentFeedScreen() {
     return unsub;
   }, [firebaseUser]);
 
-  // Redirect if not student
-  if (role !== 'student') {
+  if (role !== 'student' && role !== 'lecturer' && role !== 'admin') {
     return null;
   }
 
@@ -376,12 +1048,14 @@ export default function StudentFeedScreen() {
     }).catch((err) => console.log('report error', err));
   };
 
-  const getPostFirstImageUrl = (post: StudyPost) =>
-    post.attachments?.find((a) => {
-      const mime = String(a?.mimeType || '').toLowerCase();
-      const url = String(a?.url || '').toLowerCase();
-      return mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|heic)(\?|$)/i.test(url);
-    })?.url;
+  const getPostFirstImageAttachment = (post: StudyPost) =>
+    post.attachments?.find((a) =>
+      attachmentLooksLikeImage({
+        name: a.name || '',
+        url: a.url || '',
+        mimeType: a.mimeType ?? null,
+      })
+    );
 
   const typeBadgeBorder = (type: StudyPost['type']) => {
     switch (type) {
@@ -520,7 +1194,8 @@ export default function StudentFeedScreen() {
   };
 
   const renderPost = ({ item }: { item: StudyPost }) => {
-    const imageUrl = getPostFirstImageUrl(item);
+    const firstImageAttachment = getPostFirstImageAttachment(item);
+    const imageUrl = firstImageAttachment?.url;
     const cardShadow =
       Platform.OS === 'ios'
         ? {
@@ -604,6 +1279,21 @@ export default function StudentFeedScreen() {
             </View>
           ) : null}
 
+          {item.visibility === 'institution' ? (
+            <View
+              style={[
+                styles.postVisibilityPill,
+                { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                isHebrewUi && styles.rtlRow,
+              ]}
+            >
+              <Ionicons name="school-outline" size={12} color={colors.textSecondary} />
+              <Text style={[styles.postVisibilityPillText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
+                {t('feed.institutionOnlyBadge')}
+              </Text>
+            </View>
+          ) : null}
+
           <Text style={[styles.postTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
             {item.title}
           </Text>
@@ -612,10 +1302,20 @@ export default function StudentFeedScreen() {
             {item.content}
           </Text>
 
-          {imageUrl ? (
-            <View style={[styles.postImageWrap, { borderColor: colors.border }]}>
+          {imageUrl && firstImageAttachment ? (
+            <Pressable
+              onPress={(e) => {
+                e.stopPropagation?.();
+                pushAttachmentViewer(router, {
+                  url: firstImageAttachment.url,
+                  name: firstImageAttachment.name,
+                  mimeType: firstImageAttachment.mimeType ?? undefined,
+                });
+              }}
+              style={[styles.postImageWrap, { borderColor: colors.border }]}
+            >
               <Image source={{ uri: imageUrl }} style={styles.postImage} resizeMode="cover" />
-            </View>
+            </Pressable>
           ) : null}
 
           {item.tags.length > 0 ? (
@@ -700,7 +1400,7 @@ export default function StudentFeedScreen() {
             StudyFeed
           </Text>
         </View>
-        <View style={[styles.headerSide, styles.headerActions, isHebrewUi && styles.rtlRow]}>
+        <View style={[styles.headerSide, styles.headerActions]}>
           <TouchableOpacity
             style={[styles.headerIconBtn, { backgroundColor: colors.surfaceElevated, borderColor: colors.border }]}
             onPress={handleOpenNotifications}
@@ -771,383 +1471,52 @@ export default function StudentFeedScreen() {
         transparent={false}
         onRequestClose={() => setShowNotificationsModal(false)}
       >
-        <AppScreen>
-          <AppHeader
-            title={t('feed.notifications.title')}
-            onBack={() => setShowNotificationsModal(false)}
+        <SafeAreaProvider style={[styles.notificationsModalRoot, { backgroundColor: colors.bg }]}>
+          <FeedNotificationsModalBody
+            onClose={() => setShowNotificationsModal(false)}
+            notificationsFilter={notificationsFilter}
+            setNotificationsFilter={setNotificationsFilter}
+            groupedNotifications={groupedNotifications}
+            notificationText={notificationText}
+            notificationRowTypeIcon={notificationRowTypeIcon}
           />
-          <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
-            <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
-            <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
-          </View>
-
-          <AppCard
-            style={[
-              styles.notificationsFilterShell,
-              { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-            ]}
-          >
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.notificationsTabsRow}>
-              {(['all', 'follows', 'comments', 'likes'] as const).map((filter) => {
-                const active = notificationsFilter === filter;
-                return (
-                  <TouchableOpacity
-                    key={filter}
-                    style={[
-                      styles.notificationTab,
-                      active
-                        ? { backgroundColor: colors.primary, borderColor: colors.primary }
-                        : { backgroundColor: colors.surface, borderColor: colors.border },
-                    ]}
-                    onPress={() => setNotificationsFilter(filter)}
-                  >
-                    <Text
-                      style={[
-                        styles.notificationTabText,
-                        { color: active ? colors.textOnPrimary : colors.textSecondary },
-                      ]}
-                    >
-                      {t(`feed.notifications.filters.${filter}`)}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          </AppCard>
-
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.notificationsBody}>
-            {groupedNotifications.length ? (
-              groupedNotifications.map((section) => (
-                <View key={section.title}>
-                  <Text style={[styles.notificationsSectionTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                    {section.title}
-                  </Text>
-                  {section.data.map((item) => (
-                    <TouchableOpacity
-                      key={item.id}
-                      activeOpacity={0.78}
-                      style={styles.notificationCardWrap}
-                      onPress={() => {
-                        setShowNotificationsModal(false);
-                        if (item.postId) router.push(`/feed/post/${item.postId}` as any);
-                      }}
-                    >
-                      <AppCard style={[styles.notificationCard, { borderColor: colors.border }]}>
-                        <View style={[styles.notificationRowInner, isHebrewUi && styles.rtlRow]}>
-                          <View style={[styles.notificationTypeIconWrap, { backgroundColor: colors.surfaceMuted }]}>
-                            <Ionicons name={notificationRowTypeIcon(item)} size={15} color={colors.primary} />
-                          </View>
-                          <View style={[styles.notificationAvatarWrap, { borderColor: colors.border }]}>
-                            {item.actorAvatarUrl ? (
-                              <Image source={{ uri: item.actorAvatarUrl }} style={styles.notificationAvatar} />
-                            ) : (
-                              <Ionicons name="person" size={14} color={colors.primary} />
-                            )}
-                          </View>
-                          <View style={[styles.notificationTextWrap, isHebrewUi && styles.rtlTextBlock]}>
-                            <Text style={[styles.notificationText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
-                              {notificationText(item)}
-                            </Text>
-                            {!!item.text && item.type === 'post_comment' ? (
-                              <Text style={[styles.notificationSubText, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
-                                &quot;{item.text}&quot;
-                              </Text>
-                            ) : null}
-                          </View>
-                          <View style={[styles.notificationMeta, isHebrewUi && styles.rtlRow]}>
-                            <Text style={[styles.notificationTime, { color: colors.textSecondary }]}>{item.createdAtLabel}</Text>
-                            {!item.read ? <View style={[styles.notificationUnreadDot, { backgroundColor: colors.danger }]} /> : null}
-                          </View>
-                        </View>
-                      </AppCard>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ))
-            ) : (
-              <AppCard style={[styles.notificationsEmptyCard, { borderColor: colors.border }]}>
-                <Ionicons name="notifications-off-outline" size={36} color={colors.textSecondary} style={{ alignSelf: 'center' }} />
-                <Text style={[styles.notificationsEmptyTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                  {t('feed.notifications.empty')}
-                </Text>
-              </AppCard>
-            )}
-          </ScrollView>
-        </AppScreen>
+        </SafeAreaProvider>
       </Modal>
 
-      {/* Create Post Modal */}
+      {/* Create Post Modal — nested SafeAreaProvider + local header for correct first-open insets */}
       <Modal
         visible={showCreateModal}
         animationType="slide"
-        transparent={true}
+        transparent={false}
         onRequestClose={() => setShowCreateModal(false)}
       >
-        <View style={[styles.modalBackdrop, { backgroundColor: 'rgba(15, 23, 42, 0.45)' }]}>
-          <View style={[styles.modalContent, { backgroundColor: colors.surface, borderTopColor: colors.border }]}>
-            <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-              <Text style={[styles.modalTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.createPost')}
-              </Text>
-              <TouchableOpacity onPress={() => setShowCreateModal(false)} accessibilityRole="button">
-                <Ionicons name="close" size={24} color={colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
-            <ScrollView style={styles.modalBody} keyboardShouldPersistTaps="handled">
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.course')} ({t('common.optional')})
-              </Text>
-              <TouchableOpacity
-                style={[
-                  styles.input,
-                  { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                ]}
-                onPress={() => setShowCoursePicker((prev) => !prev)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={
-                    selectedCourse
-                      ? [styles.inputValue, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]
-                      : [styles.inputPlaceholder, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]
-                  }
-                >
-                  {selectedCourse?.name || t('feed.selectCourse')}
-                </Text>
-                <Ionicons name="chevron-down" size={20} color={colors.textSecondary} />
-              </TouchableOpacity>
-              {showCoursePicker ? (
-                <View style={[styles.pickerList, { borderColor: colors.border, backgroundColor: colors.surface }]}>
-                  <TouchableOpacity
-                    style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                    onPress={() => {
-                      setSelectedCourse(null);
-                      setShowCoursePicker(false);
-                    }}
-                  >
-                    <Text style={[styles.pickerItemText, { color: colors.textPrimary }]}>{t('feed.selectCourse')}</Text>
-                  </TouchableOpacity>
-                  {courses.map((course) => (
-                    <TouchableOpacity
-                      key={course.id}
-                      style={[styles.pickerItem, { borderBottomColor: colors.border }]}
-                      onPress={() => {
-                        setSelectedCourse(course);
-                        setShowCoursePicker(false);
-                      }}
-                    >
-                      <Text style={[styles.pickerItemText, { color: colors.textPrimary }]}>{course.name}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              ) : null}
-
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.titleLabel')} *
-              </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderColor: colors.border,
-                    color: colors.textPrimary,
-                  },
-                ]}
-                placeholder={t('feed.titlePlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                selectionColor={colors.primary}
-                cursorColor={colors.primary}
-                value={newTitle}
-                onChangeText={setNewTitle}
-                textAlign={isHebrewUi ? 'right' : 'left'}
-              />
-
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.contentLabel')} *
-              </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  styles.textArea,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderColor: colors.border,
-                    color: colors.textPrimary,
-                  },
-                ]}
-                placeholder={t('feed.contentPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                selectionColor={colors.primary}
-                cursorColor={colors.primary}
-                multiline
-                numberOfLines={6}
-                value={newContent}
-                onChangeText={setNewContent}
-                textAlign={isHebrewUi ? 'right' : 'left'}
-              />
-
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.postTypeLabel')} *
-              </Text>
-              <View style={styles.typeOptions}>
-                {(['Summary', 'Tip', 'Question', 'Exam Info'] as StudyPost['type'][]).map((type) => {
-                  const active = selectedType === type;
-                  return (
-                    <TouchableOpacity
-                      key={type}
-                      style={[
-                        styles.typeOption,
-                        {
-                          backgroundColor: active ? colors.surfaceElevated : colors.surfaceMuted,
-                          borderColor: active ? colors.primary : colors.border,
-                        },
-                      ]}
-                      onPress={() => setSelectedType(type)}
-                    >
-                      <Text
-                        style={[
-                          styles.typeOptionText,
-                          { color: active ? colors.primary : colors.textSecondary, fontWeight: active ? '700' : '500' },
-                          isHebrewUi && styles.rtlText,
-                        ]}
-                      >
-                        {t(`feed.postType.${type.toLowerCase().replace(' ', '')}`)}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.tags')} ({t('common.optional')})
-              </Text>
-              <TextInput
-                style={[
-                  styles.textInput,
-                  {
-                    backgroundColor: colors.surfaceMuted,
-                    borderColor: colors.border,
-                    color: colors.textPrimary,
-                  },
-                ]}
-                placeholder={t('feed.tagsPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                selectionColor={colors.primary}
-                cursorColor={colors.primary}
-                value={newTags}
-                onChangeText={setNewTags}
-              />
-
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                {t('feed.visibility')}
-              </Text>
-              <View style={styles.visibilityOptions}>
-                <TouchableOpacity
-                  style={[
-                    styles.visibilityOption,
-                    {
-                      backgroundColor: visibility === 'public' ? colors.surfaceElevated : colors.surfaceMuted,
-                      borderColor: visibility === 'public' ? colors.primary : colors.border,
-                    },
-                  ]}
-                  onPress={() => setVisibility('public')}
-                >
-                  <Ionicons
-                    name="globe"
-                    size={20}
-                    color={visibility === 'public' ? colors.primary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.visibilityOptionText,
-                      { color: visibility === 'public' ? colors.primary : colors.textSecondary },
-                    ]}
-                  >
-                    {t('feed.public')}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[
-                    styles.visibilityOption,
-                    {
-                      backgroundColor: visibility === 'institution' ? colors.surfaceElevated : colors.surfaceMuted,
-                      borderColor: visibility === 'institution' ? colors.primary : colors.border,
-                    },
-                  ]}
-                  onPress={() => setVisibility('institution')}
-                >
-                  <Ionicons
-                    name="school"
-                    size={20}
-                    color={visibility === 'institution' ? colors.primary : colors.textSecondary}
-                  />
-                  <Text
-                    style={[
-                      styles.visibilityOptionText,
-                      { color: visibility === 'institution' ? colors.primary : colors.textSecondary },
-                    ]}
-                  >
-                    {t('feed.institutionOnly')}
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={[styles.label, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
-                Attachments ({t('common.optional')})
-              </Text>
-              <TouchableOpacity
-                style={[
-                  styles.attachButton,
-                  {
-                    borderColor: colors.primary,
-                    backgroundColor: colors.surfaceElevated,
-                  },
-                ]}
-                onPress={handlePickAttachment}
-                disabled={uploadingAttachment}
-              >
-                {uploadingAttachment ? (
-                  <ActivityIndicator size="small" color={colors.primary} />
-                ) : (
-                  <Ionicons name="attach" size={18} color={colors.accent} />
-                )}
-                <Text style={[styles.attachButtonText, { color: colors.primary }]}>
-                  {uploadingAttachment ? t('common.uploading') : t('profile.addAttachment')}
-                </Text>
-              </TouchableOpacity>
-              {attachments.length > 0 ? (
-                <View style={styles.attachmentsList}>
-                  {attachments.map((file, idx) => (
-                    <View
-                      key={`${file.url}-${idx}`}
-                      style={[styles.attachmentChip, { borderColor: colors.border, backgroundColor: colors.surface }]}
-                    >
-                      <Text style={[styles.attachmentChipText, { color: colors.textPrimary }]} numberOfLines={1}>
-                        {file.name}
-                      </Text>
-                      <TouchableOpacity
-                        onPress={() =>
-                          setAttachments((prev) => prev.filter((_, i) => i !== idx))
-                        }
-                      >
-                        <Ionicons name="close-circle" size={18} color={colors.danger} />
-                      </TouchableOpacity>
-                    </View>
-                  ))}
-                </View>
-              ) : null}
-
-              <PrimaryButton
-                label={t('feed.publishPost')}
-                onPress={handlePublishPost}
-                disabled={publishing}
-                loading={publishing}
-                style={styles.publishButtonPrimary}
-              />
-            </ScrollView>
-          </View>
-        </View>
+        <SafeAreaProvider style={{ flex: 1, backgroundColor: colors.surface }}>
+          <CreatePostModalBody
+            onClose={() => setShowCreateModal(false)}
+            courses={courses}
+            selectedCourse={selectedCourse}
+            setSelectedCourse={setSelectedCourse}
+            showCoursePicker={showCoursePicker}
+            setShowCoursePicker={setShowCoursePicker}
+            selectedType={selectedType}
+            setSelectedType={setSelectedType}
+            visibility={visibility}
+            setVisibility={setVisibility}
+            attachments={attachments}
+            setAttachments={setAttachments}
+            uploadingAttachment={uploadingAttachment}
+            newTitle={newTitle}
+            setNewTitle={setNewTitle}
+            newContent={newContent}
+            setNewContent={setNewContent}
+            newTags={newTags}
+            setNewTags={setNewTags}
+            publishing={publishing}
+            onPublish={handlePublishPost}
+            onPickAttachment={handlePickAttachment}
+            coursesLoading={coursesLoading}
+          />
+        </SafeAreaProvider>
       </Modal>
     </AppScreen>
   );
@@ -1221,6 +1590,54 @@ const styles = StyleSheet.create({
     top: -88,
     left: -8,
     opacity: 0.07,
+  },
+  notificationsModalRoot: {
+    flex: 1,
+  },
+  notificationsLocalHeader: {
+    width: '100%',
+    zIndex: 20,
+    elevation: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  notificationsLocalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    width: '100%',
+    minHeight: 56,
+  },
+  notificationsHeaderBackBtn: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  notificationsHeaderTitleWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8,
+  },
+  notificationsHeaderTitle: {
+    fontSize: 17,
+    fontWeight: '800',
+  },
+  notificationsHeaderSpacer: {
+    width: 44,
+    height: 44,
+  },
+  notificationsModalTopDecor: {
+    position: 'relative',
+    overflow: 'hidden',
+    height: 26,
+    marginHorizontal: layout.screenPadding,
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+    borderBottomWidth: 1,
+  },
+  notificationsModalScroll: {
+    flex: 1,
   },
   feedBody: {
     flex: 1,
@@ -1349,6 +1766,21 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     flexShrink: 1,
+  },
+  postVisibilityPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: 6,
+  },
+  postVisibilityPillText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   postTitle: {
     fontSize: 17,
@@ -1541,34 +1973,46 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     textAlign: 'center',
   },
-  modalBackdrop: {
+  createModalRoot: {
     flex: 1,
-    justifyContent: 'flex-end',
   },
-  modalContent: {
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderTopWidth: 1,
-    maxHeight: '90%',
-    paddingTop: spacing.md,
+  createModalKeyboard: {
+    flex: 1,
   },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: layout.screenPadding,
-    paddingBottom: spacing.sm,
+  createPostModalHeaderShell: {
     borderBottomWidth: StyleSheet.hairlineWidth,
+    zIndex: 20,
+    elevation: 8,
   },
-  modalTitle: {
+  createPostModalHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 56,
+    paddingHorizontal: layout.screenPadding,
+  },
+  createPostModalCloseWrap: {
+    width: 44,
+    height: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  createPostModalHeaderTitle: {
+    flex: 1,
     fontSize: 18,
     fontWeight: '800',
-    flex: 1,
-    marginEnd: spacing.sm,
+    textAlign: 'center',
   },
-  modalBody: {
+  createPostModalHeaderSideSlot: {
+    width: 44,
+    height: 44,
+  },
+  createModalScroll: {
+    flex: 1,
     paddingHorizontal: layout.screenPadding,
-    paddingBottom: spacing.xxl,
+  },
+  createModalScrollContent: {
+    flexGrow: 1,
+    paddingTop: spacing.sm,
   },
   label: {
     fontSize: 13,
@@ -1635,10 +2079,12 @@ const styles = StyleSheet.create({
   },
   visibilityOptions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
   },
   visibilityOption: {
-    flex: 1,
+    flexGrow: 1,
+    minWidth: 100,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

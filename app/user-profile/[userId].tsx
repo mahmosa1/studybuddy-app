@@ -72,6 +72,7 @@ export default function UserProfileScreen() {
   const [followersCount, setFollowersCount] = useState(0);
   const [followingCount, setFollowingCount] = useState(0);
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isFollowedByViewedUser, setIsFollowedByViewedUser] = useState(false);
   const [isOwnProfile, setIsOwnProfile] = useState(false);
   const [feedPosts, setFeedPosts] = useState<FeedPostPreview[]>([]);
   const [loadingFeedPosts, setLoadingFeedPosts] = useState(false);
@@ -84,12 +85,12 @@ export default function UserProfileScreen() {
       }
 
       const currentUser = auth.currentUser;
-      if (currentUser && currentUser.uid === userId) {
-        setIsOwnProfile(true);
-      }
+      setIsOwnProfile(!!(currentUser && currentUser.uid === userId));
 
       try {
         const followsRef = collection(db, 'follows');
+        setIsFollowing(false);
+        setIsFollowedByViewedUser(false);
 
         // Load user profile
         const userDoc = await getDoc(doc(db, 'users', userId));
@@ -132,11 +133,16 @@ export default function UserProfileScreen() {
         setFollowersCount(followersSnap.size);
         setFollowingCount(followingSnap.size);
 
-        // Check if current user is following this user
+        // Check if current user follows this user, and if this user follows current user
         if (currentUser && currentUser.uid !== userId) {
-          const followDocId = `${currentUser.uid}_${userId}`;
-          const followDoc = await getDoc(doc(db, 'follows', followDocId));
+          const outgoingId = `${currentUser.uid}_${userId}`;
+          const incomingId = `${userId}_${currentUser.uid}`;
+          const [followDoc, reverseFollowDoc] = await Promise.all([
+            getDoc(doc(db, 'follows', outgoingId)),
+            getDoc(doc(db, 'follows', incomingId)),
+          ]);
           setIsFollowing(followDoc.exists());
+          setIsFollowedByViewedUser(reverseFollowDoc.exists());
         }
       } catch (err) {
         console.log('Error loading user profile:', err);
@@ -415,7 +421,11 @@ export default function UserProfileScreen() {
                   isHebrewUi && styles.rtlText,
                 ]}
               >
-                {isFollowing ? t('profile.following') : t('profile.follow')}
+                {isFollowing
+                  ? t('profile.following')
+                  : isFollowedByViewedUser
+                    ? t('profile.followBack')
+                    : t('profile.follow')}
               </Text>
             </TouchableOpacity>
           ) : null}

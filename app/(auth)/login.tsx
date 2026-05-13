@@ -34,6 +34,7 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +45,32 @@ export default function LoginScreen() {
   useEffect(() => {
     setCurrentLanguage(i18n.language);
   }, [i18n.language]);
+
+  const getLoginAuthErrorMessage = (err: unknown) => {
+    const code = (err as { code?: string }).code;
+    const he = i18n.language === 'he';
+    switch (code) {
+      case 'auth/invalid-credential':
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-email':
+        return he
+          ? 'אימייל או סיסמה שגויים. בדוק/י את הפרטים ונסה/י שוב.'
+          : 'Invalid email or password. Please check your details and try again.';
+      case 'auth/too-many-requests':
+        return he
+          ? 'יותר מדי ניסיונות התחברות. נסה/י שוב מאוחר יותר.'
+          : 'Too many login attempts. Please try again later.';
+      case 'auth/network-request-failed':
+        return he
+          ? 'יש בעיית חיבור לאינטרנט. בדוק/י את החיבור ונסה/י שוב.'
+          : 'Network error. Please check your internet connection and try again.';
+      default:
+        return he
+          ? 'אירעה שגיאה בהתחברות. נסה/י שוב.'
+          : 'Something went wrong while logging in. Please try again.';
+    }
+  };
 
   // Check if user is already logged in
   useEffect(() => {
@@ -146,9 +173,9 @@ export default function LoginScreen() {
       } else if (userData.role === 'admin') {
         router.replace('/(tabs)');
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.log('Login error:', err);
-      setError(err?.message ?? 'Login failed. Please try again.');
+      setError(getLoginAuthErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -266,13 +293,25 @@ export default function LoginScreen() {
               >
                 <Ionicons name="lock-closed-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
                 <TextInput
-                  style={[styles.input, { color: colors.textPrimary }]}
+                  style={[styles.input, styles.passwordInput, { color: colors.textPrimary }]}
                   placeholder={t('auth.password')}
                   placeholderTextColor={colors.textSecondary}
                   value={password}
                   onChangeText={setPassword}
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
                 />
+                <TouchableOpacity
+                  onPress={() => setShowPassword((v) => !v)}
+                  hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  style={styles.passwordEyeHit}
+                  accessibilityRole="button"
+                >
+                  <Ionicons
+                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                    size={22}
+                    color={showPassword ? colors.primary : colors.textSecondary}
+                  />
+                </TouchableOpacity>
               </View>
             </View>
 
@@ -538,6 +577,14 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '500',
     paddingVertical: Platform.OS === 'ios' ? 12 : 10,
+  },
+  passwordInput: {
+    paddingEnd: spacing.sm + 26,
+  },
+  passwordEyeHit: {
+    marginStart: spacing.xs,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   errorContainer: {
     flexDirection: 'row',

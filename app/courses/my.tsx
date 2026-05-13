@@ -166,11 +166,6 @@ export default function MyCoursesScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heroWrap}>
           <View style={styles.heroGlowPrimary} />
-          <View style={styles.heroBadge}>
-            <Ionicons name="book-outline" size={14} color={colors.primary} />
-            <Text style={styles.heroBadgeText}>{t('courses.hub.myCoursesTitle')}</Text>
-          </View>
-          <Text style={styles.heroTitle}>{t('courses.hub.myCoursesTitle')}</Text>
           <Text style={styles.heroSubtitle}>{t('courses.hub.myCoursesSubtitle')}</Text>
         </View>
 
@@ -284,27 +279,7 @@ const makeStyles = (colors: ThemeColors) => StyleSheet.create({
     backgroundColor: colors.primary,
     opacity: 0.08,
   },
-  heroBadge: {
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceElevated,
-    marginBottom: spacing.sm,
-  },
-  heroBadgeText: {
-    color: colors.textSecondary,
-    ...typography.caption,
-    fontWeight: '700',
-  },
-  heroTitle: { color: colors.textPrimary, ...typography.h3 },
   heroSubtitle: {
-    marginTop: spacing.xs,
     color: colors.textSecondary,
     fontSize: 13,
     lineHeight: 18,

@@ -31,6 +31,7 @@ export function AppHeader({ title, onBack, rightSlot }: AppHeaderProps) {
           style={styles.sideButton}
           disabled={!onBack}
           accessibilityRole="button"
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
         >
           <Ionicons
             name={isRtl ? 'arrow-forward' : 'arrow-back'}
@@ -61,6 +62,8 @@ const styles = StyleSheet.create({
   sideButton: {
     width: 44,
     height: 44,
+    minWidth: 44,
+    minHeight: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
