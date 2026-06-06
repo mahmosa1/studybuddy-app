@@ -32,12 +32,14 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type ChatThread = {
   id: string;
@@ -59,6 +61,19 @@ type UserOption = {
   role?: string;
   avatarUrl?: string;
 };
+
+function NewChatModalShell({ children }: { children: React.ReactNode }) {
+  const insets = useSafeAreaInsets();
+  const { colors } = useAppTheme();
+  const topInset =
+    insets.top > 0 ? insets.top : Platform.OS === 'ios' ? 47 : StatusBar.currentHeight ?? 0;
+
+  return (
+    <View style={[styles.newChatModalRoot, { backgroundColor: colors.bg, paddingTop: topInset }]}>
+      {children}
+    </View>
+  );
+}
 
 export default function ChatScreen() {
   const router = useRouter();
@@ -495,22 +510,23 @@ export default function ChatScreen() {
       )}
 
       <Modal visible={showNewChatModal} animationType="slide" presentationStyle="fullScreen" onRequestClose={() => setShowNewChatModal(false)}>
-        <KeyboardAvoidingView
-          style={styles.newMessageScreen}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={0}
-        >
-          <AppScreen>
-            <AppHeader
-              title={newChatStep === 'main' ? t('chat.newMessage') : t('chat.newGroup')}
-              onBack={() => {
-                if (newChatStep === 'group') {
-                  setNewChatStep('main');
-                  return;
-                }
-                setShowNewChatModal(false);
-              }}
-            />
+        <SafeAreaProvider style={styles.newMessageScreen}>
+          <KeyboardAvoidingView
+            style={styles.newMessageScreen}
+            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            keyboardVerticalOffset={0}
+          >
+            <NewChatModalShell>
+              <AppHeader
+                title={newChatStep === 'main' ? t('chat.newMessage') : t('chat.newGroup')}
+                onBack={() => {
+                  if (newChatStep === 'group') {
+                    setNewChatStep('main');
+                    return;
+                  }
+                  setShowNewChatModal(false);
+                }}
+              />
 
             {creating ? <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.sm }} /> : null}
 
@@ -691,8 +707,9 @@ export default function ChatScreen() {
                 </View>
               </>
             )}
-          </AppScreen>
-        </KeyboardAvoidingView>
+            </NewChatModalShell>
+          </KeyboardAvoidingView>
+        </SafeAreaProvider>
       </Modal>
     </AppScreen>
   );
@@ -800,6 +817,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   newMessageScreen: {
+    flex: 1,
+  },
+  newChatModalRoot: {
     flex: 1,
   },
   emptyOptionText: {

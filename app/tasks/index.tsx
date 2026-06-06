@@ -187,7 +187,7 @@ function TaskCard({
   const overdue = isTaskOverdue(task);
   const dateLabel = formatTaskDate(task.dueDate, i18n.language, t('home.noDeadline'));
   const metaParts = [overdue ? t('home.overdue') : dateLabel, task.courseName || null].filter(Boolean);
-  const statusVisual = getStatusVisualStyle(task.status, colors);
+  const priorityAccent = getPriorityAccentColor(task.priority, colors);
 
   return (
     <TouchableOpacity
@@ -195,7 +195,7 @@ function TaskCard({
       onPress={onPress}
       activeOpacity={0.88}
     >
-      <View style={[styles.taskPriorityDot, { backgroundColor: statusVisual.accent }]} />
+      <View style={[styles.taskPriorityDot, { backgroundColor: priorityAccent }]} />
       <View style={styles.taskBody}>
         <Text
           style={[
@@ -1178,9 +1178,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   sectionAccent: {
-    width: 3,
-    height: 16,
-    borderRadius: radius.pill,
+    width: 8,
+    height: 8,
+    borderRadius: 4,
   },
   sectionTitle: {
     fontSize: 13,

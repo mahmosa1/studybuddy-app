@@ -34,7 +34,8 @@ type PracticeLanguage = 'hebrew' | 'english';
 
 export default function AIPracticeSetupScreen() {
   const router = useRouter();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const isRtl = i18n.language === 'he';
   const { colors } = useAppTheme();
   const styles = makeStyles(colors);
   const [courses, setCourses] = useState<Course[]>([]);
@@ -350,21 +351,24 @@ export default function AIPracticeSetupScreen() {
 
           {currentStep === 1 ? (
             <>
-              <View style={styles.optionsContainer}>
+              <View style={styles.courseList}>
                 {courses.map((course) => (
                   <TouchableOpacity
                     key={course.id}
                     style={[
-                      styles.optionButton,
+                      styles.courseOption,
                       selectedCourseId === course.id && styles.optionButtonSelected,
                     ]}
                     onPress={() => setSelectedCourseId(course.id)}
+                    activeOpacity={0.88}
                   >
                     <Text
                       style={[
-                        styles.optionText,
+                        styles.courseOptionText,
                         selectedCourseId === course.id && styles.optionTextSelected,
+                        isRtl && styles.rtlText,
                       ]}
+                      numberOfLines={2}
                     >
                       {course.name}
                     </Text>
@@ -372,13 +376,21 @@ export default function AIPracticeSetupScreen() {
                 ))}
               </View>
               {checkingSelectedCourseFiles ? (
-                <Text style={styles.helperMuted}>{t('practice.setup.checkingCourseFiles')}</Text>
+                <View style={[styles.helperBanner, isRtl && styles.helperBannerRtl, { borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}>
+                  <Text style={[styles.helperMuted, isRtl && styles.rtlText]}>{t('practice.setup.checkingCourseFiles')}</Text>
+                </View>
               ) : selectedCourseId && selectedCourseFileCount <= 0 ? (
-                <Text style={styles.helperError}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
+                <View style={[styles.helperBanner, isRtl && styles.helperBannerRtl, { borderColor: `${colors.danger}45`, backgroundColor: `${colors.danger}12` }]}>
+                  <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+                  <Text style={[styles.helperError, isRtl && styles.rtlText]}>{t('practice.setup.noFilesForSelectedCourse')}</Text>
+                </View>
               ) : selectedCourseId ? (
-                <Text style={styles.helperOk}>
-                  {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
-                </Text>
+                <View style={[styles.helperBanner, isRtl && styles.helperBannerRtl, { borderColor: `${colors.primary}35`, backgroundColor: `${colors.primary}10` }]}>
+                  <Ionicons name="checkmark-circle-outline" size={18} color={colors.primary} />
+                  <Text style={[styles.helperOk, isRtl && styles.rtlText]}>
+                    {t('practice.setup.courseFilesReady', { count: selectedCourseFileCount })}
+                  </Text>
+                </View>
               ) : null}
             </>
           ) : null}
@@ -554,7 +566,7 @@ export default function AIPracticeSetupScreen() {
             )}
           </View>
           {currentStep < totalSteps ? (
-            <Text style={styles.stepHint}>
+            <Text style={[styles.stepHint, isRtl && styles.rtlText]}>
               {t('practice.setup.stepHint')}
             </Text>
           ) : null}
@@ -568,7 +580,7 @@ const makeStyles = (colors: any) => StyleSheet.create({
   scrollContent: {
     paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,
-    paddingBottom: 40,
+    paddingBottom: 120,
   },
   emptyWrap: {
     flex: 1,
@@ -630,7 +642,6 @@ const makeStyles = (colors: any) => StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.lg,
     position: 'relative',
-    overflow: 'hidden',
   },
   cardAccentBar: {
     position: 'absolute',
@@ -658,6 +669,47 @@ const makeStyles = (colors: any) => StyleSheet.create({
     ...typography.h3,
     color: colors.textPrimary,
     marginBottom: 12,
+  },
+  rtlText: {
+    textAlign: 'right',
+    writingDirection: 'rtl',
+  },
+  courseList: {
+    width: '100%',
+    gap: 8,
+    marginBottom: 10,
+  },
+  courseOption: {
+    width: '100%',
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    minHeight: 48,
+  },
+  courseOptionText: {
+    fontSize: 15,
+    color: colors.textSecondary,
+    fontWeight: '600',
+    width: '100%',
+    lineHeight: 22,
+  },
+  helperBanner: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    padding: 12,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
+  helperBannerRtl: {
+    flexDirection: 'row-reverse',
   },
   optionsContainer: {
     flexDirection: 'row',
@@ -709,27 +761,29 @@ const makeStyles = (colors: any) => StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     textAlign: 'center',
+    lineHeight: 18,
+    paddingHorizontal: 4,
   },
   helperMuted: {
-    marginTop: 2,
-    marginBottom: 8,
-    fontSize: 12,
+    flex: 1,
+    fontSize: 13,
     color: colors.textSecondary,
     fontWeight: '500',
+    lineHeight: 20,
   },
   helperError: {
-    marginTop: 2,
-    marginBottom: 8,
-    fontSize: 12,
+    flex: 1,
+    fontSize: 13,
     color: colors.danger,
     fontWeight: '600',
+    lineHeight: 20,
   },
   helperOk: {
-    marginTop: 2,
-    marginBottom: 8,
-    fontSize: 12,
+    flex: 1,
+    fontSize: 13,
     color: colors.primary,
     fontWeight: '600',
+    lineHeight: 20,
   },
 });
 

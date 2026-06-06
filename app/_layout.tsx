@@ -11,6 +11,7 @@ import 'react-native-url-polyfill/auto';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import '@/lib/i18n'; // Initialize i18n
+import { StudyTimerProvider } from '@/lib/StudyTimerContext';
 import { UserProvider } from '@/lib/UserContext';
 
 export const unstable_settings = {
@@ -29,8 +30,9 @@ export default function RootLayout() {
 
   return (
     <UserProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack screenOptions={{ headerShown: false }}>
+      <StudyTimerProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack screenOptions={{ headerShown: false }}>
           <Stack.Screen name="(auth)" />
           <Stack.Screen
             name="(tabs)"
@@ -66,16 +68,25 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen
+            name="study-timer"
+            options={{
+              animation: 'slide_from_right',
+              gestureEnabled: true,
+              fullScreenGestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
             name="modal"
             options={{ presentation: 'modal', title: 'Modal' }}
           />
-        </Stack>
-        {/* "auto" follows system dark mode → light icons on our light screens = invisible with edge-to-edge */}
-        <StatusBar
-          style={activeTheme.colors.statusBar}
-          backgroundColor={Platform.OS === 'android' ? activeTheme.colors.bg : undefined}
-        />
-      </ThemeProvider>
+          </Stack>
+          {/* "auto" follows system dark mode → light icons on our light screens = invisible with edge-to-edge */}
+          <StatusBar
+            style={activeTheme.colors.statusBar}
+            backgroundColor={Platform.OS === 'android' ? activeTheme.colors.bg : undefined}
+          />
+        </ThemeProvider>
+      </StudyTimerProvider>
     </UserProvider>
   );
 }

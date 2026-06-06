@@ -10,7 +10,6 @@ import {
     getSmartNotifications,
     getStudyStats,
     getTasks,
-    saveStudySession,
     SmartNotification,
     StudyStats,
     StudyTask,
@@ -19,10 +18,13 @@ import {
 import {
     formatTaskDate,
     getUpcomingWeekTasks,
+    getPriorityAccentColor,
     getStatusLabelKey,
     getStatusVisualStyle,
     isTaskOverdue,
 } from '@/lib/taskUtils';
+import { getActiveTimerElapsed } from '@/frontend/components/study/timerFabConstants';
+import { useStudyTimer } from '@/lib/StudyTimerContext';
 import { useUser } from '@/lib/UserContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -69,6 +71,11 @@ function localizeSmartAlertMessage(
       topic: weakTopicMatch[1],
       accuracy: Number(weakTopicMatch[2]),
     });
+  }
+
+  const tasksDueSoonMatch = message.match(/(\d+)\s+task\(s\)\s+are due in the next 48 hours/i);
+  if (tasksDueSoonMatch?.[1]) {
+    return t('home.smartAlertTasksDueSoon48h', { count: Number(tasksDueSoonMatch[1]) });
   }
 
   return message;
@@ -146,12 +153,10 @@ function StudentHomeWithJournal({
   const router = useRouter();
   const { t, i18n } = useTranslation();
   const { colors } = useAppTheme();
+  const { session: timerSession, statsRefreshKey } = useStudyTimer();
   const [stats, setStats] = useState<StudyStats | null>(null);
   const [tasks, setTasks] = useState<StudyTask[]>([]);
   const [loadingData, setLoadingData] = useState(true);
-  const [seconds, setSeconds] = useState(0);
-  const [running, setRunning] = useState(false);
-  const [paused, setPaused] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalHoursInput, setGoalHoursInput] = useState('2');
   const [goalMinutesInput, setGoalMinutesInput] = useState('0');
@@ -178,36 +183,9 @@ function StudentHomeWithJournal({
   );
 
   useEffect(() => {
-    if (!running || paused) return;
-    const timer = setInterval(() => setSeconds((v) => v + 1), 1000);
-    return () => clearInterval(timer);
-  }, [running, paused]);
-
-  const formatTimer = (value: number) => {
-    const mins = Math.floor(value / 60);
-    const secs = value % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const handleStop = async () => {
-    setRunning(false);
-    setPaused(false);
-    if (seconds > 0) {
-      await saveStudySession(seconds);
-      Alert.alert(
-        t('common.success'),
-        t('home.timerSaved', { minutes: Math.floor(seconds / 60) }),
-      );
-      setSeconds(0);
-      const newStats = await getStudyStats();
-      setStats(newStats);
-    }
-  };
-
-  const handlePauseResume = () => {
-    if (!running) return;
-    setPaused((prev) => !prev);
-  };
+    if (statsRefreshKey === 0) return;
+    void reloadJournalData();
+  }, [reloadJournalData, statsRefreshKey]);
 
   const openGoalEditor = () => {
     const currentGoal = stats?.dailyGoal || 7200;
@@ -247,7 +225,8 @@ function StudentHomeWithJournal({
 
   const upcomingWeekTasks = getUpcomingWeekTasks(tasks);
   const dailyGoalSeconds = stats?.dailyGoal || 7200;
-  const todayStudySecondsLive = (stats?.todayStudyTime || 0) + seconds;
+  const activeTimerElapsed = getActiveTimerElapsed(timerSession);
+  const todayStudySecondsLive = (stats?.todayStudyTime || 0) + activeTimerElapsed;
   const liveGoalProgress =
     dailyGoalSeconds > 0 ? Math.min(100, Math.round((todayStudySecondsLive / dailyGoalSeconds) * 100)) : 0;
   const studiedMinutes = Math.floor(todayStudySecondsLive / 60);
@@ -367,46 +346,6 @@ function StudentHomeWithJournal({
         )}
 
         <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
-            <Ionicons name="timer-outline" size={20} color={colors.primary} />
-            <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.studyTimer')}</Text>
-          </View>
-          <View style={[styles.timerDisplayBox, { borderColor: colors.border, backgroundColor: colors.surfaceElevated }]}>
-            <Text style={[styles.timerText, { color: colors.primary }]}>{formatTimer(seconds)}</Text>
-          </View>
-          <View style={styles.timerActions}>
-            {!running ? (
-              <TouchableOpacity
-                style={[styles.timerPrimaryButton, { backgroundColor: colors.primary }]}
-                onPress={() => {
-                  setRunning(true);
-                  setPaused(false);
-                }}
-              >
-                <Ionicons name="play" size={16} color="#fff" />
-                <Text style={styles.timerPrimaryButtonText}>{t('home.startTimer')}</Text>
-              </TouchableOpacity>
-            ) : !paused ? (
-              <TouchableOpacity style={[styles.timerResetButton, { backgroundColor: colors.accent }]} onPress={handlePauseResume}>
-                <Ionicons name="pause" size={16} color="#fff" />
-                <Text style={styles.timerPrimaryButtonText}>{t('home.pauseTimer')}</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={styles.timerRunningButtonsRow}>
-                <TouchableOpacity style={styles.timerStopButton} onPress={handleStop}>
-                  <Ionicons name="stop" size={16} color="#fff" />
-                  <Text style={styles.timerPrimaryButtonText}>{t('home.finishTimer')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={[styles.timerContinueButton, { backgroundColor: colors.primary }]} onPress={handlePauseResume}>
-                  <Ionicons name="play" size={16} color="#fff" />
-                  <Text style={styles.timerPrimaryButtonText}>{t('home.resumeTimer')}</Text>
-                </TouchableOpacity>
-              </View>
-            )}
-          </View>
-        </AppCard>
-
-        <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.tasksHeader, isHebrewUi && styles.rtlRow]}>
             <TouchableOpacity
               style={[styles.journalHeader, isHebrewUi && styles.rtlRow, styles.tasksHeaderTitleWrap]}
@@ -436,6 +375,7 @@ function StudentHomeWithJournal({
                 <View style={[styles.homeTaskList, { borderColor: colors.border }]}>
                   {upcomingWeekTasks.map((task, index) => {
                     const statusVisual = getStatusVisualStyle(task.status, colors);
+                    const priorityAccent = getPriorityAccentColor(task.priority, colors);
                     const overdue = isTaskOverdue(task);
                     const dateLabel = formatTaskDate(task.dueDate, i18n.language, t('home.noDeadline'));
                     const metaParts = [overdue ? t('home.overdue') : dateLabel, task.courseName || null].filter(Boolean);
@@ -443,7 +383,7 @@ function StudentHomeWithJournal({
                       <View key={task.id}>
                         {index > 0 ? <View style={[styles.homeTaskDivider, { backgroundColor: colors.border }]} /> : null}
                         <View style={[styles.homeTaskPreview, isHebrewUi && styles.rtlRow]}>
-                          <View style={[styles.homeTaskPriorityDot, { backgroundColor: statusVisual.accent }]} />
+                          <View style={[styles.homeTaskPriorityDot, { backgroundColor: priorityAccent }]} />
                           <View style={styles.homeTaskPreviewContent}>
                             <Text style={[styles.homeTaskPreviewTitle, mirroredTextAlignStyle, { color: colors.textPrimary }]} numberOfLines={1}>
                               {task.title}
@@ -1239,67 +1179,6 @@ const styles = StyleSheet.create({
   statTinyLabel: {
     fontSize: 12,
     color: '#6b7280',
-  },
-  timerDisplayBox: {
-    borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  timerText: {
-    fontSize: 44,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  timerActions: {
-    alignItems: 'center',
-    marginTop: 12,
-  },
-  timerRunningButtonsRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  timerPrimaryButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  timerResetButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#2563eb',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  timerContinueButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#f59e0b',
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  timerStopButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#ef4444',
-    paddingHorizontal: 22,
-    paddingVertical: 10,
-    borderRadius: 12,
-  },
-  timerPrimaryButtonText: {
-    color: '#ffffff',
-    fontSize: 16,
-    fontWeight: '700',
   },
   tasksHeader: {
     flexDirection: 'row',
