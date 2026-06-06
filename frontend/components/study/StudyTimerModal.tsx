@@ -20,7 +20,6 @@ import {
   Alert,
   BackHandler,
   Dimensions,
-  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -79,6 +78,13 @@ export function StudyTimerModal({ visible, onClose, syncTimerSession, onSessionS
   const [customMinutes, setCustomMinutes] = useState(30);
   const [selectedTask, setSelectedTask] = useState<StudyTask | null>(null);
   const [showTaskPicker, setShowTaskPicker] = useState(false);
+  const [taskDropdownLayout, setTaskDropdownLayout] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    maxHeight: number;
+  } | null>(null);
+  const taskSelectorRef = useRef<View>(null);
   const [phase, setPhase] = useState<TimerPhase>('setup');
   const [totalSeconds, setTotalSeconds] = useState(25 * 60);
   const [remainingSeconds, setRemainingSeconds] = useState(25 * 60);
@@ -123,11 +129,26 @@ export function StudyTimerModal({ visible, onClose, syncTimerSession, onSessionS
     }
   }, [loadTasks, visible]);
 
+  const closeTaskPicker = useCallback(() => {
+    setShowTaskPicker(false);
+    setTaskDropdownLayout(null);
+  }, []);
+
+  const openTaskPicker = useCallback(() => {
+    if (isLocked) return;
+    taskSelectorRef.current?.measureInWindow((x, y, width, height) => {
+      const top = y + height + 6;
+      const maxHeight = Math.max(140, SCREEN_HEIGHT - top - insets.bottom - 20);
+      setTaskDropdownLayout({ top, left: x, width, maxHeight });
+      setShowTaskPicker(true);
+    });
+  }, [insets.bottom, isLocked]);
+
   useEffect(() => {
     if (!visible) {
-      setShowTaskPicker(false);
+      closeTaskPicker();
     }
-  }, [visible]);
+  }, [closeTaskPicker, visible]);
 
   useEffect(() => {
     if (visible) {
@@ -399,21 +420,34 @@ export function StudyTimerModal({ visible, onClose, syncTimerSession, onSessionS
             <Text style={[styles.fieldLabel, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
               {t('timer.whatWorkingOn')}
             </Text>
-            <TouchableOpacity
-              style={[styles.taskSelector, { borderColor: colors.border, backgroundColor: colors.surface }, isRtl && styles.rtlRow]}
-              onPress={() => setShowTaskPicker(true)}
-              disabled={isLocked}
-              activeOpacity={0.85}
-            >
-              <Ionicons name="document-text-outline" size={18} color={colors.primary} />
-              <Text
-                style={[styles.taskSelectorText, { color: selectedTask ? colors.textPrimary : colors.textSecondary }, isRtl && styles.rtlText]}
-                numberOfLines={1}
+            <View ref={taskSelectorRef} collapsable={false} style={styles.taskSelectorWrap}>
+              <TouchableOpacity
+                style={[
+                  styles.taskSelector,
+                  {
+                    borderColor: showTaskPicker ? colors.primary : colors.border,
+                    backgroundColor: colors.surface,
+                  },
+                  isRtl && styles.rtlRow,
+                ]}
+                onPress={openTaskPicker}
+                disabled={isLocked}
+                activeOpacity={0.85}
               >
-                {selectedTask?.title ?? t('timer.selectTask')}
-              </Text>
-              <Ionicons name="chevron-down" size={18} color={colors.textSecondary} />
-            </TouchableOpacity>
+                <Ionicons name="document-text-outline" size={18} color={colors.primary} />
+                <Text
+                  style={[styles.taskSelectorText, { color: selectedTask ? colors.textPrimary : colors.textSecondary }, isRtl && styles.rtlText]}
+                  numberOfLines={1}
+                >
+                  {selectedTask?.title ?? t('timer.selectTask')}
+                </Text>
+                <Ionicons
+                  name={showTaskPicker ? 'chevron-up' : 'chevron-down'}
+                  size={18}
+                  color={colors.textSecondary}
+                />
+              </TouchableOpacity>
+            </View>
 
             <View style={[styles.controlsRow, isRtl && styles.rtlRow]}>
               <TouchableOpacity
@@ -463,66 +497,83 @@ export function StudyTimerModal({ visible, onClose, syncTimerSession, onSessionS
               </ScrollView>
             </Animated.View>
           </View>
+          {showTaskPicker && taskDropdownLayout ? (
+            <>
+              <Pressable style={styles.taskDropdownBackdrop} onPress={closeTaskPicker} />
+              <View
+                style={[
+                  styles.taskDropdown,
+                  {
+                    top: taskDropdownLayout.top,
+                    left: taskDropdownLayout.left,
+                    width: taskDropdownLayout.width,
+                    maxHeight: taskDropdownLayout.maxHeight,
+                    backgroundColor: colors.surface,
+                    borderColor: colors.border,
+                  },
+                ]}
+              >
+                <ScrollView
+                  style={{ maxHeight: taskDropdownLayout.maxHeight }}
+                  showsVerticalScrollIndicator={false}
+                  keyboardShouldPersistTaps="handled"
+                  bounces={false}
+                  nestedScrollEnabled
+                >
+                  <TouchableOpacity
+                    style={[
+                      styles.taskDropdownItem,
+                      { borderBottomColor: colors.border },
+                      !selectedTask && { backgroundColor: `${colors.primary}10` },
+                    ]}
+                    onPress={() => {
+                      setSelectedTask(null);
+                      closeTaskPicker();
+                    }}
+                  >
+                    <Text style={[styles.taskDropdownText, { color: colors.textPrimary }, isRtl && styles.rtlText]}>
+                      {t('timer.noTask')}
+                    </Text>
+                  </TouchableOpacity>
+                  {activeTasks.length === 0 ? (
+                    <Text style={[styles.noTasksText, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
+                      {t('timer.noActiveTasks')}
+                    </Text>
+                  ) : (
+                    activeTasks.map((task, index) => {
+                      const selected = selectedTask?.id === task.id;
+                      const isLast = index === activeTasks.length - 1;
+                      return (
+                        <TouchableOpacity
+                          key={task.id}
+                          style={[
+                            styles.taskDropdownItem,
+                            !isLast && { borderBottomColor: colors.border },
+                            selected && { backgroundColor: `${colors.primary}10` },
+                          ]}
+                          onPress={() => {
+                            setSelectedTask(task);
+                            closeTaskPicker();
+                          }}
+                        >
+                          <Text style={[styles.taskDropdownText, { color: colors.textPrimary }, isRtl && styles.rtlText]} numberOfLines={1}>
+                            {task.title}
+                          </Text>
+                          {task.courseName ? (
+                            <Text style={[styles.taskDropdownMeta, { color: colors.textSecondary }, isRtl && styles.rtlText]} numberOfLines={1}>
+                              {task.courseName}
+                            </Text>
+                          ) : null}
+                        </TouchableOpacity>
+                      );
+                    })
+                  )}
+                </ScrollView>
+              </View>
+            </>
+          ) : null}
         </View>
       ) : null}
-
-      <Modal visible={showTaskPicker && visible} transparent animationType="fade" onRequestClose={() => setShowTaskPicker(false)}>
-        <Pressable style={styles.taskModalOverlay} onPress={() => setShowTaskPicker(false)}>
-          <Pressable
-            style={[styles.taskModalSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
-            onPress={(e) => e.stopPropagation()}
-          >
-            <Text style={[styles.taskModalTitle, { color: colors.textPrimary }, isRtl && styles.rtlText]}>
-              {t('timer.selectTask')}
-            </Text>
-            <TouchableOpacity
-              style={[styles.taskOption, { borderColor: colors.border }, !selectedTask && { backgroundColor: `${colors.primary}12` }]}
-              onPress={() => {
-                setSelectedTask(null);
-                setShowTaskPicker(false);
-              }}
-            >
-              <Text style={[styles.taskOptionText, { color: colors.textPrimary }, isRtl && styles.rtlText]}>
-                {t('timer.noTask')}
-              </Text>
-            </TouchableOpacity>
-            <ScrollView style={styles.taskOptionsList} showsVerticalScrollIndicator={false}>
-              {activeTasks.length === 0 ? (
-                <Text style={[styles.noTasksText, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
-                  {t('timer.noActiveTasks')}
-                </Text>
-              ) : (
-                activeTasks.map((task) => {
-                  const selected = selectedTask?.id === task.id;
-                  return (
-                    <TouchableOpacity
-                      key={task.id}
-                      style={[
-                        styles.taskOption,
-                        { borderColor: colors.border },
-                        selected && { backgroundColor: `${colors.primary}12`, borderColor: colors.primary },
-                      ]}
-                      onPress={() => {
-                        setSelectedTask(task);
-                        setShowTaskPicker(false);
-                      }}
-                    >
-                      <Text style={[styles.taskOptionText, { color: colors.textPrimary }, isRtl && styles.rtlText]} numberOfLines={2}>
-                        {task.title}
-                      </Text>
-                      {task.courseName ? (
-                        <Text style={[styles.taskOptionMeta, { color: colors.textSecondary }, isRtl && styles.rtlText]}>
-                          {task.courseName}
-                        </Text>
-                      ) : null}
-                    </TouchableOpacity>
-                  );
-                })
-              )}
-            </ScrollView>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </>
   );
 }
@@ -640,6 +691,10 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     marginBottom: spacing.xs,
   },
+  taskSelectorWrap: {
+    width: '100%',
+    marginBottom: spacing.xl,
+  },
   taskSelector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -649,7 +704,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     width: '100%',
-    marginBottom: spacing.xl,
   },
   taskSelectorText: { flex: 1, fontSize: 15, fontWeight: '600' },
   controlsRow: {
@@ -690,30 +744,32 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  taskModalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    justifyContent: 'flex-end',
+  taskDropdownBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40,
+    elevation: 40,
+    backgroundColor: 'transparent',
   },
-  taskModalSheet: {
-    borderTopLeftRadius: radius.lg,
-    borderTopRightRadius: radius.lg,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    padding: spacing.lg,
-    maxHeight: '70%',
-  },
-  taskModalTitle: { ...typography.h3, marginBottom: spacing.md },
-  taskOptionsList: { maxHeight: 320 },
-  taskOption: {
+  taskDropdown: {
+    position: 'absolute',
+    zIndex: 41,
+    elevation: 41,
     borderWidth: 1,
     borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
+    overflow: 'hidden',
+    shadowColor: '#0F172A',
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
   },
-  taskOptionText: { fontSize: 15, fontWeight: '600' },
-  taskOptionMeta: { fontSize: 12, marginTop: 4, fontWeight: '500' },
-  noTasksText: { textAlign: 'center', paddingVertical: spacing.lg, fontSize: 14 },
+  taskDropdownItem: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  taskDropdownText: { fontSize: 15, fontWeight: '600' },
+  taskDropdownMeta: { fontSize: 12, marginTop: 2, fontWeight: '500' },
+  noTasksText: { textAlign: 'center', paddingVertical: spacing.md, fontSize: 13 },
   rtlRow: { flexDirection: 'row-reverse' },
   rtlText: { textAlign: 'right', writingDirection: 'rtl' },
 });
