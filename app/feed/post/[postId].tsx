@@ -32,13 +32,17 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Keyboard,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
+  type KeyboardEvent,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 type StudyPost = {
   id: string;
@@ -90,9 +94,10 @@ const relativeTime = (date: Date): string => {
 export default function StudyPostDetailsScreen() {
   const router = useRouter();
   const { t, i18n } = useTranslation();
-  const { colors } = useAppTheme();
+  const { colors, mode } = useAppTheme();
   const isHebrewUi = i18n.language === 'he';
   const { firebaseUser } = useUser();
+  const insets = useSafeAreaInsets();
   const { postId } = useLocalSearchParams<{ postId: string | string[] }>();
   const [post, setPost] = useState<StudyPost | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +106,24 @@ export default function StudyPostDetailsScreen() {
   const [loadingComments, setLoadingComments] = useState(true);
   const [commentText, setCommentText] = useState('');
   const [sendingComment, setSendingComment] = useState(false);
+  /** Lifts the comment bar above the keyboard (single source of truth — avoids double shift with KeyboardAvoidingView). */
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const commentInputRef = useRef<TextInput | null>(null);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+    const onShow = (e: KeyboardEvent) => {
+      setKeyboardHeight(Math.max(0, e.endCoordinates?.height ?? 0));
+    };
+    const onHide = () => setKeyboardHeight(0);
+    const subShow = Keyboard.addListener(showEvent, onShow);
+    const subHide = Keyboard.addListener(hideEvent, onHide);
+    return () => {
+      subShow.remove();
+      subHide.remove();
+    };
+  }, []);
 
   const typeBadgeBorder = (type: StudyPost['type']) => {
     switch (type) {
@@ -389,8 +411,8 @@ export default function StudyPostDetailsScreen() {
         await createActivityNotification({
           recipientUid: post.authorUid,
           actorUid: firebaseUser.uid,
-          actorName,
-          actorAvatarUrl,
+          actorName: authorName,
+          actorAvatarUrl: authorAvatarUrl,
           type: 'post_comment',
           postId: post.id,
           text,
@@ -533,17 +555,21 @@ export default function StudyPostDetailsScreen() {
         }
       />
 
-      <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
-        <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
-        <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
-      </View>
+      <View style={styles.keyboardAvoid}>
+        <View style={[styles.topDecorWrap, { borderBottomColor: colors.border }]}>
+          <View style={[styles.topDecorPrimary, { backgroundColor: colors.primary }]} />
+          <View style={[styles.topDecorAccent, { backgroundColor: colors.accent }]} />
+        </View>
 
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-        keyboardShouldPersistTaps="handled"
-      >
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={[
+            styles.scrollContent,
+            { paddingBottom: 120 + insets.bottom },
+          ]}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
+        >
         <AppCard style={[styles.postCard, { borderColor: colors.border, backgroundColor: colors.surface }]}>
           <View style={[styles.postTopRow, isHebrewUi && styles.rtlRow]}>
             <TouchableOpacity
@@ -715,40 +741,6 @@ export default function StudyPostDetailsScreen() {
           {t('feed.commentsSection')}
         </Text>
 
-        <AppCard style={[styles.composerCard, { borderColor: colors.border }]}>
-          <View style={styles.commentInputRow}>
-            <TextInput
-              ref={commentInputRef}
-              style={[
-                styles.commentInput,
-                { color: colors.textPrimary, backgroundColor: colors.surfaceMuted, borderColor: colors.border },
-                isHebrewUi ? styles.commentInputRtl : styles.commentInputLtr,
-              ]}
-              value={commentText}
-              onChangeText={setCommentText}
-              placeholder={t('feed.writeCommentPlaceholder')}
-              placeholderTextColor={colors.textSecondary}
-              multiline
-            />
-            <TouchableOpacity
-              style={[
-                styles.commentSendButton,
-                { backgroundColor: colors.primary },
-                (!commentText.trim() || sendingComment) && styles.commentSendButtonDisabled,
-              ]}
-              onPress={handleAddComment}
-              disabled={!commentText.trim() || sendingComment}
-              activeOpacity={0.85}
-            >
-              {sendingComment ? (
-                <ActivityIndicator size="small" color={colors.textOnPrimary} />
-              ) : (
-                <Ionicons name="send" size={16} color={colors.textOnPrimary} />
-              )}
-            </TouchableOpacity>
-          </View>
-        </AppCard>
-
         {loadingComments ? (
           <View style={styles.commentsLoading}>
             <ActivityIndicator color={colors.primary} />
@@ -822,7 +814,59 @@ export default function StudyPostDetailsScreen() {
             </Text>
           </AppCard>
         )}
-      </ScrollView>
+        </ScrollView>
+
+        <View
+          style={[
+            styles.commentInputBar,
+            {
+              marginBottom: keyboardHeight,
+              paddingBottom: Math.max(insets.bottom, spacing.sm),
+              backgroundColor: colors.bg,
+              borderTopColor: colors.border,
+            },
+          ]}
+        >
+            <AppCard style={[styles.composerCard, { borderColor: colors.border, marginBottom: 0 }]}>
+              <View style={styles.commentInputRow}>
+                <TextInput
+                  ref={commentInputRef}
+                  style={[
+                    styles.commentInput,
+                    { color: colors.textPrimary, backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                    isHebrewUi ? styles.commentInputRtl : styles.commentInputLtr,
+                  ]}
+                  value={commentText}
+                  onChangeText={setCommentText}
+                  placeholder={t('feed.writeCommentPlaceholder')}
+                  placeholderTextColor={colors.textSecondary}
+                  multiline
+                  keyboardType="default"
+                  keyboardAppearance={mode === 'dark' ? 'dark' : 'light'}
+                  returnKeyType="default"
+                  blurOnSubmit={false}
+                  autoCorrect
+                />
+                <TouchableOpacity
+                  style={[
+                    styles.commentSendButton,
+                    { backgroundColor: colors.primary },
+                    (!commentText.trim() || sendingComment) && styles.commentSendButtonDisabled,
+                  ]}
+                  onPress={handleAddComment}
+                  disabled={!commentText.trim() || sendingComment}
+                  activeOpacity={0.85}
+                >
+                  {sendingComment ? (
+                    <ActivityIndicator size="small" color={colors.textOnPrimary} />
+                  ) : (
+                    <Ionicons name="send" size={16} color={colors.textOnPrimary} />
+                  )}
+                </TouchableOpacity>
+              </View>
+            </AppCard>
+        </View>
+      </View>
     </AppScreen>
   );
 }
@@ -866,6 +910,9 @@ const styles = StyleSheet.create({
     left: -8,
     opacity: 0.07,
   },
+  keyboardAvoid: {
+    flex: 1,
+  },
   scroll: {
     flex: 1,
   },
@@ -873,6 +920,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: layout.screenPadding,
     paddingTop: spacing.sm,
     paddingBottom: spacing.xxl,
+  },
+  commentInputBar: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingTop: spacing.sm,
+    paddingHorizontal: layout.screenPadding,
   },
   postCard: {
     paddingVertical: spacing.md,

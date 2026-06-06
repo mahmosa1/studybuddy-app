@@ -11,10 +11,24 @@ import {
     orderBy,
     query,
     serverTimestamp,
+    Timestamp,
     updateDoc,
     where,
 } from 'firebase/firestore';
 import { auth, db } from './firebaseConfig';
+
+function parseFirestoreDate(value: unknown): Date | undefined {
+  if (!value) return undefined;
+  if (value instanceof Date) return value;
+  if (typeof value === 'object' && value !== null && 'toDate' in value && typeof (value as { toDate: () => Date }).toDate === 'function') {
+    return (value as { toDate: () => Date }).toDate();
+  }
+  if (typeof value === 'object' && value !== null && 'seconds' in value) {
+    const seconds = Number((value as { seconds: number }).seconds);
+    if (!Number.isNaN(seconds)) return new Date(seconds * 1000);
+  }
+  return undefined;
+}
 
 export type TaskStatus = 'pending' | 'in-progress' | 'completed';
 
@@ -104,9 +118,9 @@ export async function getTasks(): Promise<StudyTask[]> {
         courseId: data.courseId || '',
         courseName: data.courseName || '',
         status: (data.status || 'pending') as TaskStatus,
-        dueDate: data.dueDate?.toDate(),
-        createdAt: data.createdAt?.toDate() || new Date(),
-        completedAt: data.completedAt?.toDate(),
+        dueDate: parseFirestoreDate(data.dueDate),
+        createdAt: parseFirestoreDate(data.createdAt) || new Date(),
+        completedAt: parseFirestoreDate(data.completedAt),
         priority: data.priority || 'medium',
       });
     });
@@ -169,11 +183,59 @@ export async function createTask(
     taskData.courseName = courseName;
   }
   if (dueDate) {
-    taskData.dueDate = dueDate;
+    taskData.dueDate = Timestamp.fromDate(dueDate);
   }
 
   const docRef = await addDoc(collection(db, 'studyTasks'), taskData);
   return docRef.id;
+}
+
+export type UpdateTaskInput = {
+  title?: string;
+  description?: string;
+  courseId?: string | null;
+  courseName?: string | null;
+  dueDate?: Date | null;
+  priority?: 'low' | 'medium' | 'high';
+  status?: TaskStatus;
+};
+
+/**
+ * Update an existing task
+ */
+export async function updateTask(taskId: string, input: UpdateTaskInput): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) {
+    throw new Error('User must be authenticated');
+  }
+
+  const updateData: Record<string, unknown> = {};
+
+  if (input.title !== undefined) updateData.title = input.title;
+  if (input.description !== undefined) updateData.description = input.description;
+  if (input.priority !== undefined) updateData.priority = input.priority;
+
+  if (input.courseId !== undefined) {
+    updateData.courseId = input.courseId || '';
+  }
+  if (input.courseName !== undefined) {
+    updateData.courseName = input.courseName || '';
+  }
+
+  if (input.dueDate !== undefined) {
+    updateData.dueDate = input.dueDate ? Timestamp.fromDate(input.dueDate) : null;
+  }
+
+  if (input.status !== undefined) {
+    updateData.status = input.status;
+    if (input.status === 'completed') {
+      updateData.completedAt = serverTimestamp();
+    } else {
+      updateData.completedAt = null;
+    }
+  }
+
+  await updateDoc(doc(db, 'studyTasks', taskId), updateData);
 }
 
 /**

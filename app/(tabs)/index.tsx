@@ -7,8 +7,6 @@ import { SectionTitle } from '@/frontend/components/ui/SectionTitle';
 import { radius, spacing, typography } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import {
-    createTask,
-    deleteTask as deleteStudyTask,
     getSmartNotifications,
     getStudyStats,
     getTasks,
@@ -17,13 +15,19 @@ import {
     StudyStats,
     StudyTask,
     updateDailyGoal,
-    updateTaskStatus,
 } from '@/lib/studyJournalService';
+import {
+    formatTaskDate,
+    getUpcomingWeekTasks,
+    getStatusLabelKey,
+    getStatusVisualStyle,
+    isTaskOverdue,
+} from '@/lib/taskUtils';
 import { useUser } from '@/lib/UserContext';
 import { Ionicons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
     ActivityIndicator,
@@ -148,9 +152,6 @@ function StudentHomeWithJournal({
   const [seconds, setSeconds] = useState(0);
   const [running, setRunning] = useState(false);
   const [paused, setPaused] = useState(false);
-  const [showTaskModal, setShowTaskModal] = useState(false);
-  const [taskTitle, setTaskTitle] = useState('');
-  const [isTaskEditMode, setIsTaskEditMode] = useState(false);
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [goalHoursInput, setGoalHoursInput] = useState('2');
   const [goalMinutesInput, setGoalMinutesInput] = useState('0');
@@ -158,17 +159,23 @@ function StudentHomeWithJournal({
   const isHebrewUi = i18n.language === 'he';
   const mirroredTextAlignStyle = isHebrewUi ? styles.textAlignRight : styles.textAlignLeft;
 
-  useEffect(() => {
-    const load = async () => {
-      setLoadingData(true);
+  const reloadJournalData = useCallback(async () => {
+    setLoadingData(true);
+    try {
       const [s, ts, notifications] = await Promise.all([getStudyStats(), getTasks(), getSmartNotifications()]);
       setStats(s);
       setTasks(ts);
       setSmartNotifications(notifications);
+    } finally {
       setLoadingData(false);
-    };
-    load();
+    }
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      void reloadJournalData();
+    }, [reloadJournalData]),
+  );
 
   useEffect(() => {
     if (!running || paused) return;
@@ -200,14 +207,6 @@ function StudentHomeWithJournal({
   const handlePauseResume = () => {
     if (!running) return;
     setPaused((prev) => !prev);
-  };
-
-  const handleAddTask = async () => {
-    if (!taskTitle.trim()) return;
-    await createTask(taskTitle.trim());
-    setTaskTitle('');
-    setShowTaskModal(false);
-    setTasks(await getTasks());
   };
 
   const openGoalEditor = () => {
@@ -246,7 +245,7 @@ function StudentHomeWithJournal({
     setStats(newStats);
   };
 
-  const visibleTasks = tasks.slice(0, 6);
+  const upcomingWeekTasks = getUpcomingWeekTasks(tasks);
   const dailyGoalSeconds = stats?.dailyGoal || 7200;
   const todayStudySecondsLive = (stats?.todayStudyTime || 0) + seconds;
   const liveGoalProgress =
@@ -409,108 +408,84 @@ function StudentHomeWithJournal({
 
         <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={[styles.tasksHeader, isHebrewUi && styles.rtlRow]}>
-            <View style={[styles.journalHeader, isHebrewUi && styles.rtlRow]}>
+            <TouchableOpacity
+              style={[styles.journalHeader, isHebrewUi && styles.rtlRow, styles.tasksHeaderTitleWrap]}
+              onPress={() => router.push({ pathname: '/tasks', params: { tab: 'tasks' } } as any)}
+              activeOpacity={0.8}
+            >
               <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
               <Text style={[styles.journalTitle, mirroredTextAlignStyle]}>{t('home.myTasks')}</Text>
-            </View>
-            <View style={[styles.taskHeaderActions, isHebrewUi && styles.rtlRow]}>
-              <TouchableOpacity onPress={() => setIsTaskEditMode((prev) => !prev)}>
-                <Ionicons name={isTaskEditMode ? 'close-circle' : 'create-outline'} size={21} color={colors.primary} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowTaskModal(true)}>
-                <Ionicons name="add-circle" size={22} color={colors.primary} />
-              </TouchableOpacity>
-            </View>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push({ pathname: '/tasks', params: { tab: 'tasks' } } as any)}>
+              <Ionicons
+                name={isHebrewUi ? 'chevron-back' : 'chevron-forward'}
+                size={18}
+                color={colors.textSecondary}
+              />
+            </TouchableOpacity>
           </View>
-          {tasks.length === 0 ? (
-            <Text style={[styles.emptyTasksText, mirroredTextAlignStyle]}>{t('home.noTasks')}</Text>
-          ) : (
-            <>
-              <Text style={[styles.tasksHintText, mirroredTextAlignStyle]}>{t('home.tapTaskToToggle')}</Text>
-              {visibleTasks.map((task) => (
-              <TouchableOpacity
-                key={task.id}
-                style={[styles.taskRow, task.status === 'completed' && styles.taskRowCompleted]}
-                onPress={async () => {
-                  const nextStatus =
-                    task.status === 'pending'
-                      ? 'in-progress'
-                      : task.status === 'in-progress'
-                        ? 'completed'
-                        : 'pending';
-                  await updateTaskStatus(task.id, nextStatus);
-                  setTasks(await getTasks());
-                }}
-              >
-                <Ionicons
-                  name={
-                    task.status === 'completed'
-                      ? 'checkmark-circle'
-                      : task.status === 'in-progress'
-                        ? 'play-circle-outline'
-                        : 'ellipse-outline'
-                  }
-                  size={16}
-                  color={
-                    task.status === 'completed'
-                      ? colors.primary
-                      : task.status === 'in-progress'
-                        ? '#1d4ed8'
-                        : '#6b7280'
-                  }
-                />
-                <Text style={[styles.taskRowText, mirroredTextAlignStyle, task.status === 'completed' && styles.taskRowTextCompleted]}>
-                  {task.title}
-                </Text>
-                <View
-                  style={[
-                    styles.taskStatusBadge,
-                    task.status === 'in-progress' && styles.taskStatusBadgeInProgress,
-                    task.status === 'completed' && styles.taskStatusBadgeDone,
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.taskStatusBadgeText,
-                      task.status === 'in-progress' && styles.taskStatusBadgeTextInProgress,
-                      task.status === 'completed' && styles.taskStatusBadgeTextDone,
-                    ]}
-                  >
-                    {task.status === 'completed'
-                      ? t('home.completed')
-                      : task.status === 'in-progress'
-                        ? t('home.inProgress')
-                        : t('home.pending')}
-                  </Text>
+
+          <TouchableOpacity activeOpacity={0.92} onPress={() => router.push({ pathname: '/tasks', params: { tab: 'tasks' } } as any)}>
+            {loadingData ? (
+              <ActivityIndicator color={colors.primary} style={{ marginTop: 8 }} />
+            ) : upcomingWeekTasks.length === 0 ? (
+              <Text style={[styles.emptyTasksText, mirroredTextAlignStyle]}>{t('home.noTasksThisWeek')}</Text>
+            ) : (
+              <>
+                <Text style={[styles.tasksHintText, mirroredTextAlignStyle]}>{t('home.tasksUpcomingWeek')}</Text>
+                <View style={[styles.homeTaskList, { borderColor: colors.border }]}>
+                  {upcomingWeekTasks.map((task, index) => {
+                    const statusVisual = getStatusVisualStyle(task.status, colors);
+                    const overdue = isTaskOverdue(task);
+                    const dateLabel = formatTaskDate(task.dueDate, i18n.language, t('home.noDeadline'));
+                    const metaParts = [overdue ? t('home.overdue') : dateLabel, task.courseName || null].filter(Boolean);
+                    return (
+                      <View key={task.id}>
+                        {index > 0 ? <View style={[styles.homeTaskDivider, { backgroundColor: colors.border }]} /> : null}
+                        <View style={[styles.homeTaskPreview, isHebrewUi && styles.rtlRow]}>
+                          <View style={[styles.homeTaskPriorityDot, { backgroundColor: statusVisual.accent }]} />
+                          <View style={styles.homeTaskPreviewContent}>
+                            <Text style={[styles.homeTaskPreviewTitle, mirroredTextAlignStyle, { color: colors.textPrimary }]} numberOfLines={1}>
+                              {task.title}
+                            </Text>
+                            <View style={[styles.homeTaskMetaRow, isHebrewUi && styles.rtlRow]}>
+                              {metaParts.length > 0 ? (
+                                <Text
+                                  style={[
+                                    styles.homeTaskMetaLine,
+                                    mirroredTextAlignStyle,
+                                    { color: overdue ? colors.danger : colors.textSecondary },
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {metaParts.join('  ·  ')}
+                                </Text>
+                              ) : null}
+                              <View
+                                style={[
+                                  styles.homeStatusBadge,
+                                  { backgroundColor: statusVisual.background, borderColor: statusVisual.border },
+                                  isHebrewUi && styles.rtlRow,
+                                ]}
+                              >
+                                <View style={[styles.homeStatusBadgeDot, { backgroundColor: statusVisual.accent }]} />
+                                <Text style={[styles.homeStatusBadgeText, { color: statusVisual.accent }]}>
+                                  {t(getStatusLabelKey(task.status))}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                    );
+                  })}
                 </View>
-                {isTaskEditMode && (
-                  <TouchableOpacity
-                    style={styles.taskDeleteButton}
-                    onPress={() => {
-                      Alert.alert(
-                        t('home.deleteTask'),
-                        t('home.deleteTaskConfirm'),
-                        [
-                          { text: t('common.cancel'), style: 'cancel' },
-                          {
-                            text: t('common.delete'),
-                            style: 'destructive',
-                            onPress: async () => {
-                              await deleteStudyTask(task.id);
-                              setTasks(await getTasks());
-                            },
-                          },
-                        ]
-                      );
-                    }}
-                  >
-                    <Ionicons name="trash-outline" size={16} color="#ef4444" />
-                  </TouchableOpacity>
-                )}
-              </TouchableOpacity>
-              ))}
-            </>
-          )}
+                <Text style={[styles.viewAllTasksText, { color: colors.primary }, mirroredTextAlignStyle]}>
+                  {t('home.viewAllTasks')}
+                </Text>
+              </>
+            )}
+          </TouchableOpacity>
         </AppCard>
 
         <AppCard style={[styles.journalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -539,52 +514,6 @@ function StudentHomeWithJournal({
         </AppCard>
       </ScrollView>
       </View>
-
-      <Modal visible={showTaskModal} transparent animationType="slide" onRequestClose={() => setShowTaskModal(false)}>
-        <KeyboardAvoidingView
-          style={styles.modalKeyboardWrapper}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-          keyboardVerticalOffset={Platform.OS === 'ios' ? 24 : 0}
-        >
-          <View style={styles.modalOverlaySimple}>
-            <ScrollView
-              contentContainerStyle={styles.modalOverlayScrollContent}
-              keyboardShouldPersistTaps="handled"
-            >
-              <View style={[styles.modalSimple, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-                <Text style={[styles.modalSimpleTitle, { color: colors.textPrimary }]}>{t('home.addTask')}</Text>
-                <TextInput
-                  value={taskTitle}
-                  onChangeText={setTaskTitle}
-                  style={[
-                    styles.modalInputSimple,
-                    { borderColor: colors.border, color: colors.textPrimary, backgroundColor: colors.surface },
-                    isHebrewUi ? styles.modalInputRtl : styles.modalInputLtr,
-                  ]}
-                  placeholder={t('home.taskTitle')}
-                  placeholderTextColor={colors.textSecondary}
-                  selectionColor={colors.primary}
-                  cursorColor={colors.primary}
-                  multiline={false}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                />
-                <View style={styles.modalActionsSimple}>
-                  <TouchableOpacity
-                    style={[styles.modalCancelSimple, { backgroundColor: colors.surfaceElevated }]}
-                    onPress={() => setShowTaskModal(false)}
-                  >
-                    <Text style={[styles.modalCancelText, { color: colors.textPrimary }]}>{t('common.cancel')}</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.modalSaveSimple, { backgroundColor: colors.primary }]} onPress={handleAddTask}>
-                    <Text style={styles.modalSaveText}>{t('common.save')}</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </ScrollView>
-          </View>
-        </KeyboardAvoidingView>
-      </Modal>
 
       <Modal visible={showGoalModal} transparent animationType="slide" onRequestClose={() => setShowGoalModal(false)}>
         <KeyboardAvoidingView
@@ -1377,10 +1306,76 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
   },
-  taskHeaderActions: {
+  tasksHeaderTitleWrap: {
+    flex: 1,
+  },
+  homeTaskList: {
+    borderWidth: 1,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginTop: 8,
+  },
+  homeTaskDivider: {
+    height: StyleSheet.hairlineWidth,
+    marginHorizontal: 12,
+  },
+  homeTaskPreview: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    minHeight: 46,
+  },
+  homeTaskPriorityDot: {
+    width: 3,
+    height: 26,
+    borderRadius: 2,
+    flexShrink: 0,
+  },
+  homeTaskPreviewContent: {
+    flex: 1,
+    minWidth: 0,
+    gap: 2,
+  },
+  homeTaskPreviewTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  homeTaskMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexWrap: 'wrap',
+  },
+  homeTaskMetaLine: {
+    fontSize: 11,
+    fontWeight: '500',
+    flexShrink: 1,
+  },
+  homeStatusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    flexShrink: 0,
+  },
+  homeStatusBadgeDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+  },
+  homeStatusBadgeText: {
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  viewAllTasksText: {
+    marginTop: 10,
+    fontSize: 13,
+    fontWeight: '700',
   },
   emptyTasksText: {
     color: '#9ca3af',

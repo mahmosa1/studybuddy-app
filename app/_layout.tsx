@@ -58,6 +58,14 @@ export default function RootLayout() {
             }}
           />
           <Stack.Screen
+            name="tasks"
+            options={{
+              animation: 'slide_from_right',
+              gestureEnabled: true,
+              fullScreenGestureEnabled: true,
+            }}
+          />
+          <Stack.Screen
             name="modal"
             options={{ presentation: 'modal', title: 'Modal' }}
           />
