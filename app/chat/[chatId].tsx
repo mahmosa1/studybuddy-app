@@ -30,6 +30,7 @@ import {
   where,
 } from 'firebase/firestore';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
   Alert,
@@ -80,9 +81,12 @@ type ChatMessage = {
   id: string;
   senderUid: string;
   text: string;
-  type?: 'text' | 'image' | 'audio';
+  type?: 'text' | 'image' | 'audio' | 'voice_room_invite';
   mediaUrl?: string;
   fileName?: string;
+  roomId?: string;
+  roomPassword?: string;
+  roomTitle?: string;
   createdAtMs: number;
 };
 
@@ -93,6 +97,7 @@ type ChatUserMeta = {
 
 export default function ChatRoomScreen() {
   const router = useRouter();
+  const { t } = useTranslation();
   const isScreenFocused = useIsFocused();
   const { firebaseUser } = useUser();
   const insets = useSafeAreaInsets();
@@ -390,9 +395,12 @@ export default function ChatRoomScreen() {
           id: d.id,
           senderUid: data.senderUid || '',
           text: data.text || '',
-          type: (data.type || 'text') as 'text' | 'image' | 'audio',
+          type: (data.type || 'text') as ChatMessage['type'],
           mediaUrl: data.mediaUrl || '',
           fileName: data.fileName || '',
+          roomId: data.roomId || '',
+          roomPassword: data.roomPassword || '',
+          roomTitle: data.roomTitle || '',
           createdAtMs: data.createdAt?.toDate ? data.createdAt.toDate().getTime() : 0,
         });
       });
@@ -1066,6 +1074,58 @@ export default function ChatRoomScreen() {
                       >
                         <Image source={{ uri: item.mediaUrl }} style={styles.messageImage} />
                       </TouchableOpacity>
+                    ) : item.type === 'voice_room_invite' && item.roomId && item.roomPassword ? (
+                      <TouchableOpacity
+                        style={[
+                          styles.voiceInviteCard,
+                          mine
+                            ? { backgroundColor: `${colors.textOnPrimary}18`, borderColor: `${colors.textOnPrimary}44` }
+                            : { backgroundColor: colors.surfaceMuted, borderColor: colors.border },
+                        ]}
+                        onPress={() => {
+                          router.push({
+                            pathname: '/voice-room/[roomId]',
+                            params: {
+                              roomId: item.roomId,
+                              password: item.roomPassword,
+                            },
+                          } as any);
+                        }}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.voiceInviteHeader}>
+                          <Ionicons
+                            name="headset-outline"
+                            size={18}
+                            color={mine ? colors.textOnPrimary : colors.primary}
+                          />
+                          <Text
+                            style={[
+                              styles.voiceInviteLabel,
+                              { color: mine ? colors.textOnPrimary : colors.textSecondary },
+                            ]}
+                          >
+                            {t('voiceRoom.inviteRoomLabel')}
+                          </Text>
+                        </View>
+                        <Text
+                          style={[
+                            styles.voiceInviteTitle,
+                            { color: mine ? colors.textOnPrimary : colors.textPrimary },
+                          ]}
+                          numberOfLines={2}
+                        >
+                          {item.roomTitle || item.text}
+                        </Text>
+                        <Text
+                          style={[
+                            styles.voiceInviteAction,
+                            { color: mine ? colors.textOnPrimary : colors.primary },
+                          ]}
+                        >
+                          {t('voiceRoom.inviteJoin')} →
+                        </Text>
+                      </TouchableOpacity>
                     ) : item.type === 'audio' && item.mediaUrl ? (
                       <TouchableOpacity
                         style={styles.audioRow}
@@ -1458,6 +1518,18 @@ const styles = StyleSheet.create({
   },
   bubbleText: { fontSize: 16, lineHeight: 22, fontWeight: '600' },
   bubbleTextMine: {},
+  voiceInviteCard: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 10,
+    minWidth: 190,
+    gap: 6,
+  },
+  voiceInviteHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  voiceInviteLabel: { fontSize: 12, fontWeight: '700' },
+  voiceInviteTitle: { fontSize: 15, fontWeight: '800' },
+  voiceInviteAction: { fontSize: 13, fontWeight: '700', marginTop: 2 },
   messageImage: {
     width: 210,
     height: 160,

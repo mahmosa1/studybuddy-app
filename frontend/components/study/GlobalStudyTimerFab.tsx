@@ -1,11 +1,11 @@
 import {
   formatTimerCountdown,
   getTimerFabBottom,
+  StudyTimerSession,
   TIMER_FAB_RIGHT,
   TIMER_FAB_SIZE,
 } from '@/frontend/components/study/timerFabConstants';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
-import { useStudyTimer } from '@/lib/StudyTimerContext';
 import { Ionicons } from '@expo/vector-icons';
 import { usePathname, useSegments } from 'expo-router';
 import React, { useMemo } from 'react';
@@ -14,14 +14,14 @@ import Svg, { Circle } from 'react-native-svg';
 
 type GlobalStudyTimerFabProps = {
   onPress: () => void;
+  session: StudyTimerSession;
 };
 
 const FAB_STROKE = 3.5;
 const FAB_INNER_SIZE = TIMER_FAB_SIZE - FAB_STROKE * 2;
 
-export function GlobalStudyTimerFab({ onPress }: GlobalStudyTimerFabProps) {
+export function GlobalStudyTimerFab({ onPress, session }: GlobalStudyTimerFabProps) {
   const { colors } = useAppTheme();
-  const { session } = useStudyTimer();
   const pathname = usePathname();
   const segments = useSegments();
   const bottomOffset = getTimerFabBottom(pathname, segments);

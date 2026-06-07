@@ -1,5 +1,6 @@
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
+import { createVoiceRoom, joinVoiceRoom } from '@/lib/voiceRoomService';
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
@@ -32,6 +33,7 @@ import {
   KeyboardAvoidingView,
   Modal,
   Platform,
+  Pressable,
   StatusBar,
   StyleSheet,
   Text,
@@ -94,6 +96,14 @@ export default function ChatScreen() {
   const [newChatStep, setNewChatStep] = useState<'main' | 'group'>('main');
   const [selectedGroupUserIds, setSelectedGroupUserIds] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
+  const [showRoomMenuModal, setShowRoomMenuModal] = useState(false);
+  const [showCreateRoomModal, setShowCreateRoomModal] = useState(false);
+  const [showJoinRoomModal, setShowJoinRoomModal] = useState(false);
+  const [roomTitleInput, setRoomTitleInput] = useState('');
+  const [roomPasswordInput, setRoomPasswordInput] = useState('');
+  const [joinRoomIdInput, setJoinRoomIdInput] = useState('');
+  const [joinRoomPasswordInput, setJoinRoomPasswordInput] = useState('');
+  const [roomActionLoading, setRoomActionLoading] = useState(false);
 
   const formatTimeAgo = (ms: number) => {
     if (!ms) return '';
@@ -387,6 +397,62 @@ export default function ChatScreen() {
     );
   };
 
+  const handleCreateVoiceRoom = async () => {
+    if (roomPasswordInput.trim().length < 4) {
+      Alert.alert(t('common.error'), t('voiceRoom.passwordTooShort'));
+      return;
+    }
+    setRoomActionLoading(true);
+    try {
+      const password = roomPasswordInput.trim();
+      const { roomId } = await createVoiceRoom(password, roomTitleInput);
+      setShowCreateRoomModal(false);
+      setRoomTitleInput('');
+      setRoomPasswordInput('');
+      router.push({
+        pathname: '/voice-room/[roomId]',
+        params: { roomId, password },
+      } as any);
+    } catch {
+      Alert.alert(t('common.error'), t('voiceRoom.createFailed'));
+    } finally {
+      setRoomActionLoading(false);
+    }
+  };
+
+  const handleJoinVoiceRoom = async () => {
+    if (!joinRoomIdInput.trim() || joinRoomPasswordInput.trim().length < 4) {
+      Alert.alert(t('common.error'), t('voiceRoom.joinInvalid'));
+      return;
+    }
+    setRoomActionLoading(true);
+    try {
+      await joinVoiceRoom(joinRoomIdInput, joinRoomPasswordInput);
+      setShowJoinRoomModal(false);
+      const password = joinRoomPasswordInput;
+      const roomId = joinRoomIdInput.trim().toUpperCase();
+      setJoinRoomIdInput('');
+      setJoinRoomPasswordInput('');
+      router.push({
+        pathname: '/voice-room/[roomId]',
+        params: { roomId, password },
+      } as any);
+    } catch (error: any) {
+      const code = error?.message;
+      if (code === 'ROOM_NOT_FOUND') {
+        Alert.alert(t('common.error'), t('voiceRoom.roomNotFound'));
+      } else if (code === 'WRONG_PASSWORD') {
+        Alert.alert(t('common.error'), t('voiceRoom.wrongPassword'));
+      } else if (code === 'ROOM_INACTIVE') {
+        Alert.alert(t('common.error'), t('voiceRoom.roomInactive'));
+      } else {
+        Alert.alert(t('common.error'), t('voiceRoom.joinFailed'));
+      }
+    } finally {
+      setRoomActionLoading(false);
+    }
+  };
+
   const openThread = (thread: ChatThread) => {
     if (!firebaseUser) return;
     const otherUid = thread.type === 'direct' ? thread.members.find((uid) => uid !== firebaseUser.uid) || '' : '';
@@ -408,17 +474,33 @@ export default function ChatScreen() {
         title={t('chat.title')}
         onBack={() => router.back()}
         rightSlot={
-          <TouchableOpacity
-            onPress={openNewChatModal}
-            accessibilityRole="button"
-            style={[
-              styles.headerActionBtn,
-              { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
-            ]}
-            activeOpacity={0.85}
-          >
-            <Ionicons name="add" size={20} color={colors.primary} />
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            <TouchableOpacity
+              onPress={() => setShowRoomMenuModal(true)}
+              accessibilityRole="button"
+              style={[
+                styles.headerRoomBtn,
+                { backgroundColor: `${colors.primary}12`, borderColor: colors.primary },
+              ]}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="headset-outline" size={16} color={colors.primary} />
+              <Text style={[styles.headerRoomBtnText, { color: colors.primary }]}>
+                {t('voiceRoom.menuButton')}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={openNewChatModal}
+              accessibilityRole="button"
+              style={[
+                styles.headerActionBtn,
+                { backgroundColor: colors.surfaceElevated, borderColor: colors.border },
+              ]}
+              activeOpacity={0.85}
+            >
+              <Ionicons name="add" size={20} color={colors.primary} />
+            </TouchableOpacity>
+          </View>
         }
       />
 
@@ -711,11 +793,131 @@ export default function ChatScreen() {
           </KeyboardAvoidingView>
         </SafeAreaProvider>
       </Modal>
+
+      <Modal visible={showRoomMenuModal} transparent animationType="fade" onRequestClose={() => setShowRoomMenuModal(false)}>
+        <Pressable style={styles.voiceRoomOverlay} onPress={() => setShowRoomMenuModal(false)}>
+          <Pressable
+            style={[styles.voiceRoomSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.voiceRoomTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('voiceRoom.menuTitle')}
+            </Text>
+            <PrimaryButton
+              label={t('voiceRoom.createAction')}
+              onPress={() => {
+                setShowRoomMenuModal(false);
+                setShowCreateRoomModal(true);
+              }}
+              style={{ marginBottom: spacing.sm }}
+            />
+            <PrimaryButton
+              label={t('voiceRoom.joinAction')}
+              variant="secondary"
+              onPress={() => {
+                setShowRoomMenuModal(false);
+                setShowJoinRoomModal(true);
+              }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showCreateRoomModal} transparent animationType="fade" onRequestClose={() => setShowCreateRoomModal(false)}>
+        <Pressable style={styles.voiceRoomOverlay} onPress={() => setShowCreateRoomModal(false)}>
+          <Pressable
+            style={[styles.voiceRoomSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.voiceRoomTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('voiceRoom.createTitle')}
+            </Text>
+            <Text style={[styles.voiceRoomHint, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]}>
+              {t('voiceRoom.createHint')}
+            </Text>
+            <TextInput
+              style={[styles.voiceRoomInput, { color: colors.textPrimary, borderColor: colors.border }, isHebrewUi && styles.rtlText]}
+              value={roomTitleInput}
+              onChangeText={setRoomTitleInput}
+              placeholder={t('voiceRoom.roomTitlePlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+            />
+            <TextInput
+              style={[styles.voiceRoomInput, { color: colors.textPrimary, borderColor: colors.border }, isHebrewUi && styles.rtlText]}
+              value={roomPasswordInput}
+              onChangeText={setRoomPasswordInput}
+              placeholder={t('voiceRoom.passwordPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry
+            />
+            <PrimaryButton
+              label={t('voiceRoom.createAction')}
+              onPress={() => void handleCreateVoiceRoom()}
+              loading={roomActionLoading}
+              style={{ marginTop: spacing.sm }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={showJoinRoomModal} transparent animationType="fade" onRequestClose={() => setShowJoinRoomModal(false)}>
+        <Pressable style={styles.voiceRoomOverlay} onPress={() => setShowJoinRoomModal(false)}>
+          <Pressable
+            style={[styles.voiceRoomSheet, { backgroundColor: colors.surface, borderColor: colors.border }]}
+            onPress={(e) => e.stopPropagation()}
+          >
+            <Text style={[styles.voiceRoomTitle, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]}>
+              {t('voiceRoom.joinTitle')}
+            </Text>
+            <TextInput
+              style={[styles.voiceRoomInput, { color: colors.textPrimary, borderColor: colors.border }, isHebrewUi && styles.rtlText]}
+              value={joinRoomIdInput}
+              onChangeText={setJoinRoomIdInput}
+              placeholder={t('voiceRoom.roomIdPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              autoCapitalize="characters"
+            />
+            <TextInput
+              style={[styles.voiceRoomInput, { color: colors.textPrimary, borderColor: colors.border }, isHebrewUi && styles.rtlText]}
+              value={joinRoomPasswordInput}
+              onChangeText={setJoinRoomPasswordInput}
+              placeholder={t('voiceRoom.passwordPlaceholder')}
+              placeholderTextColor={colors.textSecondary}
+              secureTextEntry
+            />
+            <PrimaryButton
+              label={t('voiceRoom.joinAction')}
+              onPress={() => void handleJoinVoiceRoom()}
+              loading={roomActionLoading}
+              style={{ marginTop: spacing.sm }}
+            />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </AppScreen>
   );
 }
 
 const styles = StyleSheet.create({
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  headerRoomBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    borderWidth: 1,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    maxWidth: 108,
+  },
+  headerRoomBtnText: {
+    fontSize: 12,
+    fontWeight: '800',
+  },
   headerActionBtn: {
     width: 40,
     height: 40,
@@ -723,6 +925,35 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  voiceRoomOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    paddingHorizontal: layout.screenPadding,
+  },
+  voiceRoomSheet: {
+    borderWidth: 1,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+  },
+  voiceRoomTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: spacing.xs,
+  },
+  voiceRoomHint: {
+    fontSize: 13,
+    lineHeight: 18,
+    marginBottom: spacing.md,
+  },
+  voiceRoomInput: {
+    borderWidth: 1,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 12,
+    fontSize: 15,
+    marginBottom: spacing.sm,
   },
   loadingWrap: {
     flex: 1,

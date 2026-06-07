@@ -79,7 +79,7 @@ export function StudyTimerProvider({ children }: { children: React.ReactNode }) 
           syncTimerSession={syncTimerSession}
           onSessionSaved={notifySessionSaved}
         />
-        {showFab && !visible ? <GlobalStudyTimerFab onPress={openTimer} /> : null}
+        {showFab && !visible ? <GlobalStudyTimerFab session={session} onPress={openTimer} /> : null}
       </View>
     </StudyTimerContext.Provider>
   );

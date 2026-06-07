@@ -7,10 +7,11 @@ import { I18nManager, StyleSheet, Text, TouchableOpacity, View } from 'react-nat
 type AppHeaderProps = {
   title: string;
   onBack?: () => void;
+  leftSlot?: React.ReactNode;
   rightSlot?: React.ReactNode;
 };
 
-export function AppHeader({ title, onBack, rightSlot }: AppHeaderProps) {
+export function AppHeader({ title, onBack, leftSlot, rightSlot }: AppHeaderProps) {
   const isRtl = I18nManager.isRTL;
   const { colors } = useAppTheme();
 
@@ -39,10 +40,11 @@ export function AppHeader({ title, onBack, rightSlot }: AppHeaderProps) {
             color={colors.textPrimary}
           />
         </TouchableOpacity>
+        {leftSlot ? <View style={styles.sideSlot}>{leftSlot}</View> : null}
         <Text style={[styles.title, { color: colors.textPrimary }]} numberOfLines={1}>
           {title}
         </Text>
-        <View style={styles.sideButton}>{rightSlot}</View>
+        <View style={styles.sideSlot}>{rightSlot}</View>
       </View>
     </View>
   );
@@ -64,6 +66,13 @@ const styles = StyleSheet.create({
     height: 44,
     minWidth: 44,
     minHeight: 44,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sideSlot: {
+    minWidth: 44,
+    minHeight: 44,
+    flexShrink: 0,
     alignItems: 'center',
     justifyContent: 'center',
   },
