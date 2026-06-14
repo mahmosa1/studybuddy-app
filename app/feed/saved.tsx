@@ -4,6 +4,7 @@ import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { layout, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
+import { formatAuthorInstitutionLabel } from '@/lib/institutionUtils';
 import { auth, db } from '@/lib/firebaseConfig';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -193,7 +194,9 @@ export default function SavedPostsScreen() {
         </View>
           <View style={styles.authorDetails}>
             <Text style={[styles.authorName, { color: colors.textPrimary }]}>{item.authorName}</Text>
-            <Text style={[styles.authorInstitution, { color: colors.textSecondary }]}>{item.authorInstitution}</Text>
+            <Text style={[styles.authorInstitution, { color: colors.textSecondary }]}>
+              {formatAuthorInstitutionLabel(item.authorInstitution)}
+            </Text>
           </View>
         </View>
         <View style={[styles.typeBadge, { backgroundColor: TYPE_COLORS[item.type] }]}>

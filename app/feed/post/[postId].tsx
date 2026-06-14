@@ -6,6 +6,7 @@ import { layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
+import { formatAuthorInstitutionLabel } from '@/lib/institutionUtils';
 import { attachmentLooksLikeImage } from '@/lib/feedAttachmentUtils';
 import { createActivityNotification } from '@/lib/notificationService';
 import { pushAttachmentViewer } from '@/lib/openAttachmentViewer';
@@ -593,7 +594,7 @@ export default function StudyPostDetailsScreen() {
                 </Text>
                 {!!post.authorInstitution ? (
                   <Text style={[styles.authorInstitution, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
-                    {post.authorInstitution}
+                    {formatAuthorInstitutionLabel(post.authorInstitution)}
                   </Text>
                 ) : null}
               </View>

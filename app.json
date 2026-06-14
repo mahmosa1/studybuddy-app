@@ -12,7 +12,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSMicrophoneUsageDescription": "StudyBuddy needs microphone access for voice rooms.",
-        "NSCameraUsageDescription": "StudyBuddy needs camera access for video calls in voice rooms.",
+        "NSCameraUsageDescription": "StudyBuddy needs camera access for face verification during registration and for video calls in voice rooms.",
+        "NSPhotoLibraryUsageDescription": "StudyBuddy needs photo library access to upload student cards and verification photos.",
         "UIBackgroundModes": [
           "audio",
           "voip"
@@ -71,6 +72,13 @@
       "expo-font",
       "expo-web-browser",
       "expo-audio",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "StudyBuddy needs access to your photos to upload student cards and verification images.",
+          "cameraPermission": "StudyBuddy needs camera access to take verification selfies and join video calls."
+        }
+      ],
       [
         "@daily-co/config-plugin-rn-daily-js",
         {

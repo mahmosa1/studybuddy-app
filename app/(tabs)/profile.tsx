@@ -1,8 +1,10 @@
 // app/(tabs)/profile.tsx
 import { auth, db } from '@/lib/firebaseConfig';
+import { getInstitutionProfileLabel } from '@/lib/institutionUtils';
 import { buildSystemUpdatesSignature, getTutorUpdatesSeenSignature } from '@/lib/profileSystemUpdates';
 import { uploadFeedAttachmentToSupabase } from '@/lib/upload';
 import { AppCard } from '@/frontend/components/ui/AppCard';
+import { CourseFolderIcon } from '@/frontend/components/ui/CourseFolderIcon';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { EmptyState } from '@/frontend/components/ui/EmptyState';
 import { layout, radius, spacing } from '@/frontend/styles/designSystem';
@@ -48,6 +50,8 @@ type UserProfile = {
   fullName?: string;
   email: string;
   institution?: string;
+  institutionName?: string;
+  institutionShortName?: string;
   fieldOfStudy?: string;
   phone?: string;
   role?: string;
@@ -439,6 +443,8 @@ export default function ProfileScreen() {
           fullName: data.fullName,
           email: data.email,
           institution: data.institution,
+          institutionName: data.institutionName,
+          institutionShortName: data.institutionShortName,
           fieldOfStudy: data.fieldOfStudy,
           phone: data.phone,
           role: data.role,
@@ -831,14 +837,16 @@ export default function ProfileScreen() {
     const initial = item.name ? item.name[0]?.toUpperCase() : '?';
 
     return (
-      <View style={styles.highlightItem}>
-        <View style={styles.highlightCircle}>
-          <Text style={styles.highlightInitial}>{initial}</Text>
-        </View>
-        <Text style={styles.highlightLabel} numberOfLines={1}>
+      <TouchableOpacity
+        style={styles.highlightItem}
+        onPress={() => router.push(`/course/${item.id}` as any)}
+        activeOpacity={0.85}
+      >
+        <CourseFolderIcon initial={initial} color={colors.primary} />
+        <Text style={[styles.highlightLabel, { color: colors.textPrimary }]} numberOfLines={2}>
           {item.name}
         </Text>
-      </View>
+      </TouchableOpacity>
     );
   };
 
@@ -926,12 +934,14 @@ export default function ProfileScreen() {
                   <Text style={[styles.infoText, { color: colors.textPrimary }]}>{profile.fieldOfStudy}</Text>
                 </View>
               )}
-              {profile.institution && (
+              {getInstitutionProfileLabel(profile) ? (
                 <View style={[styles.infoCard, { backgroundColor: colors.surfaceElevated }]}>
                   <Ionicons name="location-outline" size={16} color={colors.accent} />
-                  <Text style={[styles.infoText, { color: colors.textPrimary }]}>{profile.institution}</Text>
+                  <Text style={[styles.infoText, { color: colors.textPrimary }]}>
+                    {getInstitutionProfileLabel(profile)}
+                  </Text>
                 </View>
-              )}
+              ) : null}
               {profile.role && (
                 <View style={[styles.infoCard, styles.roleBadge, { backgroundColor: colors.primary }]}>
                   <Ionicons name="person-circle-outline" size={16} color="#ffffff" />
@@ -1611,34 +1621,15 @@ const styles = StyleSheet.create({
   highlightItem: {
     alignItems: 'center',
     marginRight: 16,
-  },
-  highlightCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 3,
-    borderColor: ACCENT_GREEN,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: '#ffffff',
-    marginBottom: 8,
-    shadowColor: ACCENT_GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
-  },
-  highlightInitial: {
-    fontSize: 26,
-    fontWeight: '700',
-    color: ACCENT_GREEN,
+    width: 84,
   },
   highlightLabel: {
     fontSize: 12,
-    color: '#111827',
     fontWeight: '600',
-    maxWidth: 80,
+    maxWidth: 84,
     textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 16,
   },
   emptyCoursesCard: {
     backgroundColor: '#ffffff',

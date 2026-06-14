@@ -1,7 +1,9 @@
 // app/(auth)/register-lecturer.tsx
+import { AcademicInstitutionPicker } from '@/frontend/components/ui/AcademicInstitutionPicker';
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { PrimaryButton } from '@/frontend/components/ui/PrimaryButton';
+import { buildInstitutionFirestoreFields, getInstitutionPickerSummaryLabel } from '@/lib/institutionUtils';
 import { layout, radius, spacing, typography } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { Ionicons } from '@expo/vector-icons';
@@ -109,27 +111,7 @@ export default function RegisterLecturerScreen() {
     }
   };
 
-  const captureVerificationSelfieAndUpload = async () => {
-    const permission = await ImagePicker.requestCameraPermissionsAsync();
-    if (!permission.granted) {
-      Alert.alert(
-        isHebrewUi ? 'נדרש אישור מצלמה' : 'Camera permission required',
-        isHebrewUi
-          ? 'אישור המצלמה נדרש כדי לצלם תמונת אימות פנים לבדיקה ידנית. אפשר להפעיל אותו בהגדרות המכשיר.'
-          : 'Camera access is required to take a face verification photo for manual review. You can enable it in your device settings.',
-      );
-      return;
-    }
-
-    const result = await ImagePicker.launchCameraAsync({
-      mediaTypes: 'images',
-      allowsEditing: true,
-      quality: 0.8,
-    });
-
-    if (result.canceled) return;
-
-    const uri = result.assets[0].uri;
+  const uploadVerificationSelfie = async (uri: string) => {
     setUploadingSelfie(true);
     try {
       const url = await uploadImageToSupabase(uri, 'verification-selfies');
@@ -143,6 +125,49 @@ export default function RegisterLecturerScreen() {
       Alert.alert('Error', 'Unexpected error while uploading image.');
     } finally {
       setUploadingSelfie(false);
+    }
+  };
+
+  const captureVerificationSelfieAndUpload = async () => {
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) {
+        Alert.alert(
+          isHebrewUi ? 'נדרש אישור מצלמה' : 'Camera permission required',
+          isHebrewUi
+            ? 'אישור המצלמה נדרש כדי לצלם סלפי אימות פנים. אפשר להפעיל אותו בהגדרות המכשיר → StudyBuddy → מצלמה.'
+            : 'Camera access is required to take a live face verification selfie. Enable it in Settings → StudyBuddy → Camera.',
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        quality: 0.85,
+        cameraType: ImagePicker.CameraType.front,
+      });
+
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+      await uploadVerificationSelfie(result.assets[0].uri);
+    } catch (err: unknown) {
+      console.log('Verification selfie camera error:', err);
+      const message = String((err as { message?: string })?.message || '').toLowerCase();
+      if (message.includes('camera') || message.includes('simulator') || message.includes('unavailable')) {
+        Alert.alert(
+          isHebrewUi ? 'מצלמה לא זמינה' : 'Camera unavailable',
+          isHebrewUi
+            ? 'לא הצלחנו לפתוח את המצלמה. ודא/י שאת/ה על מכשיר אמיתי (לא סימולטור), שאישרת גישה למצלמה, ונסה/י שוב.'
+            : 'Could not open the camera. Make sure you are on a real device (not a simulator), camera access is granted, and try again.',
+        );
+        return;
+      }
+      Alert.alert(
+        t('common.error'),
+        isHebrewUi
+          ? 'לא הצלחנו לפתוח את המצלמה. נסה/י שוב.'
+          : 'Could not open the camera. Please try again.',
+      );
     }
   };
 
@@ -161,7 +186,7 @@ export default function RegisterLecturerScreen() {
     }
 
     if (!institution) {
-      Alert.alert('Institution required', 'Please fill where you teach.');
+      Alert.alert(t('common.error'), t('auth.institutionRequired'));
       return;
     }
 
@@ -192,6 +217,8 @@ export default function RegisterLecturerScreen() {
       );
       const uid = cred.user.uid;
 
+      const institutionFields = buildInstitutionFirestoreFields(institution);
+
       // 2) Firestore – users collection
       await setDoc(doc(db, 'users', uid), {
         uid,
@@ -201,7 +228,7 @@ export default function RegisterLecturerScreen() {
         fullName,
         email,
         phone,
-        institution,
+        ...institutionFields,
         department,
         lecturerIdUrl,
         profilePictureUrl,
@@ -264,7 +291,11 @@ export default function RegisterLecturerScreen() {
         return;
       }
     } else if (currentStep === 2) {
-      if (!institution.trim() || !department.trim() || !phone.trim()) {
+      if (!institution.trim()) {
+        Alert.alert(t('common.error'), t('auth.institutionRequired'));
+        return;
+      }
+      if (!department.trim() || !phone.trim()) {
         Alert.alert(
           'Missing fields',
           'Please fill in your institution, department, and phone number before continuing.',
@@ -445,16 +476,11 @@ export default function RegisterLecturerScreen() {
 
           <View style={styles.fieldBlock}>
             <Text style={[styles.label, { color: colors.textSecondary }]}>{t('auth.institution')} *</Text>
-            <View style={[styles.inputRow, { backgroundColor: colors.surfaceMuted, borderColor: colors.border }]}>
-              <Ionicons name="business-outline" size={18} color={colors.textSecondary} style={styles.inputRowIcon} />
-              <TextInput
-                style={[styles.input, { color: colors.textPrimary }, inputAlign]}
-                placeholder={t('auth.institutionPlaceholder')}
-                placeholderTextColor={colors.textSecondary}
-                value={institution}
-                onChangeText={setInstitution}
-              />
-            </View>
+            <AcademicInstitutionPicker
+              value={institution}
+              onChange={setInstitution}
+              placeholder={t('auth.institutionPlaceholder')}
+            />
           </View>
 
           <View style={styles.fieldBlock}>
@@ -590,8 +616,8 @@ export default function RegisterLecturerScreen() {
             </Text>
             <Text style={[styles.uploadHelperText, { color: colors.textSecondary }]}>
               {isHebrewUi
-                ? 'צלמי תמונת סלפי חדשה מהמצלמה כדי שנוכל לוודא שהמסמך שייך לך.'
-                : 'Take a new selfie with the camera so we can verify the document belongs to you.'}
+                ? 'יש לצלם סלפי חי מהמצלמה הקדמית בזמן ההרשמה. לא ניתן להעלות תמונה מהגלריה.'
+                : 'You must take a live front-camera selfie during registration. Gallery uploads are not allowed.'}
             </Text>
             <TouchableOpacity
               style={[
@@ -625,7 +651,7 @@ export default function RegisterLecturerScreen() {
                         ? 'הועלה'
                         : 'Uploaded'
                       : isHebrewUi
-                        ? 'צלמי סלפי אימות'
+                        ? 'צלם סלפי אימות'
                         : 'Take Verification Selfie'}
                   </Text>
                 </View>
@@ -673,7 +699,7 @@ export default function RegisterLecturerScreen() {
         {renderSummaryRow(t('auth.username'), username.trim() || '—')}
         {renderSummaryRow(t('auth.email'), email.trim() || '—')}
         {renderSummaryRow(t('auth.password'), '••••••••')}
-        {renderSummaryRow(t('auth.institution'), institution.trim() || '—')}
+        {renderSummaryRow(t('auth.institution'), institution.trim() ? getInstitutionPickerSummaryLabel(institution) : '—')}
         {renderSummaryRow(t('auth.department'), department.trim() || '—')}
         {renderSummaryRow(t('auth.phoneNumber'), phone.trim() || '—')}
         {renderSummaryRow(t('auth.profilePicture'), profileStatus)}

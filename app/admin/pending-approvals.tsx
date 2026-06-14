@@ -1,5 +1,6 @@
 // app/admin/pending-approvals.tsx
-import { db } from '@/lib/firebaseConfig';
+import { auth, db } from '@/lib/firebaseConfig';
+import { setLastSeenPendingCount } from '@/lib/adminPendingApprovalsBadge';
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
@@ -9,13 +10,13 @@ import { Ionicons } from '@expo/vector-icons';
 import {
   collection,
   doc,
-  getDocs,
+  onSnapshot,
   query,
   updateDoc,
   where,
 } from 'firebase/firestore';
-import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import { useFocusEffect, useRouter } from 'expo-router';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   ActivityIndicator,
@@ -59,42 +60,50 @@ export default function PendingApprovalsScreen() {
   const [rejectingUid, setRejectingUid] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
 
-  const loadPendingUsers = async () => {
-    try {
-      setLoading(true);
-      const usersRef = collection(db, 'users');
-      const q = query(usersRef, where('status', '==', 'pending'));
-      const snapshot = await getDocs(q);
-
-      const list: UserItem[] = [];
-      snapshot.forEach((docSnap) => {
-        const data = docSnap.data() as any;
-        list.push({
-          uid: data.uid ?? docSnap.id,
-          email: data.email,
-          fullName: data.fullName,
-          username: data.username,
-          role: data.role,
-          status: data.status,
-          studentCardUrl: data.studentCardUrl,
-          lecturerIdUrl: data.lecturerIdUrl,
-          profilePictureUrl: data.profilePictureUrl,
-          verificationSelfieUrl: data.verificationSelfieUrl,
-        });
-      });
-
-      setPendingUsers(list);
-    } catch (err) {
-      console.log('Error loading pending users:', err);
-      Alert.alert(t('common.error'), t('admin.failedToLoadUsers'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    loadPendingUsers();
+    const usersRef = collection(db, 'users');
+    const q = query(usersRef, where('status', '==', 'pending'));
+    const unsubscribe = onSnapshot(
+      q,
+      (snapshot) => {
+        const list: UserItem[] = [];
+        snapshot.forEach((docSnap) => {
+          const data = docSnap.data() as any;
+          list.push({
+            uid: data.uid ?? docSnap.id,
+            email: data.email,
+            fullName: data.fullName,
+            username: data.username,
+            role: data.role,
+            status: data.status,
+            studentCardUrl: data.studentCardUrl,
+            lecturerIdUrl: data.lecturerIdUrl,
+            profilePictureUrl: data.profilePictureUrl,
+            verificationSelfieUrl: data.verificationSelfieUrl,
+          });
+        });
+        setPendingUsers(list);
+        setLoading(false);
+      },
+      (err) => {
+        console.log('Error subscribing pending users:', err);
+        setLoading(false);
+      },
+    );
+
+    return unsubscribe;
   }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const markSeen = async () => {
+        const adminUid = auth.currentUser?.uid;
+        if (!adminUid) return;
+        await setLastSeenPendingCount(adminUid, pendingUsers.length);
+      };
+      void markSeen();
+    }, [pendingUsers.length]),
+  );
 
   const handleApprove = async (uid: string) => {
     try {

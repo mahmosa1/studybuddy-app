@@ -4,6 +4,7 @@ import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
+import { getInstitutionProfileLabel } from '@/lib/institutionUtils';
 import { submitTutorSupportRequest, TutorSupportRequestStatus } from '@/lib/tutorSupportRequestService';
 import { useUser } from '@/lib/UserContext';
 import { Ionicons } from '@expo/vector-icons';
@@ -133,6 +134,8 @@ export default function SearchScreen() {
             username?: string;
             fullName?: string;
             institution?: string;
+            institutionName?: string;
+            institutionShortName?: string;
             fieldOfStudy?: string;
             profilePictureUrl?: string | null;
             role?: string;
@@ -151,7 +154,7 @@ export default function SearchScreen() {
               id: docSnap.id,
               username: data.username,
               fullName: data.fullName,
-              institution: data.institution,
+              institution: getInstitutionProfileLabel(data) || undefined,
               fieldOfStudy: data.fieldOfStudy,
               profilePictureUrl: data.profilePictureUrl,
               role: data.role,
@@ -249,7 +252,7 @@ export default function SearchScreen() {
               username: userData.username,
               fullName: userData.fullName,
               course: matchingUserCourses[0], // Show first matching course
-              institution: userData.institution,
+              institution: getInstitutionProfileLabel(userData) || undefined,
               availability: userPreferredTime,
               profilePictureUrl: userData.profilePictureUrl || null,
               phone: userData.studyBuddyPhone || null,

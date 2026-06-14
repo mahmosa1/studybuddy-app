@@ -6,6 +6,12 @@ import { layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { useUser } from '@/lib/UserContext';
 import { db } from '@/lib/firebaseConfig';
+import {
+  formatAuthorInstitutionLabel,
+  formatInstitutionForPost,
+  getInstitutionMatchKey,
+  institutionsMatch,
+} from '@/lib/institutionUtils';
 import { attachmentLooksLikeImage } from '@/lib/feedAttachmentUtils';
 import { createActivityNotification } from '@/lib/notificationService';
 import { pushAttachmentViewer } from '@/lib/openAttachmentViewer';
@@ -800,7 +806,7 @@ export default function StudentFeedScreen() {
       ]);
       if (userDoc.exists()) {
         const udata = userDoc.data() as any;
-        setUserInstitution(udata?.institution || '');
+        setUserInstitution(getInstitutionMatchKey(udata || {}));
       }
       const byId = new Map<string, CourseOption>();
       coursesSnap.forEach((courseDoc) => {
@@ -867,7 +873,7 @@ export default function StudentFeedScreen() {
             canSeePost =
               postVisibility === 'public' ||
               !postInstitution ||
-              (!!userInstitution && postInstitution === userInstitution);
+              (!!userInstitution && institutionsMatch(userInstitution, postInstitution));
           }
           if (!canSeePost) continue;
           rows.push({ id: d.id, data, likedBy, savedBy, postVisibility });
@@ -1119,7 +1125,7 @@ export default function StudentFeedScreen() {
         authorUid: firebaseUser.uid,
         authorName: userData.fullName || userData.username || 'User',
         authorAvatarUrl: userData.profilePictureUrl || '',
-        authorInstitution: userData.institution || '',
+        authorInstitution: formatInstitutionForPost(userData),
         type: selectedType,
         courseId: selectedCourse?.id || '',
         courseName: selectedCourse?.name || '',
@@ -1250,7 +1256,7 @@ export default function StudentFeedScreen() {
                 </Text>
                 {!!item.authorInstitution ? (
                   <Text style={[styles.authorInstitution, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
-                    {item.authorInstitution}
+                    {formatAuthorInstitutionLabel(item.authorInstitution)}
                   </Text>
                 ) : null}
               </View>

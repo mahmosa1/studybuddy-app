@@ -1,10 +1,12 @@
 // app/user-profile/[userId].tsx
 import { AppCard } from '@/frontend/components/ui/AppCard';
+import { CourseFolderIcon } from '@/frontend/components/ui/CourseFolderIcon';
 import { AppHeader } from '@/frontend/components/ui/AppHeader';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
 import { layout, radius, spacing } from '@/frontend/styles/designSystem';
 import { useAppTheme } from '@/frontend/styles/useAppTheme';
 import { auth, db } from '@/lib/firebaseConfig';
+import { getInstitutionProfileLabel } from '@/lib/institutionUtils';
 import { createActivityNotification } from '@/lib/notificationService';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -26,6 +28,8 @@ type UserProfile = {
   fullName?: string;
   email?: string;
   institution?: string;
+  institutionName?: string;
+  institutionShortName?: string;
   fieldOfStudy?: string;
   department?: string;
   role?: string;
@@ -101,6 +105,8 @@ export default function UserProfileScreen() {
             fullName: data.fullName,
             email: data.email,
             institution: data.institution,
+            institutionName: data.institutionName,
+            institutionShortName: data.institutionShortName,
             fieldOfStudy: data.fieldOfStudy,
             department: data.department,
             role: data.role,
@@ -340,7 +346,7 @@ export default function UserProfileScreen() {
                 </Text>
               </View>
             ) : null}
-            {profile.institution ? (
+            {getInstitutionProfileLabel(profile) ? (
               <View
                 style={[
                   styles.profileDetailCard,
@@ -350,7 +356,7 @@ export default function UserProfileScreen() {
               >
                 <Ionicons name="location-outline" size={16} color={colors.accent} />
                 <Text style={[styles.profileDetailCardText, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={2}>
-                  {profile.institution}
+                  {getInstitutionProfileLabel(profile)}
                 </Text>
               </View>
             ) : null}
@@ -451,9 +457,7 @@ export default function UserProfileScreen() {
                       onPress={() => router.push(`/course/${item.id}` as any)}
                       activeOpacity={0.88}
                     >
-                      <View style={[styles.courseCircle, { borderColor: colors.primary, backgroundColor: colors.surface }]}>
-                        <Text style={[styles.courseInitial, { color: colors.primary }]}>{item.name[0]?.toUpperCase()}</Text>
-                      </View>
+                      <CourseFolderIcon initial={item.name[0]?.toUpperCase()} color={colors.primary} />
                       <Text style={[styles.courseLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                         {item.name}
                       </Text>
@@ -474,9 +478,7 @@ export default function UserProfileScreen() {
                       }
                       activeOpacity={0.88}
                     >
-                      <View style={[styles.courseCircle, { borderColor: colors.primary, backgroundColor: colors.surface }]}>
-                        <Text style={[styles.courseInitial, { color: colors.primary }]}>{item.name[0]?.toUpperCase()}</Text>
-                      </View>
+                      <CourseFolderIcon initial={item.name[0]?.toUpperCase()} color={colors.primary} />
                       <View style={[styles.courseLabelRow, isHebrewUi && styles.rtlRow]}>
                         <Text style={[styles.courseLabel, { color: colors.textPrimary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                           {item.name}
@@ -489,9 +491,7 @@ export default function UserProfileScreen() {
 
                 return (
                   <View key={item.id} style={[styles.courseItem, styles.courseItemDisabled]}>
-                    <View style={[styles.courseCircle, { borderColor: colors.border, backgroundColor: colors.surfaceMuted }]}>
-                      <Text style={[styles.courseInitial, { color: colors.textSecondary }]}>{item.name[0]?.toUpperCase()}</Text>
-                    </View>
+                    <CourseFolderIcon initial={item.name[0]?.toUpperCase()} color={colors.textSecondary} size="sm" />
                     <Text style={[styles.courseLabel, { color: colors.textSecondary }, isHebrewUi && styles.rtlText]} numberOfLines={1}>
                       {item.name}
                     </Text>
@@ -762,19 +762,6 @@ const styles = StyleSheet.create({
   courseItemDisabled: {
     opacity: 0.85,
   },
-  courseCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    borderWidth: 2,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
-  courseInitial: {
-    fontSize: 26,
-    fontWeight: '700',
-  },
   courseLabelRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -787,6 +774,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     textAlign: 'center',
     maxWidth: 84,
+    marginTop: 8,
+    lineHeight: 16,
   },
   emptyCoursesCard: {
     alignItems: 'center',

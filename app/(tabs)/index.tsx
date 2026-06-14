@@ -1,4 +1,9 @@
 // app/(tabs)/index.tsx
+import {
+  getLastSeenPendingCount,
+  setLastSeenPendingCount,
+  shouldShowPendingApprovalsBadge,
+} from '@/lib/adminPendingApprovalsBadge';
 import { db } from '@/lib/firebaseConfig';
 import { AppCard } from '@/frontend/components/ui/AppCard';
 import { AppScreen } from '@/frontend/components/ui/AppScreen';
@@ -28,7 +33,7 @@ import { useStudyTimer } from '@/lib/StudyTimerContext';
 import { useUser } from '@/lib/UserContext';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { collection, doc, getDoc, getDocs, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, query, where } from 'firebase/firestore';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -661,6 +666,7 @@ function AdminHomeScreen() {
   const router = useRouter();
   const { t } = useTranslation();
   const { colors } = useAppTheme();
+  const { firebaseUser } = useUser();
   const [stats, setStats] = useState({
     students: 0,
     lecturers: 0,
@@ -669,6 +675,19 @@ function AdminHomeScreen() {
     courses: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [lastSeenPendingCount, setLastSeenPendingCountState] = useState(0);
+
+  const refreshLastSeenPendingCount = useCallback(async () => {
+    if (!firebaseUser?.uid) return;
+    const seen = await getLastSeenPendingCount(firebaseUser.uid);
+    setLastSeenPendingCountState(seen);
+  }, [firebaseUser?.uid]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void refreshLastSeenPendingCount();
+    }, [refreshLastSeenPendingCount]),
+  );
 
   useEffect(() => {
     const loadStats = async () => {
@@ -706,6 +725,34 @@ function AdminHomeScreen() {
 
     loadStats();
   }, []);
+
+  useEffect(() => {
+    const pendingQuery = query(collection(db, 'users'), where('status', '==', 'pending'));
+    const unsubscribe = onSnapshot(
+      pendingQuery,
+      (snapshot) => {
+        setStats((prev) => ({ ...prev, pendingUsers: snapshot.size }));
+      },
+      (err) => {
+        console.log('Error subscribing pending users:', err);
+      },
+    );
+
+    return unsubscribe;
+  }, []);
+
+  const showPendingApprovalsBadge = shouldShowPendingApprovalsBadge(
+    stats.pendingUsers,
+    lastSeenPendingCount,
+  );
+
+  const handleOpenPendingApprovals = useCallback(async () => {
+    if (firebaseUser?.uid) {
+      await setLastSeenPendingCount(firebaseUser.uid, stats.pendingUsers);
+      setLastSeenPendingCountState(stats.pendingUsers);
+    }
+    router.push('/admin/pending-approvals' as any);
+  }, [firebaseUser?.uid, router, stats.pendingUsers]);
 
   return (
     <AppScreen>
@@ -781,12 +828,19 @@ function AdminHomeScreen() {
               { backgroundColor: colors.surface, borderColor: colors.border },
               pressed && { opacity: 0.9, transform: [{ scale: 0.995 }] },
             ]}
-            onPress={() => router.push('/admin/pending-approvals' as any)}
+            onPress={() => void handleOpenPendingApprovals()}
           >
             <View style={[styles.actionAccentLine, { backgroundColor: colors.warning }]} />
             <View style={styles.actionCardLeft}>
-              <View style={[styles.actionIconContainer, { backgroundColor: colors.surfaceElevated }]}>
+              <View style={[styles.actionIconContainer, styles.actionIconContainerRelative, { backgroundColor: colors.surfaceElevated }]}>
                 <Ionicons name="checkmark-circle" size={20} color={colors.warning} />
+                {showPendingApprovalsBadge ? (
+                  <View style={[styles.pendingApprovalsBadge, { backgroundColor: colors.danger, borderColor: colors.surface }]}>
+                    <Text style={styles.pendingApprovalsBadgeText}>
+                      {stats.pendingUsers > 99 ? '99+' : stats.pendingUsers}
+                    </Text>
+                  </View>
+                ) : null}
               </View>
               <View style={styles.actionCardContent}>
                 <Text style={styles.actionCardTitle}>{t('admin.pendingApprovals')}</Text>
@@ -1709,6 +1763,27 @@ const styles = StyleSheet.create({
     marginRight: 12,
     borderWidth: 1,
     borderColor: '#e5e7eb',
+  },
+  actionIconContainerRelative: {
+    position: 'relative',
+  },
+  pendingApprovalsBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    minWidth: 20,
+    height: 20,
+    borderRadius: 10,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+  },
+  pendingApprovalsBadgeText: {
+    color: '#ffffff',
+    fontSize: 11,
+    fontWeight: '800',
+    lineHeight: 13,
   },
   actionCardContent: {
     flex: 1,
